@@ -21,14 +21,14 @@ export interface JWTPayload {
  * Generate access token
  */
 export function generateAccessToken(userId: string, email: string): string {
-  const payload: JWTPayload = {
+  const payload: Omit<JWTPayload, 'iat' | 'exp'> = {
     userId,
     email,
     type: 'access',
   };
 
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
+    expiresIn: JWT_EXPIRES_IN as string | number,
   });
 }
 
@@ -36,14 +36,14 @@ export function generateAccessToken(userId: string, email: string): string {
  * Generate refresh token
  */
 export function generateRefreshToken(userId: string, email: string): string {
-  const payload: JWTPayload = {
+  const payload: Omit<JWTPayload, 'iat' | 'exp'> = {
     userId,
     email,
     type: 'refresh',
   };
 
   return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_REFRESH_EXPIRES_IN,
+    expiresIn: JWT_REFRESH_EXPIRES_IN as string | number,
   });
 }
 

@@ -128,7 +128,7 @@ export class User {
   /**
    * Convert to JSON (without password hash)
    */
-  toJSON(): Omit<User, 'passwordHash'> {
+  toJSON(): { id: string; email: string; createdAt: Date; updatedAt: Date } {
     return {
       id: this.id,
       email: this.email,

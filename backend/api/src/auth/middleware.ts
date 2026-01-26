@@ -18,6 +18,14 @@ declare global {
   }
 }
 
+// Export AuthRequest type for use in route handlers
+export type AuthRequest = Request & {
+  user: {
+    id: string;
+    email: string;
+  };
+};
+
 /**
  * Middleware to authenticate requests using JWT
  */
