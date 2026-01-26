@@ -2,13 +2,19 @@ const { Client } = require('pg');
 require('dotenv').config();
 
 async function runMigration() {
-  const client = new Client({
-    host: process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
-    database: process.env.POSTGRES_DB || 'thehub_dev',
-    user: process.env.POSTGRES_USER || 'hub_user',
-    password: String(process.env.POSTGRES_PASSWORD || 'hub_dev_password'),
-  });
+  // Use DATABASE_URL if available (for Railway), otherwise individual variables
+  const client = process.env.DATABASE_URL
+    ? new Client({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+      })
+    : new Client({
+        host: process.env.POSTGRES_HOST || 'localhost',
+        port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+        database: process.env.POSTGRES_DB || 'thehub_dev',
+        user: process.env.POSTGRES_USER || 'hub_user',
+        password: String(process.env.POSTGRES_PASSWORD || 'hub_dev_password'),
+      });
 
   try {
     await client.connect();
