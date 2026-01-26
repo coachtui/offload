@@ -1,0 +1,48 @@
+# The Hub ML Service Dependencies
+
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Voice Processing
+openai-whisper==20231117
+torch>=2.1.0
+torchaudio>=2.1.0
+numpy>=1.24.0
+
+# Alternative: Faster Whisper (optional, for better performance)
+# faster-whisper>=0.10.0
+
+# Audio Processing
+librosa>=0.10.2
+soundfile>=0.12.1
+
+# NLP & ML
+transformers>=4.36.0
+sentence-transformers>=2.2.2
+scikit-learn>=1.4.0
+spacy>=3.7.0
+
+# Vector Database Clients
+weaviate-client>=4.4.0
+# pinecone-client>=3.0.0  # Optional
+
+# HTTP Client
+httpx>=0.26.0
+aiohttp>=3.9.0
+
+# Utilities
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+redis>=5.0.1
+
+# Monitoring
+prometheus-client>=0.19.0
+
+# Development
+pytest>=7.4.4
+pytest-asyncio>=0.23.3
+black>=24.1.0
+ruff>=0.1.11

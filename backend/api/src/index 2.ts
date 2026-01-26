@@ -1,0 +1,186 @@
+/**
+ * The Hub API Service
+ * Main entry point for the Node.js API server
+ */
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import { testConnection, closePool } from './db/connection';
+import {
+  testWeaviateConnection,
+  initializeWeaviateSchema,
+} from './db/weaviate';
+import { initializeStorage, testStorageConnection } from './services/storageService';
+// import { testWhisperConnection } from './services/transcriptionService';
+import { setupVoiceWebSocket } from './websocket/voiceHandler';
+import { cleanupAllSessions } from './services/voiceSessionService';
+
+// Load environment variables
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Create HTTP server for both Express and WebSocket
+const server = createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocketServer({
+  server,
+  path: '/ws/voice',
+});
+
+// Set up voice WebSocket handlers
+setupVoiceWebSocket(wss);
+
+// Middleware
+app.use(helmet());
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+    credentials: true,
+  })
+);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Health check
+app.get('/health', async (req, res) => {
+  const dbConnected = await testConnection();
+  const weaviateConnected = await testWeaviateConnection();
+  const storageConnected = await testStorageConnection();
+
+  const allConnected = dbConnected && weaviateConnected && storageConnected;
+  const someConnected = dbConnected || weaviateConnected || storageConnected;
+
+  const status = allConnected ? 'ok' : someConnected ? 'degraded' : 'error';
+
+  res.json({
+    status,
+    service: 'thehub-api',
+    timestamp: new Date().toISOString(),
+    database: dbConnected ? 'connected' : 'disconnected',
+    vectorDb: weaviateConnected ? 'connected' : 'disconnected',
+    storage: storageConnected ? 'connected' : 'disconnected',
+    websocket: {
+      clients: wss.clients.size,
+      path: '/ws/voice',
+    },
+  });
+});
+
+// API routes
+import authRoutes from './routes/auth';
+import objectRoutes from './routes/objects';
+import geofenceRoutes from './routes/geofences';
+import voiceRoutes from './routes/voice';
+import searchRoutes from './routes/search';
+import aiRoutes from './routes/ai';
+
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/objects', objectRoutes);
+app.use('/api/v1/geofences', geofenceRoutes);
+app.use('/api/v1/voice', voiceRoutes);
+app.use('/api/v1/search', searchRoutes);
+app.use('/api/v1/ai', aiRoutes);
+
+app.get('/api/v1', (req, res) => {
+  res.json({
+    message: 'The Hub API v1',
+    version: '0.3.0',
+    endpoints: {
+      health: '/health',
+      auth: '/api/v1/auth',
+      objects: '/api/v1/objects',
+      geofences: '/api/v1/geofences',
+      voice: '/api/v1/voice',
+      search: '/api/v1/search',
+      ai: '/api/v1/ai',
+    },
+    websocket: {
+      voice: '/ws/voice',
+    },
+  });
+});
+
+// Error handling middleware
+app.use(
+  (
+    err: Error,
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) => {
+    console.error('Error:', err);
+    res.status(500).json({
+      error: 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Graceful shutdown
+async function gracefulShutdown() {
+  console.log('Shutting down gracefully...');
+
+  // Stop accepting new connections
+  wss.close();
+
+  // Clean up active voice sessions
+  await cleanupAllSessions();
+
+  // Close database connections
+  await closePool();
+
+  process.exit(0);
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+// Start server
+server.listen(PORT, async () => {
+  console.log(`🚀 The Hub API server running on port ${PORT}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}/ws/voice`);
+
+  // Test database connection
+  await testConnection();
+
+  // Test Weaviate connection and initialize schema
+  const weaviateConnected = await testWeaviateConnection();
+  if (weaviateConnected) {
+    try {
+      await initializeWeaviateSchema();
+    } catch (error) {
+      console.error('⚠️  Failed to initialize Weaviate schema:', error);
+    }
+  } else {
+    console.warn('⚠️  Weaviate not available - semantic search will be disabled');
+  }
+
+  // Initialize MinIO storage
+  const storageConnected = await testStorageConnection();
+  if (storageConnected) {
+    try {
+      await initializeStorage();
+    } catch (error) {
+      console.error('⚠️  Failed to initialize MinIO storage:', error);
+    }
+  } else {
+    console.warn('⚠️  MinIO not available - audio storage will be disabled');
+  }
+
+  // Test Whisper API
+  // await testWhisperConnection(); // Temporarily disabled
+});
