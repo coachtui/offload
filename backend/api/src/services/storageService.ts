@@ -5,26 +5,39 @@
 import * as Minio from 'minio';
 import { Readable } from 'stream';
 
-const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost';
-const MINIO_PORT = parseInt(process.env.MINIO_PORT || '9000', 10);
-const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'minioadmin';
-const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'minioadmin123';
-const MINIO_USE_SSL = process.env.MINIO_USE_SSL === 'true';
-const AUDIO_BUCKET = process.env.MINIO_BUCKET || 'hub-audio';
+// Parse S3_ENDPOINT to extract host and port
+// Supports: "http://localhost:9000", "s3.amazonaws.com", "https://s3.us-west-2.amazonaws.com"
+const parseEndpoint = (endpoint: string) => {
+  const url = new URL(endpoint.startsWith('http') ? endpoint : `https://${endpoint}`);
+  return {
+    endPoint: url.hostname,
+    port: url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80),
+    useSSL: url.protocol === 'https:',
+  };
+};
+
+const S3_ENDPOINT = process.env.S3_ENDPOINT || 'http://localhost:9000';
+const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY || 'minioadmin';
+const S3_SECRET_KEY = process.env.S3_SECRET_KEY || 'minioadmin123';
+const S3_BUCKET = process.env.S3_BUCKET || 'thehub-dev';
+const S3_REGION = process.env.S3_REGION || 'us-east-1';
+
+const { endPoint, port, useSSL } = parseEndpoint(S3_ENDPOINT);
 
 let minioClient: Minio.Client | null = null;
 
 /**
- * Get or create MinIO client
+ * Get or create S3/MinIO client
  */
 function getClient(): Minio.Client {
   if (!minioClient) {
     minioClient = new Minio.Client({
-      endPoint: MINIO_ENDPOINT,
-      port: MINIO_PORT,
-      useSSL: MINIO_USE_SSL,
-      accessKey: MINIO_ACCESS_KEY,
-      secretKey: MINIO_SECRET_KEY,
+      endPoint,
+      port,
+      useSSL,
+      accessKey: S3_ACCESS_KEY,
+      secretKey: S3_SECRET_KEY,
+      region: S3_REGION,
     });
   }
   return minioClient;
@@ -36,13 +49,13 @@ function getClient(): Minio.Client {
 export async function initializeStorage(): Promise<boolean> {
   try {
     const client = getClient();
-    const bucketExists = await client.bucketExists(AUDIO_BUCKET);
+    const bucketExists = await client.bucketExists(S3_BUCKET);
 
     if (!bucketExists) {
-      await client.makeBucket(AUDIO_BUCKET);
-      console.log(`✅ Created MinIO bucket: ${AUDIO_BUCKET}`);
+      await client.makeBucket(S3_BUCKET);
+      console.log(`✅ Created MinIO bucket: ${S3_BUCKET}`);
     } else {
-      console.log(`✅ MinIO bucket exists: ${AUDIO_BUCKET}`);
+      console.log(`✅ MinIO bucket exists: ${S3_BUCKET}`);
     }
 
     return true;
@@ -83,7 +96,7 @@ export async function uploadAudio(
     'X-Upload-Time': new Date().toISOString(),
   };
 
-  await client.putObject(AUDIO_BUCKET, objectName, audioData, audioData.length, metadata);
+  await client.putObject(S3_BUCKET, objectName, audioData, audioData.length, metadata);
 
   return objectName;
 }
@@ -107,7 +120,7 @@ export async function uploadAudioChunk(
     'X-Upload-Time': new Date().toISOString(),
   };
 
-  await client.putObject(AUDIO_BUCKET, objectName, audioData, audioData.length, metadata);
+  await client.putObject(S3_BUCKET, objectName, audioData, audioData.length, metadata);
 
   return objectName;
 }
@@ -117,7 +130,7 @@ export async function uploadAudioChunk(
  */
 export async function getAudio(objectName: string): Promise<Buffer> {
   const client = getClient();
-  const stream = await client.getObject(AUDIO_BUCKET, objectName);
+  const stream = await client.getObject(S3_BUCKET, objectName);
 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -132,7 +145,7 @@ export async function getAudio(objectName: string): Promise<Buffer> {
  */
 export async function getAudioStream(objectName: string): Promise<Readable> {
   const client = getClient();
-  return client.getObject(AUDIO_BUCKET, objectName);
+  return client.getObject(S3_BUCKET, objectName);
 }
 
 /**
@@ -145,7 +158,7 @@ export async function getAudioUrl(
   const client = getClient();
   const objectName = `sessions/${sessionId}/audio.webm`;
 
-  return client.presignedGetObject(AUDIO_BUCKET, objectName, expirySeconds);
+  return client.presignedGetObject(S3_BUCKET, objectName, expirySeconds);
 }
 
 /**
@@ -157,7 +170,7 @@ export async function listAudioChunks(sessionId: string): Promise<string[]> {
   const chunks: string[] = [];
 
   return new Promise((resolve, reject) => {
-    const stream = client.listObjects(AUDIO_BUCKET, prefix, true);
+    const stream = client.listObjects(S3_BUCKET, prefix, true);
     stream.on('data', (obj) => {
       if (obj.name) {
         chunks.push(obj.name);
@@ -202,7 +215,7 @@ export async function deleteSessionAudio(sessionId: string): Promise<void> {
   const objectsToDelete: string[] = [];
 
   await new Promise<void>((resolve, reject) => {
-    const stream = client.listObjects(AUDIO_BUCKET, prefix, true);
+    const stream = client.listObjects(S3_BUCKET, prefix, true);
     stream.on('data', (obj) => {
       if (obj.name) {
         objectsToDelete.push(obj.name);
@@ -213,7 +226,7 @@ export async function deleteSessionAudio(sessionId: string): Promise<void> {
   });
 
   if (objectsToDelete.length > 0) {
-    await client.removeObjects(AUDIO_BUCKET, objectsToDelete);
+    await client.removeObjects(S3_BUCKET, objectsToDelete);
   }
 }
 
@@ -230,7 +243,7 @@ export async function getSessionStorageStats(
   let chunkCount = 0;
 
   await new Promise<void>((resolve, reject) => {
-    const stream = client.listObjects(AUDIO_BUCKET, prefix, true);
+    const stream = client.listObjects(S3_BUCKET, prefix, true);
     stream.on('data', (obj) => {
       if (obj.size) {
         totalSize += obj.size;
