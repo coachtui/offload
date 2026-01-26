@@ -117,12 +117,23 @@ export async function processAudioChunk(
   // Update activity time
   activeSession.lastActivityTime = new Date();
 
-  // Store chunk in MinIO
-  await uploadAudioChunk(sessionId, activeSession.chunkIndex, audioData);
-  activeSession.chunkIndex++;
+  // Store chunk in MinIO (optional - fail gracefully if storage unavailable)
+  try {
+    await uploadAudioChunk(sessionId, activeSession.chunkIndex, audioData);
+    activeSession.chunkIndex++;
+  } catch (error) {
+    console.warn(`Failed to upload audio chunk for session ${sessionId}:`, error instanceof Error ? error.message : 'Unknown error');
+    // Continue without storage - session will still work
+    activeSession.chunkIndex++;
+  }
 
-  // Add to transcriber buffer
-  await activeSession.transcriber.addChunk(audioData);
+  // Add to transcriber buffer (optional - fail gracefully if Whisper unavailable)
+  try {
+    await activeSession.transcriber.addChunk(audioData);
+  } catch (error) {
+    console.warn(`Failed to transcribe audio chunk for session ${sessionId}:`, error instanceof Error ? error.message : 'Unknown error');
+    // Continue without transcription - session will still be saved
+  }
 }
 
 /**

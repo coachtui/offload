@@ -33,9 +33,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function checkAuthStatus() {
     try {
+      // Initialize API service (loads token from secure storage)
+      await apiService.init();
+
       const token = await apiService.getStoredToken();
       if (token) {
-        apiService.setToken(token);
         setState({
           user: null, // Could fetch user profile here
           isAuthenticated: true,
@@ -49,6 +51,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
       }
     } catch (error) {
+      console.error('Auth check failed:', error);
       setState({
         user: null,
         isAuthenticated: false,

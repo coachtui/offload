@@ -31,21 +31,24 @@ class WebSocketService {
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected to:', url);
+        console.log('✅ WebSocket connected to:', url);
         this.reconnectAttempts = 0;
         this.startPingInterval();
         this.connectHandlers.forEach(handler => handler());
         resolve();
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event: CloseEvent) => {
+        console.log('❌ WebSocket closed:', event.code, event.reason);
         this.stopPingInterval();
         this.disconnectHandlers.forEach(handler => handler());
         this.attemptReconnect(token);
       };
 
       this.ws.onerror = (event: Event) => {
-        console.error('WebSocket error event:', event);
+        console.error('❌ WebSocket error event:', event);
+        console.error('❌ Failed to connect to:', url);
+        console.error('❌ Make sure Railway supports WebSocket connections');
         const error = new Error(`WebSocket connection failed to ${url}`);
         this.errorHandlers.forEach(handler => handler(error));
         reject(error);

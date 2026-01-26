@@ -85,7 +85,13 @@ export function useVoice(): UseVoiceReturn {
     });
 
     const unsubError = wsService.onError((error) => {
-      setState(prev => ({ ...prev, error: error.message, isConnecting: false }));
+      console.error('🔴 WebSocket error in useVoice:', error.message);
+      setState(prev => ({
+        ...prev,
+        error: `WebSocket Error: ${error.message}`,
+        isConnecting: false,
+        isConnected: false
+      }));
     });
 
     return () => {
@@ -99,38 +105,56 @@ export function useVoice(): UseVoiceReturn {
 
   const connectWebSocket = useCallback(async () => {
     const token = await SecureStore.getItemAsync('accessToken');
-    console.log('Retrieved token:', token ? `${token.substring(0, 20)}...` : 'null');
+    console.log('📡 Retrieved token:', token ? `${token.substring(0, 20)}...` : 'null');
     if (!token) {
-      throw new Error('Not authenticated');
+      throw new Error('Not authenticated - please log in again');
     }
 
+    console.log('📡 Attempting WebSocket connection...');
     setState(prev => ({ ...prev, isConnecting: true, error: null }));
-    await wsService.connect(token);
+
+    try {
+      await wsService.connect(token);
+      console.log('✅ WebSocket connected successfully');
+    } catch (error) {
+      console.error('❌ WebSocket connection failed:', error);
+      throw error;
+    }
   }, []);
 
   const startRecording = useCallback(async () => {
     try {
+      console.log('🎤 Starting recording...');
+
       // Request permissions
       const status = await AudioModule.requestRecordingPermissionsAsync();
       if (!status.granted) {
         throw new Error('Audio recording permission not granted');
       }
+      console.log('✅ Audio permission granted');
 
       // Configure audio session for recording (required on iOS)
       await AudioModule.setAudioModeAsync({
         allowsRecording: true,
         playsInSilentMode: true,
       });
+      console.log('✅ Audio mode configured');
 
       // Connect to WebSocket if not connected
       if (!wsService.isConnected) {
+        console.log('📡 WebSocket not connected, connecting...');
         await connectWebSocket();
+      } else {
+        console.log('✅ WebSocket already connected');
       }
 
       // Start recording
+      console.log('🎤 Starting audio recorder...');
       await audioRecorder.record();
+      console.log('✅ Audio recorder started');
 
       // Start WebSocket session
+      console.log('📤 Sending start_session message...');
       wsService.startSession('mobile-device', {
         platform: 'mobile',
       });
@@ -141,9 +165,11 @@ export function useVoice(): UseVoiceReturn {
         error: null,
         transcripts: [],
       }));
+      console.log('✅ Recording started successfully');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start recording';
-      setState(prev => ({ ...prev, error: message }));
+      console.error('❌ Failed to start recording:', message);
+      setState(prev => ({ ...prev, error: message, isRecording: false }));
       throw error;
     }
   }, [connectWebSocket, audioRecorder]);
