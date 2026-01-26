@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../services/api';
+import { apiService } from '../services/api';
 import { geofenceMonitoringService, GeofenceRegion } from '../services/geofenceMonitoringService';
 import { locationService } from '../services/locationService';
 

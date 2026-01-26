@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  ScrollView,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -28,7 +29,7 @@ export function HomeScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <Text style={styles.greeting}>
           {user?.email ? `Hello, ${user.email.split('@')[0]}` : 'Welcome back'}
         </Text>
@@ -113,7 +114,7 @@ export function HomeScreen({ navigation }: Props) {
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -146,8 +147,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     paddingHorizontal: 24,
     paddingTop: 32,
+    paddingBottom: 40,
   },
   greeting: {
     fontSize: 28,

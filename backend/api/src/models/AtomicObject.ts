@@ -147,7 +147,8 @@ export class AtomicObjectModel {
 
     // Get total count
     const countResult = await query<{ count: string }>(
-      queryText.replace('SELECT *', 'SELECT COUNT(*) as count')
+      queryText.replace('SELECT *', 'SELECT COUNT(*) as count'),
+      params
     );
     const total = parseInt(countResult.rows[0].count, 10);
 
