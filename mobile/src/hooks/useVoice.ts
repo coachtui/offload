@@ -1,6 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
-import { File } from 'expo-file-system';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
 import * as SecureStore from 'expo-secure-store';
 import { wsService } from '../services/websocket';
 import { TranscriptionPayload } from '../types';
@@ -20,6 +19,16 @@ interface UseVoiceReturn extends VoiceState {
   clearTranscripts: () => void;
 }
 
+// Helper function to convert base64 to ArrayBuffer
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 export function useVoice(): UseVoiceReturn {
   const [state, setState] = useState<VoiceState>({
     isRecording: false,
@@ -30,7 +39,7 @@ export function useVoice(): UseVoiceReturn {
     error: null,
   });
 
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const audioSubscriptionRef = useRef<any>(null);
 
   useEffect(() => {
     const unsubConnect = wsService.onConnect(() => {
@@ -100,6 +109,11 @@ export function useVoice(): UseVoiceReturn {
       unsubTranscription();
       unsubMessage();
       unsubError();
+
+      // Clean up audio subscription on unmount
+      if (audioSubscriptionRef.current) {
+        audioSubscriptionRef.current.remove();
+      }
     };
   }, []);
 
@@ -135,20 +149,6 @@ export function useVoice(): UseVoiceReturn {
     try {
       console.log('🎤 Starting recording...');
 
-      // Request permissions
-      const status = await AudioModule.requestRecordingPermissionsAsync();
-      if (!status.granted) {
-        throw new Error('Audio recording permission not granted');
-      }
-      console.log('✅ Audio permission granted');
-
-      // Configure audio session for recording (required on iOS)
-      await AudioModule.setAudioModeAsync({
-        allowsRecording: true,
-        playsInSilentMode: true,
-      });
-      console.log('✅ Audio mode configured');
-
       // Connect to WebSocket if not connected
       if (!wsService.isConnected) {
         console.log('📡 WebSocket not connected, connecting...');
@@ -157,16 +157,41 @@ export function useVoice(): UseVoiceReturn {
         console.log('✅ WebSocket already connected');
       }
 
-      // Start recording
-      console.log('🎤 Starting audio recorder...');
-      await audioRecorder.record();
-      console.log('✅ Audio recorder started');
-
       // Start WebSocket session
       console.log('📤 Sending start_session message...');
       wsService.startSession('mobile-device', {
         platform: 'mobile',
       });
+
+      // Start microphone with streaming
+      console.log('🎤 Starting audio stream...');
+      const { recordingResult, subscription } = await ExpoPlayAudioStream.startMicrophone({
+        sampleRate: 16000, // 16kHz is common for speech recognition
+        channels: 1,
+        encoding: 'pcm_16bit',
+        interval: 250, // Send chunks every 250ms
+        enableProcessing: false,
+        onAudioStream: async (event) => {
+          // Only process microphone events (not recording events)
+          if (event.type === 'microphone') {
+            console.log('📤 Sending audio chunk, size:', event.eventDataSize);
+            try {
+              // Convert base64 to ArrayBuffer and send to WebSocket
+              const data = typeof event.data === 'string' ? event.data : '';
+              if (data) {
+                const arrayBuffer = base64ToArrayBuffer(data);
+                wsService.sendAudioChunk(arrayBuffer);
+              }
+            } catch (error) {
+              console.error('❌ Failed to send audio chunk:', error);
+            }
+          }
+        }
+      });
+
+      // Store the subscription so we can clean it up later
+      audioSubscriptionRef.current = subscription;
+      console.log('✅ Audio streaming started');
 
       setState(prev => ({
         ...prev,
@@ -181,42 +206,27 @@ export function useVoice(): UseVoiceReturn {
       setState(prev => ({ ...prev, error: message, isRecording: false }));
       throw error;
     }
-  }, [connectWebSocket, audioRecorder]);
+  }, [connectWebSocket]);
 
   const stopRecording = useCallback(async () => {
-    // Stop recording - wrapped defensively for Expo Go compatibility
-    console.log('Stopping recording...');
+    console.log('🛑 Stopping recording...');
 
     try {
-      await audioRecorder.stop();
-    } catch (stopError) {
-      console.warn('audioRecorder.stop() error (may be normal):', stopError);
-    }
-
-    const uri = audioRecorder.uri;
-    console.log('Recording stopped, URI:', uri);
-
-    // Send the audio file to the server
-    if (uri) {
-      try {
-        console.log('Reading audio file from URI:', uri);
-
-        // Use modern File API to read audio file as ArrayBuffer
-        const audioFile = new File(uri);
-        const arrayBuffer = await audioFile.arrayBuffer();
-
-        console.log('Sending audio chunk, size:', arrayBuffer.byteLength);
-        wsService.sendAudioChunk(arrayBuffer);
-      } catch (audioError) {
-        console.error('Could not read audio file:', audioError);
-        setState(prev => ({
-          ...prev,
-          error: 'Failed to send audio for transcription'
-        }));
+      // Clean up the subscription
+      if (audioSubscriptionRef.current) {
+        audioSubscriptionRef.current.remove();
+        audioSubscriptionRef.current = null;
       }
+
+      // Stop the microphone
+      await ExpoPlayAudioStream.stopMicrophone();
+      console.log('✅ Microphone stopped');
+    } catch (stopError) {
+      console.warn('stopMicrophone error:', stopError);
     }
 
-    console.log('Sending stop_session...');
+    // Stop the WebSocket session
+    console.log('📤 Sending stop_session...');
     wsService.stopSession();
 
     setState(prev => ({
@@ -224,7 +234,7 @@ export function useVoice(): UseVoiceReturn {
       isRecording: false,
       error: null,
     }));
-  }, [audioRecorder]);
+  }, []);
 
   const clearTranscripts = useCallback(() => {
     setState(prev => ({ ...prev, transcripts: [] }));

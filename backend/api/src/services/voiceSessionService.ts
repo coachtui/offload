@@ -114,6 +114,8 @@ export async function processAudioChunk(
     throw new Error('Session not found or not active');
   }
 
+  console.log(`📦 Received audio chunk for session ${sessionId}: ${audioData.length} bytes`);
+
   // Update activity time
   activeSession.lastActivityTime = new Date();
 

@@ -36,6 +36,36 @@ export interface TranscriptionSegment {
 }
 
 /**
+ * Convert PCM audio buffer to WAV format
+ */
+function pcmToWav(pcmBuffer: Buffer, sampleRate: number = 16000, channels: number = 1, bitDepth: number = 16): Buffer {
+  const byteRate = sampleRate * channels * (bitDepth / 8);
+  const blockAlign = channels * (bitDepth / 8);
+  const dataSize = pcmBuffer.length;
+  const fileSize = 36 + dataSize;
+
+  const wavHeader = Buffer.alloc(44);
+  // RIFF chunk
+  wavHeader.write('RIFF', 0);
+  wavHeader.writeUInt32LE(fileSize, 4);
+  wavHeader.write('WAVE', 8);
+  // fmt chunk
+  wavHeader.write('fmt ', 12);
+  wavHeader.writeUInt32LE(16, 16); // fmt chunk size
+  wavHeader.writeUInt16LE(1, 20); // PCM format
+  wavHeader.writeUInt16LE(channels, 22);
+  wavHeader.writeUInt32LE(sampleRate, 24);
+  wavHeader.writeUInt32LE(byteRate, 28);
+  wavHeader.writeUInt16LE(blockAlign, 32);
+  wavHeader.writeUInt16LE(bitDepth, 34);
+  // data chunk
+  wavHeader.write('data', 36);
+  wavHeader.writeUInt32LE(dataSize, 40);
+
+  return Buffer.concat([wavHeader, pcmBuffer]);
+}
+
+/**
  * Transcribe audio buffer using Whisper API
  */
 export async function transcribeAudio(
@@ -44,14 +74,25 @@ export async function transcribeAudio(
     language?: string;
     prompt?: string;
     responseFormat?: 'json' | 'text' | 'verbose_json';
+    sampleRate?: number;
+    channels?: number;
+    bitDepth?: number;
   } = {}
 ): Promise<TranscriptionResult> {
+  // Convert PCM to WAV if needed
+  const wavBuffer = pcmToWav(
+    audioBuffer,
+    options.sampleRate || 16000,
+    options.channels || 1,
+    options.bitDepth || 16
+  );
+
   // Write buffer to temp file (OpenAI API requires file)
   const tempDir = os.tmpdir();
-  const tempFile = path.join(tempDir, `whisper_${Date.now()}.webm`);
+  const tempFile = path.join(tempDir, `whisper_${Date.now()}.wav`);
 
   try {
-    fs.writeFileSync(tempFile, audioBuffer);
+    fs.writeFileSync(tempFile, wavBuffer);
 
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempFile),
@@ -162,8 +203,11 @@ export class StreamingTranscriber {
     this.buffer.push(chunk);
     this.bufferSize += chunk.length;
 
+    console.log(`🎙️  Buffer size: ${this.bufferSize}/${this.chunkThreshold} bytes (${this.buffer.length} chunks)`);
+
     // Check if we should transcribe
     if (this.bufferSize >= this.chunkThreshold && !this.isProcessing) {
+      console.log('🎯 Threshold reached, processing buffer...');
       await this.processBuffer(false);
     }
   }
@@ -178,6 +222,7 @@ export class StreamingTranscriber {
 
     try {
       const audioData = Buffer.concat(this.buffer);
+      console.log(`🎤 Transcribing ${audioData.length} bytes of audio...`);
 
       // Build context from previous transcripts
       const contextPrompt = this.previousTranscripts.length > 0
@@ -187,7 +232,12 @@ export class StreamingTranscriber {
       const result = await transcribeAudio(audioData, {
         prompt: contextPrompt,
         responseFormat: 'verbose_json',
+        sampleRate: 16000,
+        channels: 1,
+        bitDepth: 16,
       });
+
+      console.log(`✅ Transcription result: "${result.text}"`);
 
       // Store for context
       if (result.text.trim()) {
@@ -200,7 +250,7 @@ export class StreamingTranscriber {
 
       this.onTranscript(result, isFinal);
     } catch (error) {
-      console.error('Transcription error:', error);
+      console.error('❌ Transcription error:', error);
       // Don't clear buffer on error, try again with next chunk
     } finally {
       this.isProcessing = false;

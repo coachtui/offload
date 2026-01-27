@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.talailima.mobile"
+      "bundleIdentifier": "com.talailima.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -36,6 +39,11 @@
       "expo-secure-store",
       "expo-audio",
       "expo-dev-client"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6444b92a-4608-4106-8a94-5764a457cb72"
+      }
+    }
   }
 }
