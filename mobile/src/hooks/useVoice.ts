@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
 import * as SecureStore from 'expo-secure-store';
+import { Audio } from 'expo-av';
 import { wsService } from '../services/websocket';
 import { TranscriptionPayload } from '../types';
 
@@ -149,6 +150,20 @@ export function useVoice(): UseVoiceReturn {
     try {
       console.log('🎤 Starting recording...');
 
+      // Request audio permissions
+      console.log('🎤 Requesting audio permissions...');
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Microphone permission not granted');
+      }
+      console.log('✅ Audio permissions granted');
+
+      // Set audio mode for recording
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
       // Connect to WebSocket if not connected
       if (!wsService.isConnected) {
         console.log('📡 WebSocket not connected, connecting...');
@@ -174,13 +189,15 @@ export function useVoice(): UseVoiceReturn {
         onAudioStream: async (event) => {
           // Only process microphone events (not recording events)
           if (event.type === 'microphone') {
-            console.log('📤 Sending audio chunk, size:', event.eventDataSize);
             try {
               // Convert base64 to ArrayBuffer and send to WebSocket
               const data = typeof event.data === 'string' ? event.data : '';
               if (data) {
                 const arrayBuffer = base64ToArrayBuffer(data);
+                console.log(`📤 Sending audio chunk - Base64 length: ${data.length}, Buffer size: ${arrayBuffer.byteLength} bytes, eventDataSize: ${event.eventDataSize}`);
                 wsService.sendAudioChunk(arrayBuffer);
+              } else {
+                console.warn('⚠️  Empty audio data received');
               }
             } catch (error) {
               console.error('❌ Failed to send audio chunk:', error);

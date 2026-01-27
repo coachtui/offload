@@ -310,17 +310,22 @@ async function handleStopSession(ws: AuthenticatedWebSocket): Promise<void> {
     return;
   }
 
-  const result = await stopSession(ws.sessionId);
+  const sessionId = ws.sessionId;
 
+  // Send immediate response to client (don't wait for heavy processing)
   sendMessage(ws, {
     type: 'session_stopped',
-    sessionId: ws.sessionId,
-    transcript: result.transcript,
-    audioUrl: result.audioUrl,
-    objectId: result.objectId,
+    sessionId: sessionId,
+    transcript: '', // Will be processed async
+    audioUrl: '',   // Will be processed async
   });
 
   ws.sessionId = undefined;
+
+  // Process session finalization asynchronously (don't block the WebSocket)
+  stopSession(sessionId).catch(error => {
+    console.error(`Failed to finalize session ${sessionId}:`, error);
+  });
 }
 
 /**

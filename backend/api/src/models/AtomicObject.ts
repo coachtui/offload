@@ -143,14 +143,13 @@ export class AtomicObjectModel {
       params.push(options.dateTo);
     }
 
-    queryText += ' ORDER BY created_at DESC';
-
-    // Get total count
-    const countResult = await query<{ count: string }>(
-      queryText.replace('SELECT *', 'SELECT COUNT(*) as count'),
-      params
-    );
+    // Get total count (without ORDER BY)
+    const countQuery = queryText.replace('SELECT *', 'SELECT COUNT(*) as count');
+    const countResult = await query<{ count: string }>(countQuery, params);
     const total = parseInt(countResult.rows[0].count, 10);
+
+    // Add ORDER BY for actual data query
+    queryText += ' ORDER BY created_at DESC';
 
     // Apply pagination
     if (options?.limit) {

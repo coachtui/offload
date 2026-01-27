@@ -190,8 +190,9 @@ export class StreamingTranscriber {
     onTranscript: (result: TranscriptionResult, isFinal: boolean) => void;
     contextPrompt?: string;
   }) {
-    // Default: ~5 seconds of audio at 16kHz mono (about 160KB)
-    this.chunkThreshold = options.chunkThresholdBytes || 160000;
+    // Default: ~2 seconds of audio at 16kHz mono 16-bit (about 64KB)
+    // Lower threshold for more responsive live transcription
+    this.chunkThreshold = options.chunkThresholdBytes || 64000;
     this.onTranscript = options.onTranscript;
     this.contextPrompt = options.contextPrompt;
   }
