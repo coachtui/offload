@@ -30,8 +30,7 @@ export function useSearch() {
     setError(null);
 
     try {
-      const response = await apiService.post('/api/v1/search/semantic', {
-        query,
+      const response = await apiService.searchSemantic(query, {
         limit: options?.limit || 20,
         category: options?.category,
         dateFrom: options?.dateFrom?.toISOString(),
@@ -39,7 +38,7 @@ export function useSearch() {
         urgency: options?.urgency,
       });
 
-      setResults(response.data.results || []);
+      setResults(response.results || []);
     } catch (err: any) {
       console.error('Search error:', err);
       setError(err.response?.data?.error || 'Failed to search. Please try again.');
@@ -54,11 +53,9 @@ export function useSearch() {
     setError(null);
 
     try {
-      const response = await apiService.post(`/api/v1/search/similar/${objectId}`, {
-        limit: limit || 5,
-      });
+      const response = await apiService.findSimilar(objectId, limit || 5);
 
-      setResults(response.data.results || []);
+      setResults(response.results || []);
     } catch (err: any) {
       console.error('Find similar error:', err);
       setError(err.response?.data?.error || 'Failed to find similar objects.');

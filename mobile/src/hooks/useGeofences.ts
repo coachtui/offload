@@ -79,17 +79,13 @@ export function useGeofences(): UseGeofencesResult {
 
     try {
       console.log('[useGeofences] Fetching geofences...');
-      const response = await api.get('/geofences');
+      const response = await apiService.getGeofences();
 
-      if (response.data.success) {
-        setGeofences(response.data.data);
-        console.log(`[useGeofences] Loaded ${response.data.data.length} geofences`);
+      setGeofences(response.geofences);
+      console.log(`[useGeofences] Loaded ${response.geofences.length} geofences`);
 
-        // Sync with OS-level monitoring
-        await syncMonitoring(response.data.data);
-      } else {
-        throw new Error(response.data.message || 'Failed to fetch geofences');
-      }
+      // Sync with OS-level monitoring
+      await syncMonitoring(response.geofences);
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || 'Failed to fetch geofences';
       setError(message);
@@ -115,26 +111,22 @@ export function useGeofences(): UseGeofencesResult {
 
       console.log('[useGeofences] Creating geofence:', input.name);
 
-      const response = await api.post('/geofences', {
+      const response = await apiService.createGeofence({
         ...input,
         notifyOnEnter: input.notifyOnEnter ?? true,
         notifyOnExit: input.notifyOnExit ?? false,
       });
 
-      if (response.data.success) {
-        const newGeofence = response.data.data;
-        setGeofences(prev => [...prev, newGeofence]);
+      const newGeofence = response.geofence;
+      setGeofences(prev => [...prev, newGeofence]);
 
-        // Start OS-level monitoring if enabled
-        if (newGeofence.enabled) {
-          await startMonitoring(newGeofence);
-        }
-
-        console.log('[useGeofences] Geofence created:', newGeofence.id);
-        return newGeofence;
-      } else {
-        throw new Error(response.data.message || 'Failed to create geofence');
+      // Start OS-level monitoring if enabled
+      if (newGeofence.enabled) {
+        await startMonitoring(newGeofence);
       }
+
+      console.log('[useGeofences] Geofence created:', newGeofence.id);
+      return newGeofence;
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || 'Failed to create geofence';
       setError(message);
@@ -156,22 +148,18 @@ export function useGeofences(): UseGeofencesResult {
       try {
         console.log('[useGeofences] Updating geofence:', id);
 
-        const response = await api.put(`/geofences/${id}`, updates);
+        const response = await apiService.updateGeofence(id, updates);
 
-        if (response.data.success) {
-          const updatedGeofence = response.data.data;
-          setGeofences(prev =>
-            prev.map(g => (g.id === id ? updatedGeofence : g))
-          );
+        const updatedGeofence = response.geofence;
+        setGeofences(prev =>
+          prev.map(g => (g.id === id ? updatedGeofence : g))
+        );
 
-          // Re-sync monitoring
-          await syncMonitoring([updatedGeofence]);
+        // Re-sync monitoring
+        await syncMonitoring([updatedGeofence]);
 
-          console.log('[useGeofences] Geofence updated:', id);
-          return updatedGeofence;
-        } else {
-          throw new Error(response.data.message || 'Failed to update geofence');
-        }
+        console.log('[useGeofences] Geofence updated:', id);
+        return updatedGeofence;
       } catch (err: any) {
         const message = err.response?.data?.message || err.message || 'Failed to update geofence';
         setError(message);
@@ -197,15 +185,11 @@ export function useGeofences(): UseGeofencesResult {
       // Stop monitoring first
       await geofenceMonitoringService.stopMonitoringRegion(id);
 
-      const response = await api.delete(`/geofences/${id}`);
+      await apiService.deleteGeofence(id);
 
-      if (response.data.success) {
-        setGeofences(prev => prev.filter(g => g.id !== id));
-        console.log('[useGeofences] Geofence deleted:', id);
-        return true;
-      } else {
-        throw new Error(response.data.message || 'Failed to delete geofence');
-      }
+      setGeofences(prev => prev.filter(g => g.id !== id));
+      console.log('[useGeofences] Geofence deleted:', id);
+      return true;
     } catch (err: any) {
       const message = err.response?.data?.message || err.message || 'Failed to delete geofence';
       setError(message);

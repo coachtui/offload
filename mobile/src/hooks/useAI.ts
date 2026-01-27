@@ -51,8 +51,7 @@ export function useAI() {
           }));
 
         // Call AI query endpoint
-        const response = await apiService.post('/api/v1/ai/query', {
-          query: question,
+        const response = await apiService.aiQuery(question, {
           conversationHistory,
           contextLimit: 5,
         });
@@ -94,11 +93,9 @@ export function useAI() {
     setError(null);
 
     try {
-      const response = await apiService.post('/api/v1/ai/check-contradictions', {
-        statement,
-      });
+      const response = await apiService.checkContradictions(statement);
 
-      return response.data;
+      return response;
     } catch (err: any) {
       console.error('Contradiction check error:', err);
       setError(err.response?.data?.error || 'Failed to check contradictions.');

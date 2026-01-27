@@ -180,6 +180,73 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // Geofence methods
+  async getGeofences(): Promise<{ geofences: any[] }> {
+    return this.request('/api/v1/geofences');
+  }
+
+  async createGeofence(data: any): Promise<{ geofence: any }> {
+    return this.request('/api/v1/geofences', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGeofence(id: string, data: any): Promise<{ geofence: any }> {
+    return this.request(`/api/v1/geofences/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGeofence(id: string): Promise<void> {
+    await this.request(`/api/v1/geofences/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Search methods
+  async searchSemantic(query: string, options?: {
+    limit?: number;
+    category?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    urgency?: string;
+  }): Promise<{ query: string; results: any[]; count: number }> {
+    return this.request('/api/v1/search/semantic', {
+      method: 'POST',
+      body: JSON.stringify({ query, ...options }),
+    });
+  }
+
+  async findSimilar(objectId: string, limit?: number): Promise<{
+    objectId: string; results: any[]; count: number
+  }> {
+    return this.request(`/api/v1/search/similar/${objectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ limit }),
+    });
+  }
+
+  // AI methods
+  async aiQuery(query: string, options?: {
+    contextLimit?: number;
+    category?: string[];
+    conversationHistory?: any[];
+  }): Promise<any> {
+    return this.request('/api/v1/ai/query', {
+      method: 'POST',
+      body: JSON.stringify({ query, ...options }),
+    });
+  }
+
+  async checkContradictions(statement: string): Promise<any> {
+    return this.request('/api/v1/ai/check-contradictions', {
+      method: 'POST',
+      body: JSON.stringify({ statement }),
+    });
+  }
 }
 
 export const apiService = new ApiService();
