@@ -104,6 +104,8 @@ router.post('/search', async (req: Request, res: Response) => {
     const scoreMap = new Map(searchResults.map((r) => [r.objectId, r.score]));
     const fullObjects = await AtomicObjectModel.findByIds(objectIds);
 
+    const SCORE_THRESHOLD = 0.4;
+
     const results = fullObjects
       .map((obj) => {
         const atom = obj.toAtomicObject();
@@ -122,6 +124,7 @@ router.post('/search', async (req: Request, res: Response) => {
           sourceTranscriptId: atom.source?.recordingId ?? null,
         };
       })
+      .filter((r) => r.score >= SCORE_THRESHOLD)
       .sort((a, b) => b.score - a.score);
 
     console.log(`[RAG] search returned ${results.length} results`);

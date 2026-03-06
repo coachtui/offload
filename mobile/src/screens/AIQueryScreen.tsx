@@ -13,21 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAI } from '../hooks/useAI';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  sources?: SourceReference[];
-  timestamp: Date;
-}
-
-interface SourceReference {
-  objectId: string;
-  content: string;
-  relevance: number;
-}
+import { useAI, AIMessage } from '../hooks/useAI';
 
 export default function AIQueryScreen({ navigation }: any) {
   const [inputText, setInputText] = useState('');
@@ -50,7 +36,7 @@ export default function AIQueryScreen({ navigation }: any) {
     await askQuestion(question);
   };
 
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item }: { item: AIMessage }) => {
     const isUser = item.role === 'user';
 
     return (
@@ -60,37 +46,48 @@ export default function AIQueryScreen({ navigation }: any) {
             {item.content}
           </Text>
 
-          {/* Sources */}
-          {item.sources && item.sources.length > 0 && (
-            <View style={styles.sourcesContainer}>
-              <Text style={styles.sourcesTitle}>Sources:</Text>
-              {item.sources.map((source, index) => (
-                <TouchableOpacity
-                  key={source.objectId}
-                  style={styles.sourceChip}
-                  onPress={() =>
-                    navigation.navigate('ObjectDetail', { objectId: source.objectId })
-                  }
-                >
-                  <Text style={styles.sourceNumber}>[{index + 1}]</Text>
-                  <Text style={styles.sourceText} numberOfLines={2}>
-                    {source.content}
-                  </Text>
-                  <Text style={styles.sourceRelevance}>
-                    {Math.round(source.relevance * 100)}%
-                  </Text>
-                </TouchableOpacity>
+          {/* Themes */}
+          {item.themes && item.themes.length > 0 && (
+            <View style={styles.metaSection}>
+              <Text style={styles.metaLabel}>Themes</Text>
+              <View style={styles.chipRow}>
+                {item.themes.map((theme) => (
+                  <View key={theme} style={styles.themeChip}>
+                    <Text style={styles.themeChipText}>{theme}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Gaps */}
+          {item.gaps && item.gaps.length > 0 && (
+            <View style={styles.metaSection}>
+              <Text style={styles.metaLabel}>Gaps in your notes</Text>
+              {item.gaps.map((gap, i) => (
+                <Text key={i} style={styles.gapText}>· {gap}</Text>
               ))}
             </View>
           )}
 
-          <Text style={styles.timestamp}>
-            {new Date(item.timestamp).toLocaleTimeString(undefined, {
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            })}
-          </Text>
+          {/* Cited + contradiction flag */}
+          <View style={styles.messageFooter}>
+            {item.citedIds && item.citedIds.length > 0 && (
+              <Text style={styles.citedText}>
+                {item.citedIds.length} note{item.citedIds.length !== 1 ? 's' : ''} cited
+              </Text>
+            )}
+            {item.hasContradictions && (
+              <Text style={styles.contradictionText}>⚠ Contradictions found</Text>
+            )}
+            <Text style={styles.timestamp}>
+              {new Date(item.timestamp).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              })}
+            </Text>
+          </View>
         </View>
       </View>
     );
@@ -297,49 +294,40 @@ const styles = StyleSheet.create({
   userMessageText: {
     color: '#FFFFFF',
   },
-  sourcesContainer: {
-    marginTop: 12,
-    paddingTop: 12,
+  metaSection: {
+    marginTop: 10,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#E5E7EB',
   },
-  sourcesTitle: {
-    fontSize: 12,
+  metaLabel: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#6B7280',
-    marginBottom: 8,
-  },
-  sourceChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
     marginBottom: 6,
   },
-  sourceNumber: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#4F46E5',
-    marginRight: 8,
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  themeChip: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
   },
-  sourceText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#374151',
-    lineHeight: 16,
+  themeChipText: { fontSize: 12, color: '#4F46E5', fontWeight: '500' },
+  gapText: { fontSize: 12, color: '#6B7280', lineHeight: 18, marginTop: 2 },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
   },
-  sourceRelevance: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#10B981',
-    marginLeft: 8,
-  },
-  timestamp: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 6,
-  },
+  citedText: { fontSize: 11, color: '#9CA3AF' },
+  contradictionText: { fontSize: 11, color: '#F59E0B', fontWeight: '600' },
+  timestamp: { fontSize: 11, color: '#9CA3AF', marginLeft: 'auto' },
   emptyState: {
     flex: 1,
     justifyContent: 'center',

@@ -1,180 +1,163 @@
 # Project Context: The Hub - Proactive Cognitive Inbox
 
 ## Project Overview
-"The Hub" is a **Zero-Friction** brain-dump application that moves beyond passive note-taking. It's a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
+"The Hub" is a **Zero-Friction** brain-dump application — a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, time, and past behavior).
 
-## Current Status: Phase 4 Complete - UI & Voice Pipeline Operational
+---
+
+## Current Status (as of 2026-03-06): Phase 5 — RAG Foundation Operational
 
 ### What's Working
-- ✅ **Backend API** (Node.js/TypeScript): Fully functional with authentication, CRUD operations, WebSocket support
-- ✅ **Voice Processing Pipeline**: Real-time WebSocket-based audio streaming with OpenAI Whisper integration
-- ✅ **Database Layer**: PostgreSQL with migrations, models for users, sessions, atomic objects, geofences
-- ✅ **Vector Database**: Weaviate schema configured for semantic search
-- ✅ **Mobile App** (React Native/Expo): Complete with authentication, voice recording, transcription display, session history
-- ✅ **Object Storage**: MinIO integration for audio file storage
-- ✅ **Real-time Features**: WebSocket for live transcription updates
+- ✅ **Backend API** (Node.js/TypeScript on Railway): auth, CRUD, voice, RAG, search, AI routes
+- ✅ **Voice Pipeline**: Mobile → Deepgram WebSocket directly (temp token from backend), then saves transcript to API
+- ✅ **Atomic Object v2 Parser**: ML service parses transcripts into typed, domain-tagged atomic objects with full metadata
+- ✅ **Atomic Object Schema v2**: `object_type`, `domain`, `temporal_*`, `location_*`, `is_actionable`, `next_action`, `linked_object_ids`, `sequence_index`, `embedding_status`
+- ✅ **JWT Auth**: Secure sign/verify with expiry; mobile decodes client-side; 401 recovery + logout flow
+- ✅ **RAG Endpoints**: `/api/v1/rag/search`, `/api/v1/rag/spar`, `/api/v1/rag/context-pack`
+- ✅ **Sparring Service**: Retrieve → context pack → grounded LLM response (Claude sonnet-4-6 or GPT-4o fallback)
+- ✅ **Vector Embeddings**: Weaviate Cloud + `generate-embeddings.ts` script for backfill
+- ✅ **Mobile UI**: Auth, RecordScreen, SessionsScreen, ObjectsScreen, SearchScreen, AIQueryScreen, GeofencesScreen
+- ✅ **Object Storage**: AWS S3 (`brain-dump-api` bucket)
+- ✅ **Database**: PostgreSQL on Railway, migrations 001 (base) + 002 (atomic v2 schema)
 
-### Core Features Implemented
-1. **High-Fidelity Voice Intake**: Whisper-v3 for near-instant voice-to-text with streaming support
-2. **User Authentication**: JWT-based auth with secure token storage
-3. **Voice Sessions**: Record, stream, transcribe, and store voice sessions with audio playback
-4. **Atomic Objects**: CRUD operations for categorized atomic objects
-5. **Real-time Transcription**: Live streaming transcription display during recording
-6. **Session History**: Browse past sessions, play audio, view transcripts
+### What's NOT Working / Not Yet Built
+- ⚠️ **Mobile uses old RAG path**: `SearchScreen` → `useSearch` → `/api/v1/search/semantic` (v1 category filters). `AIQueryScreen` → `useAI` → `/api/v1/ai/query` (old `ragService.ts`, inferior context). Neither is wired to the new `/api/v1/rag/*` endpoints or `sparringService.ts`.
+- ⚠️ **Two duplicate RAG systems**: `ragService.ts` (old, GPT-only, `content+category` context) vs `sparringService.ts` (new, Claude/GPT, `title+cleanedText+objectType+domain`, returns themes/gaps/citedIds). Old system should be deleted after mobile is rewired.
+- ✅ **Embedding pipeline confirmed working in prod**: Railway has `OPENAI_API_KEY`, `WEAVIATE_URL`, `WEAVIATE_API_KEY` set. `objectService.createObject()` auto-embeds on every save.
+- ❌ **No embedding retry**: `embedding_status = 'failed'` objects are stranded. Backfill script exists (`generate-embeddings.ts`) but no automated retry.
+- ❌ **Geofencing**: DB models + `GeofencesScreen` exist, but no background location tracking, no geofence evaluation on location change, no push notifications.
+- ❌ **Audio storage**: S3 upload path exists but Deepgram flow bypasses it — audio never hits the backend. Audio is not stored.
+- ❌ **Cross-domain synthesis**: Weekly agentic workflow not implemented.
+- ❌ **E2EE**: Designed, not implemented.
 
-### What's Next (Phase 5+)
-1. **Semantic Memory**: RAG implementation with vector search across atomic objects
-2. **Atomic Object Parsing**: AI-powered splitting of transcripts into categorized atomic objects
-3. **Proactive Triggers**: Geofencing-based context-aware notifications
-4. **Cross-Domain Synthesis**: Weekly agentic workflow for pattern finding
-5. **Zero-UI Enhancements**: Lock screen access, back-tap triggers, background listening
-6. **Advanced AI Features**: Constraint checking, contradiction detection, semantic bridges
+---
 
 ## Architecture
 
-### Tech Stack (Implemented)
-- **Backend API**: Node.js 20+ (TypeScript, Express)
-- **ML Service**: Python 3.11+ (FastAPI) - skeleton ready
-- **Voice Processing**: OpenAI Whisper API (streaming via WebSocket)
-- **Vector Database**: Weaviate (schema initialized)
-- **Relational DB**: PostgreSQL 15+ (with migrations)
-- **Caching**: Redis 7+ (configured)
-- **Object Storage**: MinIO (S3-compatible)
-- **Mobile**: React Native with Expo SDK 54
-- **Navigation**: React Navigation v6
-- **Audio**: expo-audio for recording and playback
+### Tech Stack
+| Layer | Tech |
+|---|---|
+| Mobile | React Native (Expo SDK 54) |
+| Backend API | Node.js/TypeScript (Express) on Railway |
+| ML Service | Python/FastAPI (parsing transcripts → atomic objects) |
+| Relational DB | PostgreSQL on Railway |
+| Vector DB | Weaviate Cloud |
+| Object Storage | AWS S3 (`brain-dump-api` bucket) |
+| Auth | JWT (HS256, stored in SecureStore) |
+| Voice STT | Deepgram (direct WebSocket from mobile, temp token from backend) |
+| LLM (Sparring) | Claude claude-sonnet-4-6 (primary) or GPT-4o (fallback) |
 
-### Key Services
+### Voice Recording Flow
 ```
-Mobile App (React Native)
-  ↓ HTTPS/WSS
-API Gateway (Express)
-  ├─ REST API (auth, objects, geofences, sessions)
-  ├─ WebSocket (/ws/voice - real-time transcription)
-  └─ Services Layer
-      ├─ Voice Session Service (audio streaming management)
-      ├─ Transcription Service (OpenAI Whisper integration)
-      ├─ Storage Service (MinIO for audio files)
-      └─ Database Service (PostgreSQL queries)
-
-Data Stores
-  ├─ PostgreSQL (users, sessions, objects, geofences)
-  ├─ Weaviate (vector embeddings - schema ready)
-  ├─ Redis (sessions, caching)
-  └─ MinIO (audio files)
+RecordScreen
+  → useDeepgramTranscription (NOT useVoice — that hook is unused)
+  → GET /api/v1/voice/deepgram-token      # backend mints temp Deepgram token
+  → Mobile opens WSS to wss://api.deepgram.com
+  → Streams PCM 16kHz audio via ExpoPlayAudioStream
+  → stopRecording() → POST /api/v1/voice/save-transcript
+  → Backend: create session → ML parse → create atomic_objects → session='completed'
 ```
 
-### Data Flow: Voice Recording → Transcription
-1. User taps record button in mobile app
-2. App initiates WebSocket connection to `/ws/voice?token=JWT`
-3. Audio chunks stream from device to backend (PCM 16-bit, 16kHz)
-4. Backend buffers audio, sends to OpenAI Whisper API
-5. Partial transcripts stream back via WebSocket to mobile app
-6. Final transcript saved to database as session
-7. Audio file uploaded to MinIO storage
-8. Mobile app displays real-time transcription and allows playback
-
-## Project Structure
+### RAG / Sparring Flow
 ```
-brain_dump/
-├── backend/
-│   ├── api/                 # Node.js API (IMPLEMENTED)
-│   │   ├── src/
-│   │   │   ├── auth/        # JWT auth + middleware
-│   │   │   ├── db/          # PostgreSQL + Weaviate clients
-│   │   │   ├── models/      # User, Session, AtomicObject, Geofence
-│   │   │   ├── routes/      # auth, objects, geofences, voice
-│   │   │   ├── services/    # transcription, storage, voice sessions
-│   │   │   ├── utils/       # rate limiting, audio validation
-│   │   │   ├── websocket/   # voice WebSocket handler
-│   │   │   └── index.ts     # Express server with WebSocket
-│   │   ├── migrations/      # Database migrations
-│   │   └── package.json
-│   └── ml-service/          # Python ML (SKELETON ONLY)
-│       ├── main.py
-│       └── requirements.txt
-├── mobile/                  # React Native (IMPLEMENTED)
-│   ├── src/
-│   │   ├── components/      # AudioPlayer
-│   │   ├── context/         # AuthContext
-│   │   ├── hooks/           # useVoice, useSessions, useObjects
-│   │   ├── navigation/      # AppNavigator (auth-aware)
-│   │   ├── screens/         # Login, Register, Home, Record, Sessions, Objects
-│   │   ├── services/        # api, websocket
-│   │   └── types/
-│   ├── App.tsx
-│   └── package.json
-├── shared/
-│   └── types/               # TypeScript type definitions
-├── infrastructure/
-│   └── docker/              # Docker Compose (PostgreSQL, Redis, Weaviate, MinIO)
-├── docs/                    # API docs, development guide
-└── plans/                   # Phase tracking, master plan
+User query (mobile or API)
+  → POST /api/v1/rag/spar
+  → sparringService.sparWithContext()
+      → embed query → Weaviate semantic search (with filters)
+      → hydrate full objects from PostgreSQL
+      → buildContextPack() → structured RetrievalContextPack
+      → LLM call (Claude/GPT) with grounded context
+      → SparringResponse { answer, citedIds, themes, hasContradictions, gaps }
 ```
 
-## Technical Debt & Known Issues
-1. **ML Service**: Python FastAPI skeleton exists but not integrated (no atomic object parsing yet)
-2. **Semantic Search**: Weaviate schema ready but no RAG implementation
-3. **Geofencing**: Database models exist but no background location tracking yet
-4. **Atomic Object Parsing**: Transcripts saved as-is, no AI-powered splitting/categorization
-5. **Error Recovery**: WebSocket reconnection logic could be more robust
-6. **Testing**: Unit tests exist but integration test coverage is minimal
-7. **E2EE**: Privacy architecture designed but not implemented
+### Key Routes
+| Route | Description |
+|---|---|
+| `POST /api/v1/voice/deepgram-token` | Mint temp Deepgram token |
+| `POST /api/v1/voice/save-transcript` | Save session + trigger ML parse |
+| `GET /api/v1/voice/sessions` | List user sessions |
+| `GET /api/v1/voice/sessions/:id` | Session detail + transcript |
+| `POST /api/v1/rag/search` | Semantic search with filters |
+| `POST /api/v1/rag/spar` | AI sparring (retrieve + LLM) |
+| `POST /api/v1/rag/context-pack` | Inspect retrieval without LLM |
+| `GET/POST /api/v1/objects` | Atomic object CRUD |
 
-## Performance Metrics (Current)
-- Voice-to-Text Latency: ~2-5 seconds (OpenAI API dependent)
-- WebSocket Connection: Stable with real-time streaming
-- Mobile App: Smooth on iOS/Android via Expo Go
-- Database: Fast queries with proper indexing
+---
 
-## Development Workflow
-```bash
-# Start infrastructure
-cd infrastructure/docker
-docker-compose up -d
+## File Map (Key Files)
 
-# Start backend API
-cd backend/api
-npm install
-npm run dev  # Port 3000
+### Mobile
+- `mobile/src/screens/RecordScreen.tsx` — record UI
+- `mobile/src/hooks/useDeepgramTranscription.ts` — recording + Deepgram + save
+- `mobile/src/services/api.ts` — HTTP client, `AuthError` class
+- `mobile/src/context/AuthContext.tsx` — auth state, `handleAuthError()`
+- `mobile/src/hooks/useSessions.ts` — sessions list
+- `mobile/src/screens/SessionsScreen.tsx` — sessions UI
+- `mobile/src/screens/ObjectsScreen.tsx` — atomic objects browser
+- `mobile/src/screens/SearchScreen.tsx` — semantic search UI
+- `mobile/src/screens/AIQueryScreen.tsx` — AI sparring UI
 
-# Start mobile app
-cd mobile
-npm install
-npm start  # Expo CLI
-```
+### Backend
+- `backend/api/src/routes/voice.ts` — all voice endpoints
+- `backend/api/src/routes/rag.ts` — RAG/sparring endpoints
+- `backend/api/src/routes/objects.ts` — atomic object CRUD
+- `backend/api/src/services/sparringService.ts` — RAG pipeline + LLM
+- `backend/api/src/services/vectorService.ts` — Weaviate semantic search
+- `backend/api/src/services/mlService.ts` — ML service client (parses transcripts)
+- `backend/api/src/services/ragService.ts` — additional RAG utilities
+- `backend/api/src/models/AtomicObject.ts` — AtomicObject DB model
+- `backend/api/src/models/Session.ts` — Session DB model
+- `backend/api/src/auth/jwt.ts` — JWT sign/verify
+- `backend/api/src/auth/middleware.ts` — authenticate middleware
+- `backend/api/src/scripts/generate-embeddings.ts` — backfill embeddings script
 
-## Environment Configuration
-Key environment variables (see .env.example):
-- `DATABASE_URL`: PostgreSQL connection
-- `WEAVIATE_URL`: Vector database
-- `REDIS_URL`: Cache/sessions
-- `MINIO_*`: Object storage credentials
-- `OPENAI_API_KEY`: Whisper + embeddings
-- `JWT_SECRET`: Auth tokens
+---
 
-## Next Phase Focus (Phase 5+)
-The immediate priorities for continued development:
-1. **Atomic Object Parser**: Integrate ML service to split transcripts
-2. **RAG Implementation**: Semantic search and AI sparring
-3. **Geofencing**: Background location tracking + notifications
-4. **Cross-Domain Synthesis**: Weekly pattern analysis agent
-5. **Advanced UI**: Lock screen widgets, back-tap triggers
+## Atomic Object v2 Schema
+New columns on `hub.atomic_objects`:
+- `raw_text`, `cleaned_text`, `title`
+- `object_type`: task | reminder | idea | observation | question | decision | journal | reference
+- `domain`: work | personal | health | family | finance | project | misc | unknown
+- `temporal_has_date`, `temporal_date_text`, `temporal_urgency`
+- `location_places[]`, `location_geofence_candidate`
+- `is_actionable`, `next_action`
+- `linked_object_ids[]`, `sequence_index`
+- `embedding_status`: pending | complete | failed
+- `content` kept for backward compat (set to `cleanedText` on new objects)
 
-## Goals
-- Enable zero-friction capture of thoughts (voice, text, multimodal) ✅
-- Automatically categorize and cross-reference information ⏳ (next phase)
-- Surface relevant information based on context (location, time, behavior) ⏳
-- Provide AI "sparring" capabilities through RAG ⏳
-- Maintain privacy with end-to-end encryption ⏳
+Embedding text: `[title, cleanedText, objectType, domain, tags].join(' ')`
 
-## Success Criteria (Current Phase)
-- ✅ User can register and login
-- ✅ User can record voice and see real-time transcription
-- ✅ Audio is streamed via WebSocket to backend
-- ✅ Transcription appears in real-time
-- ✅ User can view past sessions and playback audio
-- ✅ User can browse atomic objects (basic CRUD)
-- ⏳ Atomic objects automatically extracted from transcripts (next)
-- ⏳ Semantic search across objects (next)
-- ⏳ Geofence-based proactive notifications (next)
+---
+
+## Environment
+- Mobile `.env`: points to Railway production `https://brain-dump-production-895b.up.railway.app`
+- Railway env vars needed: `JWT_SECRET`, `DATABASE_URL`, `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`), `WEAVIATE_*`, `AWS_*`
+- `SPAR_MODEL` env var to override LLM model
+
+---
+
+## What's Next (Priority Order)
+
+### P0 — Close the Loop: Auto-Embedding on Save
+Objects are parsed but embeddings require a manual backfill script. The RAG pipeline is useless without populated vectors.
+- Trigger `generate-embeddings` (or inline embed) when new atomic objects are saved
+- Set `embedding_status = 'complete'` on success, `'failed'` on error
+
+### P1 — Wire Mobile to RAG
+- `SearchScreen` → `POST /api/v1/rag/search`
+- `AIQueryScreen` → `POST /api/v1/rag/spar`
+- Display cited objects inline with AI answer
+
+### P2 — Geofencing + Proactive Triggers
+- Background location tracking in mobile (expo-location)
+- Geofence enter/exit → check relevant atomic objects → push notification
+- Surface location-tagged objects when user is nearby
+
+### P3 — Cross-Domain Synthesis (Weekly Agent)
+- Agentic workflow: scan all objects from past week
+- Identify patterns, contradictions, open questions
+- Generate a "weekly synthesis" session object
+
+### P4 — Zero-UI Enhancements
+- Lock screen access / back-tap trigger for recording
+- Background audio capture (when permitted)

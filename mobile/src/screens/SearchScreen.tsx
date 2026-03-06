@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,72 +11,79 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useSearch } from '../hooks/useSearch';
-import type { AtomicObject, Category } from '@shared/types';
+import { useSearch, ObjectDomain } from '../hooks/useSearch';
+import type { RagSearchResult } from '../services/api';
 
-const CATEGORIES: Category[] = ['Business', 'Personal', 'Fitness', 'Health', 'Family'];
+const DOMAINS: { label: string; value: ObjectDomain }[] = [
+  { label: 'Work', value: 'work' },
+  { label: 'Personal', value: 'personal' },
+  { label: 'Health', value: 'health' },
+  { label: 'Family', value: 'family' },
+  { label: 'Finance', value: 'finance' },
+  { label: 'Project', value: 'project' },
+];
 
 export default function SearchScreen({ navigation }: any) {
   const [query, setQuery] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
+  const [selectedDomains, setSelectedDomains] = useState<ObjectDomain[]>([]);
   const { results, loading, error, search } = useSearch();
 
-  // Debounced search
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (query.trim()) {
-        search(query, { category: selectedCategories });
+        search(query, { domain: selectedDomains.length > 0 ? selectedDomains : undefined });
       }
     }, 300);
-
     return () => clearTimeout(timeoutId);
-  }, [query, selectedCategories]);
+  }, [query, selectedDomains]);
 
-  const toggleCategory = (category: Category) => {
-    setSelectedCategories((prev) =>
-      prev.includes(category)
-        ? prev.filter((c) => c !== category)
-        : [...prev, category]
+  const toggleDomain = (domain: ObjectDomain) => {
+    setSelectedDomains((prev) =>
+      prev.includes(domain) ? prev.filter((d) => d !== domain) : [...prev, domain]
     );
   };
 
   const clearSearch = () => {
     setQuery('');
-    setSelectedCategories([]);
+    setSelectedDomains([]);
   };
 
-  const renderResult = ({ item }: { item: AtomicObject & { _searchScore?: number } }) => (
+  const renderResult = ({ item }: { item: RagSearchResult }) => (
     <TouchableOpacity
       style={styles.resultCard}
-      onPress={() => navigation.navigate('ObjectDetail', { objectId: item.id })}
+      onPress={() => navigation.navigate('ObjectDetail', { objectId: item.objectId })}
     >
       <View style={styles.resultHeader}>
-        <View style={styles.categoryContainer}>
-          {item.category.map((cat) => (
-            <View key={cat} style={[styles.categoryChip, getCategoryColor(cat)]}>
-              <Text style={styles.categoryText}>{cat}</Text>
-            </View>
-          ))}
+        <View style={styles.badgeRow}>
+          <View style={[styles.typeBadge, getTypeStyle(item.type)]}>
+            <Text style={styles.badgeText}>{item.type}</Text>
+          </View>
+          <View style={[styles.domainBadge, getDomainStyle(item.domain)]}>
+            <Text style={styles.badgeText}>{item.domain}</Text>
+          </View>
         </View>
-        {item._searchScore && (
-          <Text style={styles.scoreText}>
-            {Math.round(item._searchScore * 100)}% match
-          </Text>
-        )}
+        <Text style={styles.scoreText}>{Math.round(item.score * 100)}% match</Text>
       </View>
+
+      {item.title && (
+        <Text style={styles.resultTitle} numberOfLines={1}>{item.title}</Text>
+      )}
       <Text style={styles.resultContent} numberOfLines={3}>
-        {item.content}
+        {item.cleanedText}
       </Text>
+
       <View style={styles.resultFooter}>
         <Text style={styles.timestampText}>
-          {new Date(item.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}
+          {new Date(item.createdAt).toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          })}
         </Text>
-        {item.metadata.tags.length > 0 && (
+        {item.tags.length > 0 && (
           <View style={styles.tagsContainer}>
-            {item.metadata.tags.slice(0, 3).map((tag) => (
-              <Text key={tag} style={styles.tagText}>
-                #{tag}
-              </Text>
+            {item.tags.slice(0, 3).map((tag) => (
+              <Text key={tag} style={styles.tagText}>#{tag}</Text>
             ))}
           </View>
         )}
@@ -93,7 +100,6 @@ export default function SearchScreen({ navigation }: any) {
         </View>
       );
     }
-
     if (error) {
       return (
         <View style={styles.emptyState}>
@@ -102,44 +108,35 @@ export default function SearchScreen({ navigation }: any) {
           <Text style={styles.emptyStateText}>{error}</Text>
           <TouchableOpacity
             style={styles.retryButton}
-            onPress={() => query.trim() && search(query, { category: selectedCategories })}
+            onPress={() => query.trim() && search(query, { domain: selectedDomains.length > 0 ? selectedDomains : undefined })}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       );
     }
-
     if (!query.trim()) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="search-outline" size={64} color="#9CA3AF" />
           <Text style={styles.emptyStateTitle}>Search Your Notes</Text>
           <Text style={styles.emptyStateText}>
-            Try searching for "workout", "meetings", or "groceries"
+            Try searching for "workout", "project deadline", or "call Mom"
           </Text>
         </View>
       );
     }
-
-    if (results.length === 0) {
-      return (
-        <View style={styles.emptyState}>
-          <Ionicons name="document-text-outline" size={64} color="#9CA3AF" />
-          <Text style={styles.emptyStateTitle}>No Results Found</Text>
-          <Text style={styles.emptyStateText}>
-            Try different keywords or remove filters
-          </Text>
-        </View>
-      );
-    }
-
-    return null;
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="document-text-outline" size={64} color="#9CA3AF" />
+        <Text style={styles.emptyStateTitle}>No Results Found</Text>
+        <Text style={styles.emptyStateText}>Try different keywords or remove filters</Text>
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Search</Text>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -147,7 +144,6 @@ export default function SearchScreen({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
         <TextInput
@@ -166,39 +162,28 @@ export default function SearchScreen({ navigation }: any) {
         )}
       </View>
 
-      {/* Category Filters */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filtersContainer}
         contentContainerStyle={styles.filtersContent}
       >
-        {CATEGORIES.map((category) => {
-          const isSelected = selectedCategories.includes(category);
+        {DOMAINS.map(({ label, value }) => {
+          const isSelected = selectedDomains.includes(value);
           return (
             <TouchableOpacity
-              key={category}
-              style={[
-                styles.filterChip,
-                isSelected && styles.filterChipSelected,
-                isSelected && getCategoryColor(category),
-              ]}
-              onPress={() => toggleCategory(category)}
+              key={value}
+              style={[styles.filterChip, isSelected && styles.filterChipSelected]}
+              onPress={() => toggleDomain(value)}
             >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  isSelected && styles.filterChipTextSelected,
-                ]}
-              >
-                {category}
+              <Text style={[styles.filterChipText, isSelected && styles.filterChipTextSelected]}>
+                {label}
               </Text>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      {/* Results Count */}
       {results.length > 0 && (
         <View style={styles.resultsCountContainer}>
           <Text style={styles.resultsCountText}>
@@ -207,11 +192,10 @@ export default function SearchScreen({ navigation }: any) {
         </View>
       )}
 
-      {/* Results List */}
       <FlatList
         data={results}
         renderItem={renderResult}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.objectId}
         contentContainerStyle={styles.resultsList}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
@@ -220,22 +204,34 @@ export default function SearchScreen({ navigation }: any) {
   );
 }
 
-function getCategoryColor(category: Category) {
-  const colors: Record<Category, any> = {
-    Business: { backgroundColor: '#DBEAFE', borderColor: '#3B82F6' },
-    Personal: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' },
-    Fitness: { backgroundColor: '#D1FAE5', borderColor: '#10B981' },
-    Health: { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
-    Family: { backgroundColor: '#E9D5FF', borderColor: '#A855F7' },
+function getTypeStyle(type: string) {
+  const map: Record<string, any> = {
+    task:        { backgroundColor: '#DBEAFE', borderColor: '#3B82F6' },
+    reminder:    { backgroundColor: '#FEE2E2', borderColor: '#EF4444' },
+    idea:        { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' },
+    decision:    { backgroundColor: '#D1FAE5', borderColor: '#10B981' },
+    question:    { backgroundColor: '#E9D5FF', borderColor: '#A855F7' },
+    observation: { backgroundColor: '#F3F4F6', borderColor: '#9CA3AF' },
+    journal:     { backgroundColor: '#FDF2F8', borderColor: '#EC4899' },
+    reference:   { backgroundColor: '#ECFDF5', borderColor: '#6EE7B7' },
   };
-  return colors[category] || { backgroundColor: '#F3F4F6', borderColor: '#9CA3AF' };
+  return map[type] ?? { backgroundColor: '#F3F4F6', borderColor: '#9CA3AF' };
+}
+
+function getDomainStyle(domain: string) {
+  const map: Record<string, any> = {
+    work:     { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
+    personal: { backgroundColor: '#FFFBEB', borderColor: '#FCD34D' },
+    health:   { backgroundColor: '#ECFDF5', borderColor: '#6EE7B7' },
+    family:   { backgroundColor: '#F5F3FF', borderColor: '#C4B5FD' },
+    finance:  { backgroundColor: '#FFF7ED', borderColor: '#FDBA74' },
+    project:  { backgroundColor: '#F0F9FF', borderColor: '#7DD3FC' },
+  };
+  return map[domain] ?? { backgroundColor: '#F9FAFB', borderColor: '#E5E7EB' };
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -246,11 +242,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
+  headerTitle: { fontSize: 24, fontWeight: '700', color: '#111827' },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -266,25 +258,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#111827',
-  },
-  clearButton: {
-    marginLeft: 8,
-  },
-  filtersContainer: {
-    marginTop: 16,
-    maxHeight: 50,
-  },
-  filtersContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 4,
-  },
+  searchIcon: { marginRight: 12 },
+  searchInput: { flex: 1, fontSize: 16, color: '#111827' },
+  clearButton: { marginLeft: 8 },
+  filtersContainer: { marginTop: 16, maxHeight: 50 },
+  filtersContent: { paddingHorizontal: 20, paddingVertical: 4 },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -294,31 +272,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
-  filterChipSelected: {
-    borderWidth: 2,
-  },
-  filterChipText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6B7280',
-  },
-  filterChipTextSelected: {
-    fontWeight: '600',
-    color: '#111827',
-  },
-  resultsCountContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  resultsCountText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  resultsList: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
+  filterChipSelected: { backgroundColor: '#EEF2FF', borderColor: '#4F46E5', borderWidth: 2 },
+  filterChipText: { fontSize: 14, fontWeight: '500', color: '#6B7280' },
+  filterChipTextSelected: { fontWeight: '600', color: '#4F46E5' },
+  resultsCountContainer: { paddingHorizontal: 20, paddingVertical: 12 },
+  resultsCountText: { fontSize: 14, color: '#6B7280', fontWeight: '500' },
+  resultsList: { paddingHorizontal: 20, paddingBottom: 20 },
   resultCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -336,53 +295,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  categoryContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    flex: 1,
-  },
-  categoryChip: {
+  badgeRow: { flexDirection: 'row', gap: 6 },
+  typeBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
-    marginRight: 6,
-    marginBottom: 4,
     borderWidth: 1,
   },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
+  domainBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
   },
-  scoreText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  resultContent: {
+  badgeText: { fontSize: 11, fontWeight: '600', color: '#374151' },
+  scoreText: { fontSize: 12, fontWeight: '600', color: '#4F46E5' },
+  resultTitle: {
     fontSize: 15,
-    color: '#374151',
-    lineHeight: 22,
-    marginBottom: 12,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
   },
+  resultContent: { fontSize: 15, color: '#374151', lineHeight: 22, marginBottom: 12 },
   resultFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  timestampText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  tagText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 8,
-  },
+  timestampText: { fontSize: 12, color: '#9CA3AF' },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  tagText: { fontSize: 12, color: '#6B7280', marginLeft: 8 },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -397,12 +339,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  emptyStateText: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+  emptyStateText: { fontSize: 15, color: '#6B7280', textAlign: 'center', lineHeight: 22 },
   retryButton: {
     marginTop: 20,
     paddingHorizontal: 24,
@@ -410,9 +347,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#4F46E5',
     borderRadius: 8,
   },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
+  retryButtonText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
 });

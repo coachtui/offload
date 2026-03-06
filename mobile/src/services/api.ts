@@ -35,6 +35,30 @@ interface ObjectsListResponse {
   offset: number;
 }
 
+export interface RagSearchResult {
+  score: number;
+  objectId: string;
+  title: string | null;
+  cleanedText: string;
+  type: string;
+  domain: string;
+  tags: string[];
+  isActionable: boolean;
+  nextAction: string | null;
+  temporalHints?: { hasDate: boolean; dateText: string | null; urgency: string | null };
+  createdAt: string;
+  sourceTranscriptId: string | null;
+}
+
+export interface SparResponse {
+  answer: string;
+  citedIds: string[];
+  themes: string[];
+  hasContradictions: boolean;
+  gaps: string[];
+  contextPack: any;
+}
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 /**
@@ -262,45 +286,37 @@ class ApiService {
     });
   }
 
-  // Search methods
-  async searchSemantic(query: string, options?: {
-    limit?: number;
-    category?: string[];
-    dateFrom?: string;
-    dateTo?: string;
-    urgency?: string;
-  }): Promise<{ query: string; results: any[]; count: number }> {
-    return this.request('/api/v1/search/semantic', {
+  // RAG methods
+  async ragSearch(query: string, options?: {
+    topK?: number;
+    filters?: {
+      objectType?: string[];
+      domain?: string[];
+      isActionable?: boolean;
+      urgency?: 'low' | 'medium' | 'high';
+      dateFrom?: string;
+      dateTo?: string;
+    };
+  }): Promise<{ query: string; results: RagSearchResult[]; total: number }> {
+    return this.request('/api/v1/rag/search', {
       method: 'POST',
       body: JSON.stringify({ query, ...options }),
     });
   }
 
-  async findSimilar(objectId: string, limit?: number): Promise<{
-    objectId: string; results: any[]; count: number
-  }> {
-    return this.request(`/api/v1/search/similar/${objectId}`, {
-      method: 'POST',
-      body: JSON.stringify({ limit }),
-    });
-  }
-
-  // AI methods
-  async aiQuery(query: string, options?: {
-    contextLimit?: number;
-    category?: string[];
-    conversationHistory?: any[];
-  }): Promise<any> {
-    return this.request('/api/v1/ai/query', {
+  async ragSpar(query: string, options?: {
+    topK?: number;
+    filters?: {
+      objectType?: string[];
+      domain?: string[];
+      isActionable?: boolean;
+      dateFrom?: string;
+      dateTo?: string;
+    };
+  }): Promise<SparResponse> {
+    return this.request('/api/v1/rag/spar', {
       method: 'POST',
       body: JSON.stringify({ query, ...options }),
-    });
-  }
-
-  async checkContradictions(statement: string): Promise<any> {
-    return this.request('/api/v1/ai/check-contradictions', {
-      method: 'POST',
-      body: JSON.stringify({ statement }),
     });
   }
 

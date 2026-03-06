@@ -1,22 +1,21 @@
 import { useState, useCallback } from 'react';
-import { apiService } from '../services/api';
-import type { AtomicObject, Category } from '@shared/types';
+import { apiService, RagSearchResult } from '../services/api';
+
+export type ObjectDomain = 'work' | 'personal' | 'health' | 'family' | 'finance' | 'project';
+export type ObjectType = 'task' | 'reminder' | 'idea' | 'observation' | 'question' | 'decision' | 'journal' | 'reference';
 
 interface SearchOptions {
-  category?: Category[];
+  domain?: ObjectDomain[];
+  objectType?: ObjectType[];
+  isActionable?: boolean;
+  urgency?: 'low' | 'medium' | 'high';
   dateFrom?: Date;
   dateTo?: Date;
-  urgency?: 'low' | 'medium' | 'high';
-  limit?: number;
-}
-
-interface SearchResult extends AtomicObject {
-  _searchScore?: number;
-  _distance?: number;
+  topK?: number;
 }
 
 export function useSearch() {
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<RagSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,35 +29,22 @@ export function useSearch() {
     setError(null);
 
     try {
-      const response = await apiService.searchSemantic(query, {
-        limit: options?.limit || 20,
-        category: options?.category,
-        dateFrom: options?.dateFrom?.toISOString(),
-        dateTo: options?.dateTo?.toISOString(),
-        urgency: options?.urgency,
+      const response = await apiService.ragSearch(query, {
+        topK: options?.topK || 20,
+        filters: {
+          domain: options?.domain,
+          objectType: options?.objectType,
+          isActionable: options?.isActionable,
+          urgency: options?.urgency,
+          dateFrom: options?.dateFrom?.toISOString(),
+          dateTo: options?.dateTo?.toISOString(),
+        },
       });
 
       setResults(response.results || []);
     } catch (err: any) {
       console.error('Search error:', err);
-      setError(err.response?.data?.error || 'Failed to search. Please try again.');
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const findSimilar = useCallback(async (objectId: string, limit?: number) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await apiService.findSimilar(objectId, limit || 5);
-
-      setResults(response.results || []);
-    } catch (err: any) {
-      console.error('Find similar error:', err);
-      setError(err.response?.data?.error || 'Failed to find similar objects.');
+      setError(err.message || 'Failed to search. Please try again.');
       setResults([]);
     } finally {
       setLoading(false);
@@ -75,7 +61,6 @@ export function useSearch() {
     loading,
     error,
     search,
-    findSimilar,
     clearResults,
   };
 }
