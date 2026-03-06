@@ -58,6 +58,9 @@ app.get('/health', async (req, res) => {
   });
 });
 
+// Jobs
+import { startEmbeddingRetryJob } from './jobs/embeddingRetry';
+
 // API routes
 import authRoutes from './routes/auth';
 import objectRoutes from './routes/objects';
@@ -159,4 +162,7 @@ server.listen(PORT, async () => {
   } else {
     console.warn('⚠️  DEEPGRAM_API_KEY not set - voice transcription will not work');
   }
+
+  // Start background jobs
+  startEmbeddingRetryJob();
 });

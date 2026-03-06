@@ -15,7 +15,7 @@
 - ✅ **JWT Auth**: Secure sign/verify with expiry; mobile decodes client-side; 401 recovery + logout flow
 - ✅ **RAG Endpoints**: `/api/v1/rag/search`, `/api/v1/rag/spar`, `/api/v1/rag/context-pack`
 - ✅ **Sparring Service**: Retrieve → context pack → grounded LLM response (Claude sonnet-4-6 or GPT-4o fallback)
-- ✅ **Vector Embeddings**: Auto-embedded on every object save; Weaviate Cloud; backfill script available
+- ✅ **Vector Embeddings**: Auto-embedded on every object save; Weaviate Cloud; backfill script + 5-min auto-retry for `embedding_status = 'failed'` objects
 - ✅ **Mobile wired to new RAG**: `SearchScreen` → `/api/v1/rag/search`, `AIQueryScreen` → `/api/v1/rag/spar`; old duplicate system deleted
 - ✅ **Contradiction detection**: Post-recording, contradictions between new objects and existing ones are detected and surfaced
 - ✅ **Related notes surfacing**: After recording, semantically related existing objects are shown
@@ -24,11 +24,7 @@
 - ✅ **Object Storage**: AWS S3 (`brain-dump-api` bucket)
 - ✅ **Database**: PostgreSQL on Railway, migrations 001 (base) + 002 (atomic v2 schema)
 
-### In Progress
-- 🔧 **WebSocket Voice Path (alternative to Deepgram)**: Infrastructure committed but not yet wired up. Backend handlers/services are in place; `index.ts` not yet updated to mount the WSS, and mobile `useVoice.ts` hook excluded. See "WebSocket Voice Flow" below.
-
 ### What's NOT Working / Not Yet Built
-- ❌ **No embedding retry**: `embedding_status = 'failed'` objects are stranded. Backfill script exists (`generate-embeddings.ts`) but no automated retry.
 - ❌ **Geofencing**: DB models + `GeofencesScreen` exist, but no background location tracking, no geofence evaluation on location change, no push notifications.
 - ❌ **Audio storage**: S3 upload path exists but Deepgram flow bypasses it — audio never hits the backend. Audio is not stored. (The new WebSocket flow via Whisper would fix this — audio goes through backend.)
 - ❌ **Cross-domain synthesis**: Weekly agentic workflow not implemented.
@@ -118,8 +114,7 @@ User query (mobile or API)
 - `mobile/src/screens/ObjectsScreen.tsx` — atomic objects browser
 - `mobile/src/screens/SearchScreen.tsx` — semantic search UI
 - `mobile/src/screens/AIQueryScreen.tsx` — AI sparring UI
-- `mobile/src/services/websocket.ts` — WS client service (connect, send, reconnect, ping)
-- `mobile/src/hooks/useVoice.ts` — WS-based recording hook (NOT committed — needs wiring)
+- `mobile/src/services/websocket.ts` — WS client service (unused — P1.6 skipped)
 
 ### Backend
 - `backend/api/src/routes/voice.ts` — all voice endpoints
@@ -138,7 +133,8 @@ User query (mobile or API)
 - `backend/api/src/models/Session.ts` — Session DB model
 - `backend/api/src/auth/jwt.ts` — JWT sign/verify
 - `backend/api/src/auth/middleware.ts` — authenticate middleware
-- `backend/api/src/scripts/generate-embeddings.ts` — backfill embeddings script
+- `backend/api/src/jobs/embeddingRetry.ts` — auto-retry job for failed embeddings (5-min interval)
+- `backend/api/src/scripts/generate-embeddings.ts` — manual backfill embeddings script
 - `backend/api/db-config.ts` — pg-migrate DB config (moved from migrations/)
 
 ---
@@ -174,11 +170,15 @@ Embedding text: `[title, cleanedText, objectType, domain, tags].join(' ')`
 ### ✅ P1 — Wire Mobile to RAG (DONE)
 ### ✅ P1.5 — Proactive Surfacing: Contradiction Detection + Related Notes + Stale Actionables (DONE)
 
-### P1.6 — Wire WebSocket Voice Path (infrastructure done, needs wiring)
-- Mount WSS in `index.ts` (add `WebSocketServer` + call `setupVoiceWebSocket`)
-- Add `EXPO_PUBLIC_WS_URL` to mobile `.env`
-- Commit `mobile/src/hooks/useVoice.ts` and wire `RecordScreen` to use it instead of `useDeepgramTranscription`
-- Test end-to-end: connect → stream audio → receive partial transcripts → stop → get atomic object
+### ~~P1.6~~ — WebSocket Voice Path — SKIPPED
+Decided not to pursue. Deepgram direct flow works well; WS/Whisper adds complexity for marginal gain. Audio storage can be solved with a simpler presigned S3 upload if needed. Stray infrastructure files (`voiceHandler.ts`, `voiceSessionService.ts`, `transcriptionService.ts`, `websocket.ts`) remain committed but unused.
+
+### ✅ P1.7 — ObjectsScreen Semantic Search + v2 Filters (DONE)
+- Replaced category chips with domain + objectType chip rows
+- Typing activates RAG hybrid mode (shows % match scores via useSearch)
+- Browse mode uses domain/objectType filters against `/api/v1/objects`
+- Cards show title, domain, objectType badges (v2 schema)
+- Backend: `listObjects` + `findByUserId` now accept domain/objectType filters
 
 ### P2 — Geofencing + Proactive Triggers
 - Background location tracking in mobile (expo-location)
@@ -186,9 +186,11 @@ Embedding text: `[title, cleanedText, objectType, domain, tags].join(' ')`
 - Surface location-tagged objects when user is nearby
 - `location_geofence_candidate = true` objects already flagged by ML parser — needs eval engine
 
-### P3 — Embedding Retry
-- Periodic job or on-read retry for `embedding_status = 'failed'` objects
-- Currently stranded; backfill script exists but not automated
+### ✅ P3 — Embedding Retry (DONE)
+- `jobs/embeddingRetry.ts`: `retryFailedEmbeddings()` queries `embedding_status = 'failed'` (batch 50), calls `storeInVector` + `updateEmbeddingStatus`
+- `startEmbeddingRetryJob()` runs every 5 minutes; skips if previous run still in progress
+- Wired into `index.ts` — starts automatically with the server
+- Backfill script still available: `backend/api/src/scripts/generate-embeddings.ts`
 
 ### P4 — Cross-Domain Synthesis (Weekly Agent)
 - Agentic workflow: scan all objects from past week

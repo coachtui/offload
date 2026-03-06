@@ -431,6 +431,20 @@ export class AtomicObjectModel {
   }
 
   /**
+   * Find objects with embedding_status = 'failed', ordered oldest first
+   */
+  static async findFailedEmbeddings(limit: number = 50): Promise<AtomicObjectModel[]> {
+    const rows = await queryMany<AtomicObjectRow>(
+      `SELECT * FROM hub.atomic_objects
+       WHERE embedding_status = 'failed'
+       ORDER BY updated_at ASC
+       LIMIT $1`,
+      [limit]
+    );
+    return rows.map((row) => new AtomicObjectModel(row));
+  }
+
+  /**
    * Find stale actionable objects: is_actionable=true, older than 7 days, no linked resolution
    */
   static async findStaleActionables(userId: string): Promise<AtomicObjectModel[]> {
