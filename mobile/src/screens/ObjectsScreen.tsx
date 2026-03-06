@@ -643,7 +643,7 @@ const styles = StyleSheet.create({
   categoryTag: {
     borderRadius: 4,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   categoryTagText: {
     color: '#fff',
