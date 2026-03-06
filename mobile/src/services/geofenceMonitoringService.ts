@@ -11,7 +11,10 @@
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 // Task name for background geofence monitoring
 const GEOFENCE_TASK_NAME = 'GEOFENCE_MONITORING_TASK';
@@ -305,12 +308,24 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Get count of relevant objects for a geofence
-   * TODO: Integrate with local object cache/database
+   * Get count of relevant objects for a geofence via API
    */
   private async getRelevantObjectCount(geofenceId: string): Promise<number> {
-    // Placeholder - will integrate with local storage
-    return 0;
+    try {
+      const token = await SecureStore.getItemAsync('accessToken');
+      if (!token) return 0;
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) return 0;
+
+      const data = await response.json();
+      return (data.objects?.length as number) || 0;
+    } catch {
+      return 0;
+    }
   }
 
   /**

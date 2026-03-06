@@ -5,7 +5,7 @@
 
 ---
 
-## Current Status (as of 2026-03-06): Phase 5 — RAG Foundation Operational
+## Current Status (as of 2026-03-06): Phase 6 — Proactive Surfacing
 
 ### What's Working
 - ✅ **Backend API** (Node.js/TypeScript on Railway): auth, CRUD, voice, RAG, search, AI routes
@@ -15,15 +15,16 @@
 - ✅ **JWT Auth**: Secure sign/verify with expiry; mobile decodes client-side; 401 recovery + logout flow
 - ✅ **RAG Endpoints**: `/api/v1/rag/search`, `/api/v1/rag/spar`, `/api/v1/rag/context-pack`
 - ✅ **Sparring Service**: Retrieve → context pack → grounded LLM response (Claude sonnet-4-6 or GPT-4o fallback)
-- ✅ **Vector Embeddings**: Weaviate Cloud + `generate-embeddings.ts` script for backfill
+- ✅ **Vector Embeddings**: Auto-embedded on every object save; Weaviate Cloud; backfill script available
+- ✅ **Mobile wired to new RAG**: `SearchScreen` → `/api/v1/rag/search`, `AIQueryScreen` → `/api/v1/rag/spar`; old duplicate system deleted
+- ✅ **Contradiction detection**: Post-recording, contradictions between new objects and existing ones are detected and surfaced
+- ✅ **Related notes surfacing**: After recording, semantically related existing objects are shown
+- ✅ **Stale actionable surfacing**: `GET /api/v1/objects/stale-actionables` — objects with `is_actionable=true`, older than 7 days, no linked resolution; shown as collapsible amber banner in ObjectsScreen
 - ✅ **Mobile UI**: Auth, RecordScreen, SessionsScreen, ObjectsScreen, SearchScreen, AIQueryScreen, GeofencesScreen
 - ✅ **Object Storage**: AWS S3 (`brain-dump-api` bucket)
 - ✅ **Database**: PostgreSQL on Railway, migrations 001 (base) + 002 (atomic v2 schema)
 
 ### What's NOT Working / Not Yet Built
-- ⚠️ **Mobile uses old RAG path**: `SearchScreen` → `useSearch` → `/api/v1/search/semantic` (v1 category filters). `AIQueryScreen` → `useAI` → `/api/v1/ai/query` (old `ragService.ts`, inferior context). Neither is wired to the new `/api/v1/rag/*` endpoints or `sparringService.ts`.
-- ⚠️ **Two duplicate RAG systems**: `ragService.ts` (old, GPT-only, `content+category` context) vs `sparringService.ts` (new, Claude/GPT, `title+cleanedText+objectType+domain`, returns themes/gaps/citedIds). Old system should be deleted after mobile is rewired.
-- ✅ **Embedding pipeline confirmed working in prod**: Railway has `OPENAI_API_KEY`, `WEAVIATE_URL`, `WEAVIATE_API_KEY` set. `objectService.createObject()` auto-embeds on every save.
 - ❌ **No embedding retry**: `embedding_status = 'failed'` objects are stranded. Backfill script exists (`generate-embeddings.ts`) but no automated retry.
 - ❌ **Geofencing**: DB models + `GeofencesScreen` exist, but no background location tracking, no geofence evaluation on location change, no push notifications.
 - ❌ **Audio storage**: S3 upload path exists but Deepgram flow bypasses it — audio never hits the backend. Audio is not stored.
@@ -138,26 +139,25 @@ Embedding text: `[title, cleanedText, objectType, domain, tags].join(' ')`
 
 ## What's Next (Priority Order)
 
-### P0 — Close the Loop: Auto-Embedding on Save
-Objects are parsed but embeddings require a manual backfill script. The RAG pipeline is useless without populated vectors.
-- Trigger `generate-embeddings` (or inline embed) when new atomic objects are saved
-- Set `embedding_status = 'complete'` on success, `'failed'` on error
-
-### P1 — Wire Mobile to RAG
-- `SearchScreen` → `POST /api/v1/rag/search`
-- `AIQueryScreen` → `POST /api/v1/rag/spar`
-- Display cited objects inline with AI answer
+### ✅ P0 — Auto-Embedding on Save (DONE)
+### ✅ P1 — Wire Mobile to RAG (DONE)
+### ✅ P1.5 — Proactive Surfacing: Contradiction Detection + Related Notes + Stale Actionables (DONE)
 
 ### P2 — Geofencing + Proactive Triggers
 - Background location tracking in mobile (expo-location)
 - Geofence enter/exit → check relevant atomic objects → push notification
 - Surface location-tagged objects when user is nearby
+- `location_geofence_candidate = true` objects already flagged by ML parser — needs eval engine
 
-### P3 — Cross-Domain Synthesis (Weekly Agent)
+### P3 — Embedding Retry
+- Periodic job or on-read retry for `embedding_status = 'failed'` objects
+- Currently stranded; backfill script exists but not automated
+
+### P4 — Cross-Domain Synthesis (Weekly Agent)
 - Agentic workflow: scan all objects from past week
 - Identify patterns, contradictions, open questions
 - Generate a "weekly synthesis" session object
 
-### P4 — Zero-UI Enhancements
+### P5 — Zero-UI Enhancements
 - Lock screen access / back-tap trigger for recording
 - Background audio capture (when permitted)

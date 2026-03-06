@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
 import { AtomicObject, Category } from '../types';
@@ -73,6 +74,8 @@ function getUrgencyColor(urgency: 'low' | 'medium' | 'high'): string {
 }
 
 export function ObjectsScreen({ navigation }: Props) {
+  const route = useRoute<RouteProp<RootStackParamList, 'Objects'>>();
+  const geofenceId = route.params?.geofenceId;
   const {
     objects,
     isLoading,
@@ -104,8 +107,18 @@ export function ObjectsScreen({ navigation }: Props) {
   useEffect(() => {
     apiService.getStaleActionables()
       .then(({ objects }) => setStaleObjects(objects))
-      .catch(() => {}); // non-critical, silently ignore
+      .catch(() => {});
   }, []);
+
+  // Geofence context (when navigated from a notification)
+  const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
+
+  useEffect(() => {
+    if (!geofenceId) return;
+    apiService.getGeofenceObjects(geofenceId)
+      .then(({ objects }) => setGeofenceObjects(objects))
+      .catch(() => {});
+  }, [geofenceId]);
 
   const handleSearch = useCallback(() => {
     setFilters({
@@ -203,6 +216,44 @@ export function ObjectsScreen({ navigation }: Props) {
     },
     [handleObjectPress]
   );
+
+  const renderGeofenceContext = useCallback(() => {
+    if (!geofenceId || geofenceObjects.length === 0) return null;
+    return (
+      <View style={styles.geofenceBanner}>
+        <View style={styles.geofenceBannerHeader}>
+          <View style={styles.geofenceDot} />
+          <Text style={styles.geofenceBannerTitle}>
+            At this location ({geofenceObjects.length} note{geofenceObjects.length !== 1 ? 's' : ''})
+          </Text>
+        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.staleCardsRow}
+        >
+          {geofenceObjects.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.staleCard, styles.geofenceCard]}
+              onPress={() => handleObjectPress(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.geofenceCardLabel}>linked</Text>
+              <Text style={styles.staleCardContent} numberOfLines={2}>
+                {item.title || item.content}
+              </Text>
+              {item.actionability?.nextAction ? (
+                <Text style={styles.staleCardAction} numberOfLines={1}>
+                  {item.actionability.nextAction}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }, [geofenceId, geofenceObjects, handleObjectPress]);
 
   const renderStaleBanner = useCallback(() => {
     if (staleObjects.length === 0) return null;
@@ -395,6 +446,9 @@ export function ObjectsScreen({ navigation }: Props) {
       >
         {ALL_CATEGORIES.map(renderCategoryChip)}
       </ScrollView>
+
+      {/* Geofence Context Banner (when navigated from notification) */}
+      {renderGeofenceContext()}
 
       {/* Stale Actionables Banner */}
       {renderStaleBanner()}
@@ -972,6 +1026,42 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     flex: 1,
+  },
+  // Geofence context banner
+  geofenceBanner: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    backgroundColor: '#000d1a',
+    paddingBottom: 12,
+  },
+  geofenceBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  geofenceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#3b82f6',
+  },
+  geofenceBannerTitle: {
+    color: '#3b82f6',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  geofenceCard: {
+    backgroundColor: '#001428',
+    borderColor: '#1a3a5c',
+  },
+  geofenceCardLabel: {
+    color: '#3b82f6',
+    fontSize: 10,
+    fontWeight: '700',
+    marginBottom: 4,
+    textTransform: 'uppercase',
   },
   // Stale actionables
   staleBanner: {

@@ -15,6 +15,7 @@ import CreateGeofenceScreen from '../screens/CreateGeofenceScreen';
 import SearchScreen from '../screens/SearchScreen';
 import AIQueryScreen from '../screens/AIQueryScreen';
 import { RootStackParamList } from './types';
+import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -69,7 +70,7 @@ export function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {isAuthenticated ? <MainStack /> : <AuthStack />}
     </NavigationContainer>
   );

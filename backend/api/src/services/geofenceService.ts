@@ -3,7 +3,8 @@
  */
 
 import { GeofenceModel } from '../models/Geofence';
-import type { Geofence, GeofenceCreateRequest, GeoPoint } from '@shared/types';
+import { AtomicObjectModel } from '../models/AtomicObject';
+import type { Geofence, GeofenceCreateRequest, GeoPoint, AtomicObject } from '@shared/types';
 import { z } from 'zod';
 
 // Validation schemas
@@ -71,24 +72,40 @@ export async function listGeofences(userId: string): Promise<Geofence[]> {
 }
 
 /**
- * Check location against geofences
+ * Check location against geofences, returning active geofences and their associated objects
  */
 export async function checkLocation(
   userId: string,
   location: GeoPoint
 ): Promise<{
   activeGeofences: Geofence[];
-  relevantObjects: any[]; // TODO: Return relevant atomic objects
+  relevantObjects: AtomicObject[];
 }> {
   const activeGeofences = await GeofenceModel.findByLocation(userId, location);
-  
-  // TODO: Get relevant atomic objects for active geofences
-  // This would query atomic objects associated with the geofences
+
+  const objectIds = [...new Set(activeGeofences.flatMap((gf) => gf.associatedObjects))];
+  const objects = objectIds.length > 0 ? await AtomicObjectModel.findByIds(objectIds) : [];
 
   return {
     activeGeofences: activeGeofences.map((gf) => gf.toGeofence()),
-    relevantObjects: [], // Placeholder
+    relevantObjects: objects.map((o) => o.toAtomicObject()),
   };
+}
+
+/**
+ * Get atomic objects associated with a specific geofence
+ */
+export async function getGeofenceObjects(
+  userId: string,
+  geofenceId: string
+): Promise<AtomicObject[]> {
+  const geofence = await GeofenceModel.findById(geofenceId);
+  if (!geofence) throw new Error('Geofence not found');
+  if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  if (geofence.associatedObjects.length === 0) return [];
+  const objects = await AtomicObjectModel.findByIds(geofence.associatedObjects);
+  return objects.map((o) => o.toAtomicObject());
 }
 
 /**

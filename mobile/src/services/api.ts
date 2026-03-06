@@ -282,6 +282,10 @@ class ApiService {
     return this.request('/api/v1/geofences');
   }
 
+  async getGeofenceObjects(geofenceId: string): Promise<{ objects: AtomicObject[] }> {
+    return this.request<{ objects: AtomicObject[] }>(`/api/v1/geofences/${geofenceId}/objects`);
+  }
+
   async createGeofence(data: any): Promise<{ geofence: any }> {
     return this.request('/api/v1/geofences', {
       method: 'POST',

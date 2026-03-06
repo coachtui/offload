@@ -4,9 +4,11 @@ export type RootStackParamList = {
   Home: undefined;
   Record: undefined;
   Sessions: undefined;
-  Objects: undefined;
+  Objects: { geofenceId?: string } | undefined;
   Geofences: undefined;
   CreateGeofence: undefined;
+  Search: undefined;
+  AIQuery: undefined;
 };
 
 declare global {

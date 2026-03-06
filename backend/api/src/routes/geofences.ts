@@ -8,6 +8,7 @@ import {
   getGeofenceById,
   listGeofences,
   checkLocation,
+  getGeofenceObjects,
   updateGeofence,
   deleteGeofence,
 } from '../services/geofenceService';
@@ -39,6 +40,37 @@ router.get('/', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to list geofences',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/geofences/:id/objects
+ * Get atomic objects associated with a geofence (used by background notification task)
+ */
+router.get('/:id/objects', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const objects = await getGeofenceObjects(req.user.id, req.params.id);
+    res.json({ objects });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'Geofence not found') {
+        res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+        return;
+      }
+      if (error.message === 'Unauthorized') {
+        res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+        return;
+      }
+    }
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get geofence objects',
     });
   }
 });
