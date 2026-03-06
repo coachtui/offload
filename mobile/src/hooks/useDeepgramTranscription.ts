@@ -95,8 +95,21 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
       // ── 3. Deepgram token fetch ────────────────────────────────────────
       console.log('[Recording] fetching Deepgram token from backend...');
-      const { token } = await apiService.getDeepgramToken();
-      console.log('[Recording] Deepgram token received, length:', token?.length ?? 0);
+      let token: string;
+      try {
+        const result = await apiService.getDeepgramToken();
+        token = result.token;
+      } catch (err) {
+        // Re-throw with a user-friendly message; preserve the backend detail in the log
+        const detail = err instanceof Error ? err.message : String(err);
+        console.error('[Recording] Deepgram token fetch failed:', detail);
+        throw new Error('Voice service unavailable. Please try again later.');
+      }
+      if (!token) {
+        console.error('[Recording] Deepgram token is empty');
+        throw new Error('Voice service unavailable. Please try again later.');
+      }
+      console.log('[Recording] Deepgram token received, length:', token.length);
 
       // ── 4. Deepgram WebSocket connection ───────────────────────────────
       const deepgramUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true`;

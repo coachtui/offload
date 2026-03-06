@@ -111,9 +111,18 @@ class ApiService {
     }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Request failed' }));
-      console.error(`[ApiService] ${response.status} on ${endpoint}:`, error.message);
-      throw new Error(error.message || `HTTP ${response.status}`);
+      // Accept either { message } or { error } as the human-readable string.
+      // Fall back to the raw text if the body isn't JSON, then to a generic label.
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const body = await response.json();
+        errorMessage = body.message || body.error || errorMessage;
+      } catch {
+        const text = await response.text().catch(() => '');
+        if (text) errorMessage = text.slice(0, 200);
+      }
+      console.error(`[ApiService] ${response.status} on ${endpoint}:`, errorMessage);
+      throw new Error(errorMessage);
     }
 
     return response.json();

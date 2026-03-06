@@ -45,38 +45,53 @@ router.get('/deepgram-token', async (req: Request, res: Response) => {
 
     const apiKey = process.env.DEEPGRAM_API_KEY;
     if (!apiKey) {
-      console.error('[Voice] DEEPGRAM_API_KEY not configured');
-      return res.status(500).json({ error: 'Deepgram not configured' });
+      console.error('[Voice] DEEPGRAM_API_KEY is not set in environment');
+      return res.status(500).json({
+        message: 'DEEPGRAM_API_KEY is missing on the server',
+        code: 'DEEPGRAM_NOT_CONFIGURED',
+      });
     }
 
-    console.log('[Voice] requesting Deepgram temp token (key length:', apiKey.length, ')');
-    const response = await fetch('https://api.deepgram.com/v1/auth/token', {
+    // Correct endpoint: POST /v1/auth/grant  (not /v1/auth/token)
+    // Correct body field: ttl_seconds        (not time_to_live)
+    // Correct response field: access_token   (not token)
+    console.log('[Voice] requesting Deepgram temp token — key length:', apiKey.length);
+    const dgResponse = await fetch('https://api.deepgram.com/v1/auth/grant', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ time_to_live: 60 }),
+      body: JSON.stringify({ ttl_seconds: 120 }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[Voice] Deepgram API error (status:', response.status, '):', errorText);
-      return res.status(500).json({
-        error: 'Failed to get Deepgram token',
-        details: process.env.NODE_ENV === 'development' ? errorText : undefined,
-        status: response.status
+    if (!dgResponse.ok) {
+      const errorText = await dgResponse.text();
+      console.error('[Voice] Deepgram grant returned', dgResponse.status, '—', errorText.slice(0, 200));
+      return res.status(502).json({
+        message: dgResponse.status === 401
+          ? 'Deepgram API key is invalid or unauthorised'
+          : `Deepgram token service error (upstream ${dgResponse.status})`,
+        code: 'DEEPGRAM_UPSTREAM_ERROR',
       });
     }
 
-    const data = await response.json() as { token: string };
-    console.log('[Voice] Deepgram token issued');
-    res.json({ token: data.token });
+    const data = await dgResponse.json() as { access_token: string; expires_in: number };
+    if (!data.access_token) {
+      console.error('[Voice] Deepgram grant response missing access_token:', JSON.stringify(data));
+      return res.status(502).json({
+        message: 'Deepgram returned an unexpected response',
+        code: 'DEEPGRAM_BAD_RESPONSE',
+      });
+    }
+
+    console.log('[Voice] Deepgram token issued — expires_in:', data.expires_in, 's');
+    res.json({ token: data.access_token });
   } catch (error) {
     console.error('[Voice] error getting Deepgram token:', error);
     res.status(500).json({
-      error: 'Failed to get Deepgram token',
       message: error instanceof Error ? error.message : 'Unknown error',
+      code: 'DEEPGRAM_REQUEST_FAILED',
     });
   }
 });
