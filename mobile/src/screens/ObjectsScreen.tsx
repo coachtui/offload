@@ -580,15 +580,16 @@ const styles = StyleSheet.create({
   },
   // Category Filter
   categoryFilter: {
-    maxHeight: 44,
+    maxHeight: 56,
     borderBottomWidth: 1,
     borderBottomColor: '#1a1a1a',
   },
   categoryFilterContent: {
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingVertical: 8,
     gap: 8,
     flexDirection: 'row',
+    alignItems: 'center',
   },
   categoryChip: {
     backgroundColor: '#1a1a1a',
