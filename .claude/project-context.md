@@ -20,12 +20,12 @@
 - ✅ **Contradiction detection**: Post-recording, contradictions between new objects and existing ones are detected and surfaced
 - ✅ **Related notes surfacing**: After recording, semantically related existing objects are shown
 - ✅ **Stale actionable surfacing**: `GET /api/v1/objects/stale-actionables` — objects with `is_actionable=true`, older than 7 days, no linked resolution; shown as collapsible amber banner in ObjectsScreen
-- ✅ **Mobile UI**: Auth, RecordScreen, SessionsScreen, ObjectsScreen, SearchScreen, AIQueryScreen, GeofencesScreen
+- ✅ **Geofencing**: OS-level background monitoring, CRUD, eval engine (pinned objects + ML `location_geofence_candidate`), local push notifications on entry/exit, notification tap → Objects screen
+- ✅ **Mobile UI**: Auth, RecordScreen, SessionsScreen, ObjectsScreen, SearchScreen, AIQueryScreen, GeofencesScreen, CreateGeofenceScreen
 - ✅ **Object Storage**: AWS S3 (`brain-dump-api` bucket)
 - ✅ **Database**: PostgreSQL on Railway, migrations 001 (base) + 002 (atomic v2 schema)
 
 ### What's NOT Working / Not Yet Built
-- ❌ **Geofencing**: DB models + `GeofencesScreen` exist, but no background location tracking, no geofence evaluation on location change, no push notifications.
 - ❌ **Audio storage**: S3 upload path exists but Deepgram flow bypasses it — audio never hits the backend. Audio is not stored. (The new WebSocket flow via Whisper would fix this — audio goes through backend.)
 - ❌ **Cross-domain synthesis**: Weekly agentic workflow not implemented.
 - ❌ **E2EE**: Designed, not implemented.
@@ -180,11 +180,14 @@ Decided not to pursue. Deepgram direct flow works well; WS/Whisper adds complexi
 - Cards show title, domain, objectType badges (v2 schema)
 - Backend: `listObjects` + `findByUserId` now accept domain/objectType filters
 
-### P2 — Geofencing + Proactive Triggers
-- Background location tracking in mobile (expo-location)
-- Geofence enter/exit → check relevant atomic objects → push notification
-- Surface location-tagged objects when user is nearby
-- `location_geofence_candidate = true` objects already flagged by ML parser — needs eval engine
+### ✅ P2 — Geofencing + Proactive Triggers (DONE)
+- OS-level background monitoring: `mobile/src/services/geofenceMonitoringService.ts` (iOS CoreLocation / Android Geofencing API — battery efficient, no continuous GPS)
+- Mobile CRUD: `useGeofences.ts` hook + `GeofencesScreen.tsx` + `CreateGeofenceScreen.tsx` (map interface, radius picker, permission flow)
+- Navigation: CreateGeofence registered in AppNavigator; notification taps → `Objects` screen with `geofenceId` param
+- Notification tap handler wired in `App.tsx` (foreground + cold-start)
+- Eval engine: `getGeofenceObjects` returns pinned `associated_objects` UNION all `location_geofence_candidate = true` user objects (ML-flagged by parser)
+- `type: 'store'` mobile value mapped → `'custom'` at API layer (no migration needed)
+- `ObjectsScreen` already handles `geofenceId` route param → fetches + shows relevant objects
 
 ### ✅ P3 — Embedding Retry (DONE)
 - `jobs/embeddingRetry.ts`: `retryFailedEmbeddings()` queries `embedding_status = 'failed'` (batch 50), calls `storeInVector` + `updateEmbeddingStatus`

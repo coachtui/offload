@@ -431,6 +431,20 @@ export class AtomicObjectModel {
   }
 
   /**
+   * Find objects flagged as geofence candidates for a user
+   */
+  static async findGeofenceCandidates(userId: string): Promise<AtomicObjectModel[]> {
+    const rows = await queryMany<AtomicObjectRow>(
+      `SELECT * FROM hub.atomic_objects
+       WHERE user_id = $1
+         AND location_geofence_candidate = true
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+    return rows.map((row) => new AtomicObjectModel(row));
+  }
+
+  /**
    * Find objects with embedding_status = 'failed', ordered oldest first
    */
   static async findFailedEmbeddings(limit: number = 50): Promise<AtomicObjectModel[]> {

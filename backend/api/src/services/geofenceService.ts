@@ -17,7 +17,7 @@ export const createGeofenceSchema = z.object({
     altitude: z.number().optional(),
   }),
   radius: z.number().positive('Radius must be positive'),
-  type: z.enum(['home', 'work', 'gym', 'custom']),
+  type: z.enum(['home', 'work', 'gym', 'store', 'custom']),
   associatedObjects: z.array(z.string().uuid()).optional(),
   notificationSettings: z.object({
     enabled: z.boolean().optional(),
@@ -40,7 +40,9 @@ export async function createGeofence(
   // Validate input
   createGeofenceSchema.parse(input);
 
-  const geofence = await GeofenceModel.create(userId, input);
+  // 'store' is a mobile-only type; DB constraint allows home/work/gym/custom only
+  const dbInput = { ...input, type: input.type === 'store' ? 'custom' : input.type } as typeof input;
+  const geofence = await GeofenceModel.create(userId, dbInput);
   return geofence.toGeofence();
 }
 
@@ -84,16 +86,23 @@ export async function checkLocation(
   const activeGeofences = await GeofenceModel.findByLocation(userId, location);
 
   const objectIds = [...new Set(activeGeofences.flatMap((gf) => gf.associatedObjects))];
-  const objects = objectIds.length > 0 ? await AtomicObjectModel.findByIds(objectIds) : [];
+  const [pinned, candidates] = await Promise.all([
+    objectIds.length > 0 ? AtomicObjectModel.findByIds(objectIds) : Promise.resolve([]),
+    AtomicObjectModel.findGeofenceCandidates(userId),
+  ]);
+
+  // Merge: pinned objects first, then ML-flagged candidates not already included
+  const pinnedIds = new Set(pinned.map((o) => o.id));
+  const merged = [...pinned, ...candidates.filter((o) => !pinnedIds.has(o.id))];
 
   return {
     activeGeofences: activeGeofences.map((gf) => gf.toGeofence()),
-    relevantObjects: objects.map((o) => o.toAtomicObject()),
+    relevantObjects: merged.map((o) => o.toAtomicObject()),
   };
 }
 
 /**
- * Get atomic objects associated with a specific geofence
+ * Get atomic objects associated with a specific geofence, including ML-flagged candidates
  */
 export async function getGeofenceObjects(
   userId: string,
@@ -103,9 +112,17 @@ export async function getGeofenceObjects(
   if (!geofence) throw new Error('Geofence not found');
   if (geofence.userId !== userId) throw new Error('Unauthorized');
 
-  if (geofence.associatedObjects.length === 0) return [];
-  const objects = await AtomicObjectModel.findByIds(geofence.associatedObjects);
-  return objects.map((o) => o.toAtomicObject());
+  const [pinned, candidates] = await Promise.all([
+    geofence.associatedObjects.length > 0
+      ? AtomicObjectModel.findByIds(geofence.associatedObjects)
+      : Promise.resolve([]),
+    AtomicObjectModel.findGeofenceCandidates(userId),
+  ]);
+
+  // Merge: pinned first, then ML-flagged candidates not already included
+  const pinnedIds = new Set(pinned.map((o) => o.id));
+  const merged = [...pinned, ...candidates.filter((o) => !pinnedIds.has(o.id))];
+  return merged.map((o) => o.toAtomicObject());
 }
 
 /**
