@@ -11,10 +11,10 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "migrate": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down",
+    "migrate": "node --require tsx/cjs ./node_modules/.bin/node-pg-migrate up",
+    "migrate:down": "node --require tsx/cjs ./node_modules/.bin/node-pg-migrate down",
     "migrate:create": "node-pg-migrate create",
-    "migrate:status": "node-pg-migrate status",
+    "migrate:status": "node --require tsx/cjs ./node_modules/.bin/node-pg-migrate status",
     "db:setup": "npm run migrate",
     "generate-embeddings": "tsx src/scripts/generate-embeddings.ts"
   },
