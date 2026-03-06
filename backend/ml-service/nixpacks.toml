@@ -1,10 +1,13 @@
 [phases.setup]
 nixPkgs = ["python310", "ffmpeg"]
 
+[variables]
+PIP_CONSTRAINT = "/app/constraints.txt"
+
 [phases.install]
 cmds = [
   "python -m venv --copies /opt/venv",
-  ". /opt/venv/bin/activate && python -m pip install --upgrade pip setuptools wheel",
+  ". /opt/venv/bin/activate && python -m pip install -U pip 'setuptools<82' wheel",
   ". /opt/venv/bin/activate && pip install -r requirements.txt",
   ". /opt/venv/bin/activate && pip install --no-build-isolation --no-cache-dir openai-whisper==20231117"
 ]
