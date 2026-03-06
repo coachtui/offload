@@ -47,6 +47,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
   const startTimeRef = useRef<number>(0);
   const locationRef = useRef<GeoPoint | undefined>(undefined);
   const finalTranscriptRef = useRef<string>('');
+  const partialTranscriptRef = useRef<string>('');
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Cleanup on unmount
@@ -70,6 +71,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       setState(prev => ({ ...prev, status: 'connecting', error: null }));
       locationRef.current = location;
       finalTranscriptRef.current = '';
+      partialTranscriptRef.current = '';
 
       // ── 1. Auth check ──────────────────────────────────────────────────
       const storedToken = await apiService.getStoredToken();
@@ -146,6 +148,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
             if (transcript) {
               if (isFinal) {
                 finalTranscriptRef.current += (finalTranscriptRef.current ? ' ' : '') + transcript;
+                partialTranscriptRef.current = '';
                 console.log('[Recording] Deepgram final segment, total length:', finalTranscriptRef.current.length);
                 setState(prev => ({
                   ...prev,
@@ -153,6 +156,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
                   partialTranscript: '',
                 }));
               } else {
+                partialTranscriptRef.current = transcript;
                 setState(prev => ({
                   ...prev,
                   partialTranscript: transcript,
@@ -247,15 +251,26 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       console.warn('[Recording] stopMicrophone error (may be normal):', error);
     }
 
-    // Close Deepgram connection
+    // Close Deepgram connection — send CloseStream first so Deepgram flushes
+    // any buffered audio as a final transcript before we disconnect.
     if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'CloseStream' }));
+        console.log('[Recording] sent CloseStream to Deepgram, waiting for flush...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
       wsRef.current.close();
       wsRef.current = null;
       console.log('[Recording] Deepgram WebSocket closed');
     }
 
     const finalDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
-    const transcript = finalTranscriptRef.current;
+    // Combine confirmed final segments with any remaining partial (for short recordings
+    // where Deepgram may not have sent a final result before CloseStream).
+    const partial = partialTranscriptRef.current;
+    const transcript = finalTranscriptRef.current
+      ? finalTranscriptRef.current + (partial ? ' ' + partial : '')
+      : partial;
     console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
 
     setState(prev => ({
@@ -313,6 +328,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       savedObjectIds: [],
     });
     finalTranscriptRef.current = '';
+    partialTranscriptRef.current = '';
   }, []);
 
   return {
