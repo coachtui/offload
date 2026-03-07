@@ -142,6 +142,7 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
+    console.error('[geofences] POST / error:', error);
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to create geofence',
