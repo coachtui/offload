@@ -251,24 +251,27 @@ export function useGeofences(): UseGeofencesResult {
   };
 
   /**
-   * Sync geofences with OS-level monitoring
+   * Sync geofences with OS-level monitoring.
+   *
+   * Builds the full desired set of enabled regions and passes them to
+   * syncRegions() in ONE startGeofencingAsync call. This avoids the bug
+   * where calling startGeofencingAsync one-by-one replaces the previous set,
+   * leaving only the last geofence registered with the OS.
    */
   const syncMonitoring = async (geofencesToSync: Geofence[]): Promise<void> => {
-    console.log('[useGeofences] Syncing monitoring for geofences...');
+    const enabledRegions: GeofenceRegion[] = geofencesToSync
+      .filter(g => g.enabled)
+      .map(g => ({
+        identifier: g.id,
+        latitude: g.location.latitude,
+        longitude: g.location.longitude,
+        radius: g.radius,
+        notifyOnEnter: g.notifyOnEnter,
+        notifyOnExit: g.notifyOnExit,
+      }));
 
-    // Get currently monitored regions
-    const activeRegions = geofenceMonitoringService.getActiveRegions();
-    const activeIds = new Set(activeRegions.map(r => r.identifier));
-
-    // Start monitoring for enabled geofences
-    for (const geofence of geofencesToSync) {
-      if (geofence.enabled && !activeIds.has(geofence.id)) {
-        await startMonitoring(geofence);
-      } else if (!geofence.enabled && activeIds.has(geofence.id)) {
-        await geofenceMonitoringService.stopMonitoringRegion(geofence.id);
-      }
-    }
-
+    console.log(`[useGeofences] Syncing ${enabledRegions.length} enabled region(s) with OS`);
+    await geofenceMonitoringService.syncRegions(enabledRegions);
     console.log('[useGeofences] Monitoring synced');
   };
 

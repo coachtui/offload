@@ -109,7 +109,11 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Register a geofence region for OS-level monitoring
+   * Register a geofence region for OS-level monitoring.
+   *
+   * IMPORTANT: startGeofencingAsync REPLACES the full set of monitored regions
+   * on every call. We must always pass ALL active regions — adding to the map
+   * first and then calling updateActiveRegions() ensures this.
    */
   async startMonitoringRegion(region: GeofenceRegion): Promise<boolean> {
     if (!this.initialized) {
@@ -117,33 +121,26 @@ class GeofenceMonitoringService {
     }
 
     try {
-      console.log(`[GeofenceMonitoring] Starting monitoring for: ${region.identifier}`);
-
       // Check OS limits (iOS: 20, Android: 100)
       const maxRegions = Platform.OS === 'ios' ? 20 : 100;
-      if (this.activeRegions.size >= maxRegions) {
-        console.warn(`[GeofenceMonitoring] Max regions reached (${maxRegions})`);
+      const isUpdate = this.activeRegions.has(region.identifier);
+      if (!isUpdate && this.activeRegions.size >= maxRegions) {
+        console.warn(`[GeofenceMonitoring] Max regions reached (${maxRegions}), cannot add: ${region.identifier}`);
         return false;
       }
 
-      // Register with OS
-      await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, [
-        {
-          identifier: region.identifier,
-          latitude: region.latitude,
-          longitude: region.longitude,
-          radius: region.radius,
-          notifyOnEnter: region.notifyOnEnter,
-          notifyOnExit: region.notifyOnExit,
-        },
-      ]);
-
-      // Track active region
+      // Add/update in map BEFORE calling the OS API so updateActiveRegions
+      // picks up the new region in the full-set call.
       this.activeRegions.set(region.identifier, region);
 
-      console.log(`[GeofenceMonitoring] Now monitoring ${this.activeRegions.size} regions`);
+      // Register ALL active regions in one call (replaces previous set).
+      await this.updateActiveRegions();
+
+      console.log(`[GeofenceMonitoring] Now monitoring ${this.activeRegions.size} region(s): [${Array.from(this.activeRegions.keys()).join(', ')}]`);
       return true;
     } catch (error: any) {
+      // Revert map entry on failure so state stays consistent.
+      this.activeRegions.delete(region.identifier);
       console.error('[GeofenceMonitoring] Error starting monitoring:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       return false;
     }
@@ -193,7 +190,44 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Update active regions (used when removing individual regions)
+   * Sync the full desired set of regions atomically.
+   * Replaces activeRegions map entirely and makes a single startGeofencingAsync call.
+   * Use this for bulk syncs (e.g. on app launch or after fetching geofences from server).
+   */
+  async syncRegions(regions: GeofenceRegion[]): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    // Replace the full in-memory set.
+    this.activeRegions.clear();
+    for (const r of regions) {
+      this.activeRegions.set(r.identifier, r);
+    }
+
+    if (this.activeRegions.size === 0) {
+      try {
+        const isActive = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK_NAME);
+        if (isActive) {
+          await Location.stopGeofencingAsync(GEOFENCE_TASK_NAME);
+          console.log('[GeofenceMonitoring] syncRegions: no enabled regions — stopped geofencing');
+        } else {
+          console.log('[GeofenceMonitoring] syncRegions: no enabled regions, geofencing already inactive');
+        }
+      } catch (e) {
+        console.warn('[GeofenceMonitoring] syncRegions: error stopping geofencing:', e);
+      }
+      return;
+    }
+
+    console.log(`[GeofenceMonitoring] syncRegions: registering ${this.activeRegions.size} region(s): [${Array.from(this.activeRegions.keys()).join(', ')}]`);
+    await this.updateActiveRegions();
+    console.log('[GeofenceMonitoring] syncRegions: complete');
+  }
+
+  /**
+   * Re-register all currently tracked regions with the OS in a single call.
+   * Must be called any time activeRegions changes so the OS set stays consistent.
    */
   private async updateActiveRegions(): Promise<void> {
     if (this.activeRegions.size === 0) return;
@@ -207,8 +241,9 @@ class GeofenceMonitoringService {
       notifyOnExit: r.notifyOnExit,
     }));
 
+    console.log(`[GeofenceMonitoring] updateActiveRegions: calling startGeofencingAsync with ${regions.length} region(s): [${regions.map(r => r.identifier).join(', ')}]`);
     await Location.startGeofencingAsync(GEOFENCE_TASK_NAME, regions);
-    console.log(`[GeofenceMonitoring] Updated monitoring for ${regions.length} regions`);
+    console.log('[GeofenceMonitoring] updateActiveRegions: OS registration complete');
   }
 
   /**
@@ -338,13 +373,20 @@ export type { GeofenceRegion, GeofenceEvent, GeofenceEventCallback };
 // MUST be defined at module level (top-level scope) — Expo requirement.
 // Calling defineTask inside a class method or lazy initializer causes silent failures.
 TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }: any) => {
+  console.log('[GeofenceMonitoring] Background task fired');
+
   if (error) {
-    console.error('[GeofenceMonitoring] Background task error:', error);
+    console.error('[GeofenceMonitoring] Background task error:', JSON.stringify(error));
+    return;
+  }
+
+  if (!data) {
+    console.warn('[GeofenceMonitoring] Background task fired with no data');
     return;
   }
 
   const { eventType, region } = data;
-  console.log('[GeofenceMonitoring] Geofence event:', eventType, region.identifier);
+  console.log(`[GeofenceMonitoring] Event: ${eventType === Location.GeofencingEventType.Enter ? 'ENTER' : 'EXIT'} — region: ${region?.identifier}`);
 
   const event: GeofenceEvent = {
     type: eventType === Location.GeofencingEventType.Enter ? 'enter' : 'exit',
