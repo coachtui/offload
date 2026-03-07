@@ -142,7 +142,6 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
    * Render geofence item
    */
   const renderGeofence = ({ item }: any) => {
-    const isMonitoring = geofenceMonitoringService.isMonitoring(item.id);
     const displayEnabled = pendingToggles[item.id] ?? item.enabled;
 
     return (
@@ -166,7 +165,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
 
         <View style={styles.geofenceStats}>
           <Text style={styles.statText}>
-            {isMonitoring ? '📍 Actively monitoring' : '⏸️ Paused'}
+            {displayEnabled ? '📍 Actively monitoring' : '⏸️ Paused'}
           </Text>
           {item.notifyOnEnter && <Text style={styles.statBadge}>Entry alerts</Text>}
           {item.notifyOnExit && <Text style={styles.statBadge}>Exit alerts</Text>}
