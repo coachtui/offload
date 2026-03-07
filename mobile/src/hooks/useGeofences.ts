@@ -214,7 +214,7 @@ export function useGeofences(): UseGeofencesResult {
       return false;
     }
 
-    const updated = await updateGeofence(id, { ...geofence });
+    const updated = await updateGeofence(id, { ...geofence, enabled: true, notificationSettings: { enabled: true, onEnter: geofence.notifyOnEnter, onExit: geofence.notifyOnExit } } as any);
     if (updated) {
       await startMonitoring(updated);
       return true;
@@ -227,7 +227,7 @@ export function useGeofences(): UseGeofencesResult {
    */
   const disableGeofence = useCallback(async (id: string): Promise<boolean> => {
     await geofenceMonitoringService.stopMonitoringRegion(id);
-    const updated = await updateGeofence(id, { } as any); // Keep other properties
+    const updated = await updateGeofence(id, { notificationSettings: { enabled: false } } as any);
     return updated !== null;
   }, [updateGeofence]);
 

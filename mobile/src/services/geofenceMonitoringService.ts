@@ -174,8 +174,8 @@ class GeofenceMonitoringService {
 
       console.log(`[GeofenceMonitoring] Now monitoring ${this.activeRegions.size} regions`);
       return true;
-    } catch (error) {
-      console.error('[GeofenceMonitoring] Error starting monitoring:', error);
+    } catch (error: any) {
+      console.error('[GeofenceMonitoring] Error starting monitoring:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       return false;
     }
   }
