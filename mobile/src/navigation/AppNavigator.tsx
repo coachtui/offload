@@ -14,6 +14,7 @@ import GeofencesScreen from '../screens/GeofencesScreen';
 import CreateGeofenceScreen from '../screens/CreateGeofenceScreen';
 import SearchScreen from '../screens/SearchScreen';
 import AIQueryScreen from '../screens/AIQueryScreen';
+import SynthesisScreen from '../screens/SynthesisScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -54,6 +55,7 @@ function MainStack() {
       />
       <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="AIQuery" component={AIQueryScreen} />
+      <Stack.Screen name="Synthesis" component={SynthesisScreen} />
     </Stack.Navigator>
   );
 }

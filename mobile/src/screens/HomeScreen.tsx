@@ -113,6 +113,19 @@ export function HomeScreen({ navigation }: Props) {
               Manage location-based reminders
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionCard, styles.synthesisCard]}
+            onPress={() => navigation.navigate('Synthesis')}
+          >
+            <View style={styles.actionIcon}>
+              <Text style={styles.actionIconText}>✨</Text>
+            </View>
+            <Text style={styles.actionTitle}>Weekly Synthesis</Text>
+            <Text style={styles.actionDescription}>
+              AI reflection on patterns, open threads, and insights from your week
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -195,5 +208,9 @@ const styles = StyleSheet.create({
   actionDescription: {
     fontSize: 14,
     color: '#888',
+  },
+  synthesisCard: {
+    borderColor: '#4338ca',
+    backgroundColor: '#0f0e2a',
   },
 });

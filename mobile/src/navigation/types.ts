@@ -9,6 +9,7 @@ export type RootStackParamList = {
   CreateGeofence: undefined;
   Search: undefined;
   AIQuery: undefined;
+  Synthesis: undefined;
 };
 
 declare global {

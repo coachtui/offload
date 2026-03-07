@@ -195,10 +195,15 @@ Decided not to pursue. Deepgram direct flow works well; WS/Whisper adds complexi
 - Wired into `index.ts` — starts automatically with the server
 - Backfill script still available: `backend/api/src/scripts/generate-embeddings.ts`
 
-### P4 — Cross-Domain Synthesis (Weekly Agent)
-- Agentic workflow: scan all objects from past week
-- Identify patterns, contradictions, open questions
-- Generate a "weekly synthesis" session object
+### ✅ P4 — Cross-Domain Synthesis (Weekly Agent) (DONE)
+- `services/synthesisService.ts`: fetches past N days of objects (max 100, actionable-first), builds corpus, calls LLM (Claude/GPT-4o), parses structured response
+- Output: `{ narrative, patterns, openThreads, contradictions, actionableInsights, domainBreakdown, citedIds }`
+- Persisted as `hub.sessions` with `metadata.type = 'synthesis'` — no new table needed
+- Idempotent: returns cached result if synthesis already generated today (unless `?force=true`)
+- `routes/synthesis.ts`: `POST /api/v1/synthesis/weekly` + `GET /api/v1/synthesis`
+- Mobile: `SynthesisScreen.tsx` (narrative, bullets, domain chips, history, refresh button)
+- Mobile: `WeeklySynthesis` type + `triggerWeeklySynthesis()` + `getSyntheses()` in `api.ts`
+- HomeScreen: "Weekly Synthesis" card (indigo accent) navigates to `Synthesis`
 
 ### P5 — Zero-UI Enhancements
 - Lock screen access / back-tap trigger for recording

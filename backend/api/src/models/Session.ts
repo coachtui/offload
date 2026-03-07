@@ -118,6 +118,21 @@ export class Session {
   }
 
   /**
+   * Find synthesis sessions for a user (metadata.type = 'synthesis'), newest first
+   */
+  static async findSyntheses(userId: string, limit = 20): Promise<Session[]> {
+    const rows = await queryMany<SessionRow>(
+      `SELECT * FROM hub.sessions
+       WHERE user_id = $1
+         AND metadata->>'type' = 'synthesis'
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [userId, limit]
+    );
+    return rows.map((row) => new Session(row));
+  }
+
+  /**
    * Create a new session
    */
   static async create(input: SessionCreateInput): Promise<Session> {

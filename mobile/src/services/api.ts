@@ -7,6 +7,22 @@ import {
   AtomicObject,
 } from '../types';
 
+// Synthesis type
+export interface WeeklySynthesis {
+  sessionId: string;
+  generatedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  objectCount: number;
+  domainBreakdown: Record<string, number>;
+  narrative: string;
+  patterns: string[];
+  openThreads: string[];
+  contradictions: string[];
+  actionableInsights: string[];
+  citedIds: string[];
+}
+
 // Backend response types
 interface SessionsListResponse {
   sessions: VoiceSession[];
@@ -369,6 +385,22 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  // Synthesis methods
+  async triggerWeeklySynthesis(options?: {
+    days?: number;
+    force?: boolean;
+  }): Promise<{ synthesis: WeeklySynthesis }> {
+    const params = new URLSearchParams();
+    if (options?.days) params.set('days', String(options.days));
+    if (options?.force) params.set('force', 'true');
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/api/v1/synthesis/weekly${qs}`, { method: 'POST' });
+  }
+
+  async getSyntheses(): Promise<{ syntheses: WeeklySynthesis[] }> {
+    return this.request('/api/v1/synthesis');
   }
 }
 

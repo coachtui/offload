@@ -67,12 +67,14 @@ import objectRoutes from './routes/objects';
 import geofenceRoutes from './routes/geofences';
 import voiceRoutes from './routes/voice';
 import ragRoutes from './routes/rag';
+import synthesisRoutes from './routes/synthesis';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
 app.use('/api/v1/geofences', geofenceRoutes);
 app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/rag', ragRoutes);
+app.use('/api/v1/synthesis', synthesisRoutes);
 
 app.get('/api/v1', (req, res) => {
   res.json({
