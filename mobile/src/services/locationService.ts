@@ -114,11 +114,15 @@ class LocationService {
    * with clear explanation
    */
   async requestBackgroundPermission(): Promise<boolean> {
-    // Must have foreground permission first
+    // Must have foreground permission first — request it if not already granted
     const foreground = await Location.getForegroundPermissionsAsync();
     if (!foreground.granted) {
-      console.log('[Privacy] Cannot request background - foreground not granted');
-      return false;
+      console.log('[Privacy] Requesting foreground before background');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('[Privacy] Foreground denied — cannot request background');
+        return false;
+      }
     }
 
     console.log('[Privacy] Requesting background location for geofence monitoring');

@@ -39,6 +39,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
 
   const [showPrivacyDashboard, setShowPrivacyDashboard] = useState(false);
   const [privacyStats, setPrivacyStats] = useState<any>(null);
+  const [pendingToggles, setPendingToggles] = useState<Record<string, boolean>>({});
 
   /**
    * Load privacy statistics
@@ -61,39 +62,54 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
    * Handle geofence toggle (enable/disable)
    */
   const handleToggle = async (id: string, currentlyEnabled: boolean) => {
-    if (currentlyEnabled) {
-      // Disable
-      const success = await disableGeofence(id);
-      if (success) {
-        Alert.alert('Geofence Disabled', 'Notifications paused for this geofence');
-      }
-    } else {
-      // Enable - check permissions first
-      const canMonitor = await locationService.canMonitorGeofences();
+    // Optimistic update so the switch flips immediately
+    setPendingToggles(prev => ({ ...prev, [id]: !currentlyEnabled }));
 
-      if (!canMonitor.allowed) {
-        Alert.alert(
-          'Permission Required',
-          canMonitor.reason + '\n\nWould you like to enable it now?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Enable',
-              onPress: async () => {
-                const granted = await locationService.requestBackgroundPermission();
-                if (granted) {
-                  await enableGeofence(id);
-                }
-              },
-            },
-          ]
-        );
-      } else {
-        const success = await enableGeofence(id);
+    try {
+      if (currentlyEnabled) {
+        const success = await disableGeofence(id);
+        console.log('[GeofencesScreen] disableGeofence result:', success);
         if (success) {
-          Alert.alert('Geofence Enabled', 'You will be notified when entering this area');
+          Alert.alert('Geofence Disabled', 'Notifications paused for this geofence');
+        } else {
+          setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
+        }
+      } else {
+        const canMonitor = await locationService.canMonitorGeofences();
+
+        if (!canMonitor.allowed) {
+          setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
+          Alert.alert(
+            'Permission Required',
+            canMonitor.reason + '\n\nWould you like to enable it now?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Enable',
+                onPress: async () => {
+                  const granted = await locationService.requestBackgroundPermission();
+                  if (granted) {
+                    setPendingToggles(prev => ({ ...prev, [id]: true }));
+                    const success = await enableGeofence(id);
+                    if (!success) setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
+                  }
+                },
+              },
+            ]
+          );
+        } else {
+          const success = await enableGeofence(id);
+          console.log('[GeofencesScreen] enableGeofence result:', success);
+          if (success) {
+            Alert.alert('Geofence Enabled', 'You will be notified when entering this area');
+          } else {
+            setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
+          }
         }
       }
+    } catch (e) {
+      // Revert on error
+      setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
     }
   };
 
@@ -127,6 +143,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
    */
   const renderGeofence = ({ item }: any) => {
     const isMonitoring = geofenceMonitoringService.isMonitoring(item.id);
+    const displayEnabled = pendingToggles[item.id] ?? item.enabled;
 
     return (
       <View style={styles.geofenceCard}>
@@ -142,8 +159,8 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
           </View>
 
           <Switch
-            value={item.enabled}
-            onValueChange={() => handleToggle(item.id, item.enabled)}
+            value={displayEnabled}
+            onValueChange={() => handleToggle(item.id, displayEnabled)}
           />
         </View>
 
