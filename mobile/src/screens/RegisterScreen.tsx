@@ -66,7 +66,7 @@ export function RegisterScreen({ navigation }: Props) {
     >
       <View style={styles.content}>
         <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join Brain Dump today</Text>
+        <Text style={styles.subtitle}>Join Offload today</Text>
 
         <View style={styles.form}>
           <TextInput

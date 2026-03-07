@@ -49,7 +49,7 @@ export function LoginScreen({ navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Brain Dump</Text>
+        <Text style={styles.title}>Offload</Text>
         <Text style={styles.subtitle}>Sign in to your account</Text>
 
         <View style={styles.form}>

@@ -1,5 +1,5 @@
 /**
- * Shared TypeScript type definitions for Brain Dump Mobile
+ * Shared TypeScript type definitions for Offload Mobile
  * Copied from @shared/types
  */
 
