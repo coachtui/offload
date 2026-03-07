@@ -6,8 +6,15 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://brain-dump-production-895b.up.railway.app"
+      }
+    },
+    "simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
       "ios": {
-        "simulator": false
+        "simulator": true
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://brain-dump-production-895b.up.railway.app"
