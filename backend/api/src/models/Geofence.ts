@@ -161,7 +161,7 @@ export class GeofenceModel {
         associated_objects, notification_enabled, notification_on_enter,
         notification_on_exit, notification_quiet_hours_start, notification_quiet_hours_end
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $10, $11, $12, $13, $14
       )
       RETURNING *`,
       [
@@ -173,7 +173,7 @@ export class GeofenceModel {
         input.center.altitude || null,
         input.radius,
         input.type,
-        input.associatedObjects || [],
+        input.associatedObjects ?? [],
         input.notificationSettings?.enabled || false,
         input.notificationSettings?.onEnter || false,
         input.notificationSettings?.onExit || false,
