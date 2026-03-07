@@ -60,6 +60,7 @@ app.get('/health', async (req, res) => {
 
 // Jobs
 import { startEmbeddingRetryJob } from './jobs/embeddingRetry';
+import { startRetentionJob } from './jobs/retentionJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -167,4 +168,5 @@ server.listen(PORT, async () => {
 
   // Start background jobs
   startEmbeddingRetryJob();
+  startRetentionJob();
 });

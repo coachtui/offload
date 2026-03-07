@@ -73,7 +73,7 @@ router.post('/search', async (req: Request, res: Response) => {
     }
 
     const { query, topK, filters } = validation.data;
-    console.log(`[RAG] search query: "${query.slice(0, 80)}", topK: ${topK}`);
+    console.log(`[RAG] search — userId: ${userId}, queryLen: ${query.length}, topK: ${topK}`);
 
     let searchResults;
     try {
@@ -158,7 +158,7 @@ router.post('/spar', async (req: Request, res: Response) => {
     }
 
     const { query, topK, filters } = validation.data;
-    console.log(`[RAG] spar query: "${query.slice(0, 80)}", topK: ${topK}`);
+    console.log(`[RAG] spar — userId: ${userId}, queryLen: ${query.length}, topK: ${topK}`);
 
     const result = await sparWithContext(userId, query, {
       topK,

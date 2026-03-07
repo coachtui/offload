@@ -3,8 +3,9 @@ The Hub ML Service
 FastAPI service for voice processing, embeddings, and ML tasks
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import os
@@ -19,13 +20,30 @@ app = FastAPI(
 )
 
 # CORS middleware
+_allowed_origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=_allowed_origins if _allowed_origins else [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Service-to-service auth — all non-health routes require X-Service-Key
+_ML_SERVICE_API_KEY = os.getenv("ML_SERVICE_API_KEY")
+
+@app.middleware("http")
+async def verify_service_key(request: Request, call_next):
+    # Health and root endpoints are exempt
+    if request.url.path in ("/health", "/"):
+        return await call_next(request)
+    if not _ML_SERVICE_API_KEY:
+        # Key not configured — allow through but warn (dev mode)
+        return await call_next(request)
+    provided = request.headers.get("X-Service-Key")
+    if provided != _ML_SERVICE_API_KEY:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return await call_next(request)
 
 
 class HealthResponse(BaseModel):

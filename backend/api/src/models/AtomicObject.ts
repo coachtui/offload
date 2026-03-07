@@ -3,6 +3,7 @@
  */
 
 import { query, queryOne, queryMany } from '../db/queries';
+import { deleteFromVector } from '../services/vectorService';
 import type {
   AtomicObject,
   Category,
@@ -56,6 +57,7 @@ export interface AtomicObjectRow {
   embedding_status: EmbeddingStatus;
   created_at: Date;
   updated_at: Date;
+  deleted_at: Date | null;
 }
 
 export class AtomicObjectModel {
@@ -163,7 +165,7 @@ export class AtomicObjectModel {
    */
   static async findById(id: string): Promise<AtomicObjectModel | null> {
     const row = await queryOne<AtomicObjectRow>(
-      'SELECT * FROM hub.atomic_objects WHERE id = $1',
+      'SELECT * FROM hub.atomic_objects WHERE id = $1 AND deleted_at IS NULL',
       [id]
     );
     return row ? new AtomicObjectModel(row) : null;
@@ -175,7 +177,7 @@ export class AtomicObjectModel {
   static async findByIds(ids: string[]): Promise<AtomicObjectModel[]> {
     if (ids.length === 0) return [];
     const rows = await queryMany<AtomicObjectRow>(
-      'SELECT * FROM hub.atomic_objects WHERE id = ANY($1)',
+      'SELECT * FROM hub.atomic_objects WHERE id = ANY($1) AND deleted_at IS NULL',
       [ids]
     );
     // Return in same order as ids array
@@ -198,7 +200,7 @@ export class AtomicObjectModel {
       dateTo?: Date;
     }
   ): Promise<{ objects: AtomicObjectModel[]; total: number }> {
-    let queryText = 'SELECT * FROM hub.atomic_objects WHERE user_id = $1';
+    let queryText = 'SELECT * FROM hub.atomic_objects WHERE user_id = $1 AND deleted_at IS NULL';
     const params: any[] = [userId];
     let paramIndex = 2;
 
@@ -438,6 +440,7 @@ export class AtomicObjectModel {
       `SELECT * FROM hub.atomic_objects
        WHERE user_id = $1
          AND location_geofence_candidate = true
+         AND deleted_at IS NULL
        ORDER BY created_at DESC`,
       [userId]
     );
@@ -451,6 +454,7 @@ export class AtomicObjectModel {
     const rows = await queryMany<AtomicObjectRow>(
       `SELECT * FROM hub.atomic_objects
        WHERE embedding_status = 'failed'
+         AND deleted_at IS NULL
        ORDER BY updated_at ASC
        LIMIT $1`,
       [limit]
@@ -468,6 +472,7 @@ export class AtomicObjectModel {
          AND is_actionable = true
          AND created_at < NOW() - INTERVAL '7 days'
          AND cardinality(linked_object_ids) = 0
+         AND deleted_at IS NULL
        ORDER BY created_at ASC`,
       [userId]
     );
@@ -475,10 +480,41 @@ export class AtomicObjectModel {
   }
 
   /**
-   * Delete atomic object
+   * Soft-delete: marks deleted_at, immediately excluded from all queries.
+   * Hard delete + Weaviate purge happens via retention job after 30 days.
+   */
+  async softDelete(): Promise<void> {
+    await query(
+      'UPDATE hub.atomic_objects SET deleted_at = NOW() WHERE id = $1',
+      [this.id]
+    );
+  }
+
+  /**
+   * Hard delete: removes from PostgreSQL and Weaviate.
+   * Called by the retention job 30 days after soft-delete.
+   * Do NOT call directly from user-facing routes — use softDelete() instead.
    */
   async delete(): Promise<void> {
     await query('DELETE FROM hub.atomic_objects WHERE id = $1', [this.id]);
+    try {
+      await deleteFromVector(this.id);
+    } catch (err: any) {
+      console.warn(`[AtomicObject] Weaviate delete failed for ${this.id}: ${err.message}`);
+    }
+  }
+
+  /**
+   * Find objects soft-deleted more than the given number of days ago (for retention job).
+   */
+  static async findExpiredSoftDeleted(olderThanDays: number = 30): Promise<AtomicObjectModel[]> {
+    const rows = await queryMany<AtomicObjectRow>(
+      `SELECT * FROM hub.atomic_objects
+       WHERE deleted_at IS NOT NULL
+         AND deleted_at < NOW() - ($1 || ' days')::interval`,
+      [olderThanDays]
+    );
+    return rows.map((row) => new AtomicObjectModel(row));
   }
 
   /**

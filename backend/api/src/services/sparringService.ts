@@ -449,7 +449,7 @@ export async function sparWithContext(
   query: string,
   options: SparringOptions = {}
 ): Promise<SparringResponse> {
-  console.log(`[sparringService] Sparring — userId: ${userId}, query: "${query.slice(0, 80)}..."`);
+  console.log(`[sparringService] Sparring — userId: ${userId}, queryLen: ${query.length}`);
 
   const contextPack = await buildContextPack(userId, query, options);
 

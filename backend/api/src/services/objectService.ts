@@ -13,7 +13,6 @@ import { z } from 'zod';
 import {
   storeInVector,
   updateInVector,
-  deleteFromVector,
   semanticSearch,
   findSimilar,
   type SemanticSearchResult,
@@ -233,13 +232,7 @@ export async function deleteObject(userId: string, objectId: string): Promise<vo
   if (!object) throw new Error('Object not found');
   if (object.userId !== userId) throw new Error('Unauthorized');
 
-  await object.delete();
-
-  try {
-    await deleteFromVector(objectId);
-  } catch (error) {
-    console.error('[objectService] Failed to delete from vector database:', error);
-  }
+  await object.softDelete();
 }
 
 /**

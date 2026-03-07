@@ -175,12 +175,11 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
         }
       }
 
-      // Update session as completed — store transcript in metadata for UI retrieval
+      // Update session as completed — transcript not persisted (already parsed into objects)
       await session.update({
         status: 'completed',
         metadata: {
           ...session.metadata,
-          transcript,
           objectIds,
         },
       });
@@ -194,7 +193,6 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
           status: 'failed',
           metadata: {
             ...session.metadata,
-            transcript,
             processingError: processingError instanceof Error ? processingError.message : 'Unknown error',
           },
         });

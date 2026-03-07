@@ -7,6 +7,7 @@ import axios from 'axios';
 import type { ObjectType, ObjectDomain } from '@shared/types';
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+const ML_SERVICE_API_KEY = process.env.ML_SERVICE_API_KEY;
 
 /**
  * Rich parsed atomic object returned by ML service v2
@@ -121,7 +122,10 @@ export async function parseTranscript(
       },
       {
         timeout: 60000,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(ML_SERVICE_API_KEY ? { 'X-Service-Key': ML_SERVICE_API_KEY } : {}),
+        },
       }
     );
 

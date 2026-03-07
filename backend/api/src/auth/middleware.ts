@@ -80,10 +80,8 @@ export async function authenticate(
       console.log(`[Auth] ${req.method} ${req.path} — authenticated userId: ${user.id}`);
       next();
     } catch (error) {
-      // Log token prefix for debugging — never log the full token
-      const tokenPreview = token.length > 10 ? `${token.substring(0, 10)}...` : '(short)';
-      console.error(`[Auth] ${req.method} ${req.path} — token verification failed (prefix: ${tokenPreview}):`,
-        error instanceof Error ? error.message : error);
+      const errorType = error instanceof Error ? error.constructor.name : 'UnknownError';
+      console.error(`[Auth] ${req.method} ${req.path} — token verification failed: ${errorType}`);
       res.status(401).json({
         error: 'UNAUTHORIZED',
         message: error instanceof Error ? error.message : 'Invalid token',
