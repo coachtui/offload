@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Offload",
-    "slug": "offload",
+    "slug": "mobile",
     "scheme": "offload",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -81,6 +81,7 @@
       "eas": {
         "projectId": "6444b92a-4608-4106-8a94-5764a457cb72"
       }
-    }
+    },
+    "owner": "talailima"
   }
 }
