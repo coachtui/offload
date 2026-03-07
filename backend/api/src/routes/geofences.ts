@@ -220,7 +220,18 @@ router.put('/:id', async (req: Request, res: Response) => {
       return;
     }
 
-    const geofence = await updateGeofence(req.user.id, req.params.id, req.body);
+    // Normalize mobile-native shape (same as POST)
+    const raw = req.body;
+    const normalizedBody: any = { ...raw };
+    if (raw.location && !raw.center) normalizedBody.center = raw.location;
+    if (!raw.notificationSettings && (raw.notifyOnEnter !== undefined || raw.notifyOnExit !== undefined)) {
+      normalizedBody.notificationSettings = {
+        enabled: raw.enabled ?? true,
+        onEnter: raw.notifyOnEnter ?? true,
+        onExit: raw.notifyOnExit ?? false,
+      };
+    }
+    const geofence = await updateGeofence(req.user.id, req.params.id, normalizedBody);
     res.json({ geofence });
   } catch (error) {
     if (error instanceof Error) {
