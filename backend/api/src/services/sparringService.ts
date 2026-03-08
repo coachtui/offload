@@ -250,7 +250,7 @@ async function callClaude(
   userMessage: string,
   apiKey: string
 ): Promise<string> {
-  const model = process.env.SPAR_MODEL || 'claude-sonnet-4-6';
+  const model = process.env.CLAUDE_MODEL || process.env.SPAR_MODEL || 'claude-sonnet-4-6';
   const response = await axios.post(
     'https://api.anthropic.com/v1/messages',
     {
