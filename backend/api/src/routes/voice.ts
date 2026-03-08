@@ -9,6 +9,7 @@ import { authenticate } from '../auth/middleware';
 import { parseTranscript, checkMLServiceHealth } from '../services/mlService';
 import { createObject } from '../services/objectService';
 import { Session } from '../models/Session';
+import { resolveObjectPlaces } from '../services/placeService';
 
 const router = Router();
 
@@ -159,6 +160,21 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
               sequenceIndex: parsedObject.sequenceIndex,
             });
             objectIds.push(object.id);
+
+            // Fire-and-forget place resolution for actionable objects mentioning places
+            if (
+              parsedObject.locationHints?.geofenceCandidate &&
+              parsedObject.locationHints?.places?.length > 0
+            ) {
+              resolveObjectPlaces(
+                userId,
+                object.id,
+                parsedObject.locationHints.places,
+                geoLocation
+              ).catch(err =>
+                console.warn('[Voice] Place resolution failed silently for object', object.id, ':', err)
+              );
+            }
           }
         } else {
           // Fallback: create single object with full transcript

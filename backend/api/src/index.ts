@@ -69,6 +69,7 @@ import geofenceRoutes from './routes/geofences';
 import voiceRoutes from './routes/voice';
 import ragRoutes from './routes/rag';
 import synthesisRoutes from './routes/synthesis';
+import placesRoutes from './routes/places';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
@@ -76,6 +77,7 @@ app.use('/api/v1/geofences', geofenceRoutes);
 app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/rag', ragRoutes);
 app.use('/api/v1/synthesis', synthesisRoutes);
+app.use('/api/v1/places', placesRoutes);
 
 app.get('/api/v1', (req, res) => {
   res.json({
@@ -88,6 +90,7 @@ app.get('/api/v1', (req, res) => {
       geofences: '/api/v1/geofences',
       voice: '/api/v1/voice',
       rag: '/api/v1/rag',
+      places: '/api/v1/places',
     },
   });
 });

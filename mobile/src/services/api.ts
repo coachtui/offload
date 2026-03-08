@@ -75,6 +75,28 @@ export interface SparResponse {
   contextPack: any;
 }
 
+export interface Place {
+  id: string;
+  userId: string;
+  rawName: string;
+  normalizedName: string;
+  providerPlaceId: string | null;
+  lat: number;
+  lng: number;
+  radiusMeters: number;
+  category: string | null;
+  confidence: number;
+  userConfirmed: boolean;
+  createdBy: 'manual' | 'inferred';
+  createdAt: string;
+}
+
+export interface PlaceNotifyResponse {
+  cooldown: boolean;
+  objects: AtomicObject[];
+  placeName: string | null;
+}
+
 export interface ConflictItem {
   objectId: string;
   description: string;
@@ -471,6 +493,40 @@ class ApiService {
 
   async getSyntheses(): Promise<{ syntheses: WeeklySynthesis[] }> {
     return this.request('/api/v1/synthesis');
+  }
+
+  // Place Intelligence methods
+
+  async getPlaces(): Promise<{ places: Place[] }> {
+    return this.request('/api/v1/places');
+  }
+
+  async getPlaceObjects(placeId: string): Promise<{ objects: AtomicObject[] }> {
+    return this.request(`/api/v1/places/${placeId}/objects`);
+  }
+
+  /** Called on geofence entry to check cooldown and get active objects. Returns null if cooling down. */
+  async triggerPlaceNotify(placeId: string): Promise<PlaceNotifyResponse> {
+    return this.request(`/api/v1/places/${placeId}/notify`, { method: 'POST' });
+  }
+
+  async markPlaceObjectDone(placeId: string, objectId: string): Promise<void> {
+    await this.request(`/api/v1/places/${placeId}/objects/${objectId}/done`, { method: 'POST' });
+  }
+
+  async dismissPlaceObject(placeId: string, objectId: string): Promise<void> {
+    await this.request(`/api/v1/places/${placeId}/objects/${objectId}/dismiss`, { method: 'POST' });
+  }
+
+  async snoozePlaceObject(placeId: string, objectId: string, until: Date): Promise<void> {
+    await this.request(`/api/v1/places/${placeId}/objects/${objectId}/snooze`, {
+      method: 'POST',
+      body: JSON.stringify({ until: until.toISOString() }),
+    });
+  }
+
+  async unlinkPlaceObject(placeId: string, objectId: string): Promise<void> {
+    await this.request(`/api/v1/places/${placeId}/objects/${objectId}`, { method: 'DELETE' });
   }
 }
 

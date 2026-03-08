@@ -21,6 +21,8 @@ export interface GeofenceRow {
   notification_on_exit: boolean;
   notification_quiet_hours_start: string | null;
   notification_quiet_hours_end: string | null;
+  place_id: string | null;
+  created_by: 'manual' | 'inferred';
   created_at: Date;
   updated_at: Date;
 }
@@ -39,6 +41,8 @@ export class GeofenceModel {
     onExit: boolean;
     quietHours?: { start: string; end: string };
   };
+  placeId: string | null;
+  createdBy: 'manual' | 'inferred';
   createdAt: Date;
   updatedAt: Date;
 
@@ -71,6 +75,8 @@ export class GeofenceModel {
             }
           : undefined,
     };
+    this.placeId = row.place_id ?? null;
+    this.createdBy = row.created_by ?? 'manual';
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
   }
@@ -152,16 +158,17 @@ export class GeofenceModel {
    */
   static async create(
     userId: string,
-    input: GeofenceCreateRequest
+    input: GeofenceCreateRequest & { placeId?: string | null; createdBy?: 'manual' | 'inferred' }
   ): Promise<GeofenceModel> {
     const row = await queryOne<GeofenceRow>(
       `INSERT INTO hub.geofences (
         user_id, name, center_latitude, center_longitude,
         center_accuracy, center_altitude, radius, type,
         associated_objects, notification_enabled, notification_on_enter,
-        notification_on_exit, notification_quiet_hours_start, notification_quiet_hours_end
+        notification_on_exit, notification_quiet_hours_start, notification_quiet_hours_end,
+        place_id, created_by
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $10, $11, $12, $13, $14
+        $1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $10, $11, $12, $13, $14, $15, $16
       )
       RETURNING *`,
       [
@@ -179,6 +186,8 @@ export class GeofenceModel {
         input.notificationSettings?.onExit || false,
         input.notificationSettings?.quietHours?.start || null,
         input.notificationSettings?.quietHours?.end || null,
+        input.placeId ?? null,
+        input.createdBy ?? 'manual',
       ]
     );
 
@@ -347,7 +356,7 @@ export class GeofenceModel {
   /**
    * Convert to shared Geofence type
    */
-  toGeofence(): Geofence {
+  toGeofence(): Geofence & { placeId?: string | null; createdBy?: string } {
     return {
       id: this.id,
       userId: this.userId,
@@ -357,6 +366,8 @@ export class GeofenceModel {
       type: this.type,
       associatedObjects: this.associatedObjects,
       notificationSettings: this.notificationSettings,
+      placeId: this.placeId,
+      createdBy: this.createdBy,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

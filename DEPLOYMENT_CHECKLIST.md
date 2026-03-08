@@ -12,7 +12,7 @@
 1. **Create GitHub Repository**
    ```bash
    # Go to: https://github.com/new
-   # Name: brain-dump
+   # Name: offload
    # Visibility: Public or Private
    # DO NOT initialize with README
    ```
@@ -20,7 +20,7 @@
 2. **Push to GitHub**
    ```bash
    # Replace YOUR_USERNAME with your GitHub username
-   git remote add origin https://github.com/YOUR_USERNAME/brain-dump.git
+   git remote add origin https://github.com/YOUR_USERNAME/offload.git
    git push -u origin main
    ```
 

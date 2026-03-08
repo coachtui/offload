@@ -1,7 +1,7 @@
 # Master Plan: The Hub - Proactive Cognitive Inbox
 
 ## Vision
-Build a "Zero-Friction" brain-dump application that moves beyond passive note-taking. The goal is a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
+Build a "Zero-Friction" offload application that moves beyond passive note-taking. The goal is a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
 
 ## Current Status: Phase 4 Complete ✅
 

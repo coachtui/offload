@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Search: undefined;
   AIQuery: undefined;
   Synthesis: undefined;
+  PlaceSummary: { placeId: string; placeName: string; eventType: 'enter' | 'exit' };
 };
 
 declare global {

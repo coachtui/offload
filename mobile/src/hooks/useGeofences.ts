@@ -3,7 +3,7 @@
  * Handles CRUD operations for geofences with privacy-first approach
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import { geofenceMonitoringService, GeofenceRegion } from '../services/geofenceMonitoringService';
 import { locationService } from '../services/locationService';
@@ -24,6 +24,8 @@ export interface Geofence {
   enabled: boolean;
   quietHoursStart?: string; // HH:MM format
   quietHoursEnd?: string; // HH:MM format
+  placeId?: string;         // Set for inferred places
+  createdBy?: 'manual' | 'inferred';
   createdAt: string;
   updatedAt: string;
 }
@@ -66,6 +68,7 @@ export interface UseGeofencesResult {
 
 export function useGeofences(): UseGeofencesResult {
   const [geofences, setGeofences] = useState<Geofence[]>([]);
+  const geofencesRef = useRef<Geofence[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -160,12 +163,11 @@ export function useGeofences(): UseGeofencesResult {
           notifyOnExit: updatedGeofence.notifyOnExit,
         }));
 
-        setGeofences(prev =>
-          prev.map(g => (g.id === id ? updatedGeofence : g))
-        );
+        const updatedList = geofencesRef.current.map(g => (g.id === id ? updatedGeofence : g));
+        setGeofences(updatedList);
 
-        // Re-sync monitoring
-        await syncMonitoring([updatedGeofence]);
+        // Re-sync monitoring with the full updated list so other geofences aren't dropped
+        await syncMonitoring(updatedList);
 
         console.log('[useGeofences] Geofence updated successfully:', id);
         return updatedGeofence;
@@ -283,6 +285,8 @@ export function useGeofences(): UseGeofencesResult {
       radius: geofence.radius,
       notifyOnEnter: geofence.notifyOnEnter,
       notifyOnExit: geofence.notifyOnExit,
+      quietHoursStart: geofence.quietHoursStart,
+      quietHoursEnd: geofence.quietHoursEnd,
     };
 
     const success = await geofenceMonitoringService.startMonitoringRegion(region);
@@ -320,6 +324,9 @@ export function useGeofences(): UseGeofencesResult {
         radius: g.radius,
         notifyOnEnter: g.notifyOnEnter,
         notifyOnExit: g.notifyOnExit,
+        quietHoursStart: g.quietHoursStart,
+        quietHoursEnd: g.quietHoursEnd,
+        placeId: g.placeId,
       }));
 
     console.log(`[useGeofences] Syncing ${enabledRegions.length} enabled region(s) with OS:`, enabledRegions.map(r => r.identifier));
@@ -377,6 +384,11 @@ export function useGeofences(): UseGeofencesResult {
   const toRad = (deg: number): number => {
     return deg * (Math.PI / 180);
   };
+
+  // Mirror geofences state to ref so stale useCallback closures can read the current list
+  useEffect(() => {
+    geofencesRef.current = geofences;
+  }, [geofences]);
 
   // Load geofences on mount
   useEffect(() => {

@@ -19,7 +19,7 @@
     "generate-embeddings": "tsx src/scripts/generate-embeddings.ts"
   },
   "keywords": [
-    "brain-dump",
+    "offload",
     "cognitive-inbox",
     "voice-notes",
     "knowledge-graph"

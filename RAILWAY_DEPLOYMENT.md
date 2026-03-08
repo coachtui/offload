@@ -1,4 +1,4 @@
-# Deploy The Hub (Brain Dump) to Railway
+# Deploy Offload to Railway
 
 Complete guide to deploying both API and ML services to Railway with AWS S3 storage.
 
@@ -23,7 +23,7 @@ railway login
 2. Sign up/login with GitHub
 3. Click "New Project"
 4. Select "Empty Project"
-5. Name it: "thehub" or "brain-dump"
+5. Name it: "offload" or "thehub"
 
 ### Via CLI:
 ```bash

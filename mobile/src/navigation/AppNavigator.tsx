@@ -16,6 +16,7 @@ import SearchScreen from '../screens/SearchScreen';
 import AIQueryScreen from '../screens/AIQueryScreen';
 import SynthesisScreen from '../screens/SynthesisScreen';
 import ManageGeofenceObjectsScreen from '../screens/ManageGeofenceObjectsScreen';
+import PlaceSummaryScreen from '../screens/PlaceSummaryScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -60,6 +61,11 @@ function MainStack() {
       <Stack.Screen
         name="ManageGeofenceObjects"
         component={ManageGeofenceObjectsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PlaceSummary"
+        component={PlaceSummaryScreen}
         options={{ headerShown: false }}
       />
     </Stack.Navigator>

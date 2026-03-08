@@ -51,6 +51,9 @@ export interface GeofenceRegion {
   radius: number; // meters
   notifyOnEnter: boolean;
   notifyOnExit: boolean;
+  quietHoursStart?: string; // HH:MM — if both set, notifications suppressed in that window
+  quietHoursEnd?: string;   // HH:MM
+  placeId?: string;         // Set for inferred places — routes to PlaceSummaryScreen
 }
 
 export interface GeofenceEvent {
@@ -277,6 +280,7 @@ class GeofenceMonitoringService {
       radius: r.radius,
       notifyOnEnter: r.notifyOnEnter,
       notifyOnExit: r.notifyOnExit,
+      // quietHours fields are metadata only (not passed to OS API, used locally)
     }));
 
     console.log(`[GeofenceMonitoring] updateActiveRegions: calling startGeofencingAsync with ${regions.length} region(s): [${regions.map(r => r.identifier).join(', ')}]`);
@@ -313,60 +317,137 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Show local notification for geofence event
+   * Show local notification for geofence event.
+   *
+   * Inferred places (region.placeId set): calls /places/:id/notify for cooldown check
+   * + bundled objects, then routes to PlaceSummaryScreen.
+   *
+   * Manual geofences: existing behaviour — fetches geofence objects, routes to Objects screen.
    */
   private async showGeofenceNotification(event: GeofenceEvent): Promise<void> {
     console.log('[GeofenceMonitoring] showGeofenceNotification called for:', event.type, event.region.name);
 
     try {
-      // Respect quiet hours
-      if (this.isInQuietHours()) {
+      if (this.isInQuietHours(event.region)) {
         console.log('[GeofenceMonitoring] Skipping notification (quiet hours)');
         return;
       }
 
-      // Fetch linked objects summary (count + top titles)
-      console.log('[GeofenceMonitoring] Fetching linked objects summary...');
-      const { count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
-      console.log(`[GeofenceMonitoring] Linked objects: count=${count} titles=${JSON.stringify(titles)}`);
+      if (event.region.placeId) {
+        await this.showPlaceNotification(event);
+      } else {
+        await this.showManualGeofenceNotification(event);
+      }
+    } catch (error) {
+      console.error('[GeofenceMonitoring] Error showing notification:', error);
+    }
+  }
 
-      const title = event.type === 'enter'
-        ? `📍 Arrived at ${event.region.name}`
-        : `👋 Left ${event.region.name}`;
+  /**
+   * Notification for an inferred place — uses /places/:id/notify (cooldown-aware).
+   */
+  private async showPlaceNotification(event: GeofenceEvent): Promise<void> {
+    const placeId = event.region.placeId!;
 
-      // Build a useful body:
-      //   0 objects → generic prompt
-      //   1–3 objects → show titles inline e.g. "leg day, buy creatine, stretch ankle"
-      //   4+ objects  → show first 2 titles + overflow count e.g. "leg day, buy creatine +2 more"
+    try {
+      const token = await SecureStore.getItemAsync('accessToken');
+      if (!token) {
+        console.warn('[GeofenceMonitoring] No access token — skipping place notification');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/places/${placeId}/notify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok) {
+        console.warn(`[GeofenceMonitoring] Place notify API failed (${response.status})`);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.cooldown) {
+        console.log(`[GeofenceMonitoring] Place ${placeId} in cooldown — suppressing notification`);
+        return;
+      }
+
+      const objects: any[] = data.objects || [];
+      const placeName: string = data.placeName || event.region.name;
+      const count = objects.length;
+
+      const title = `📍 You're at ${placeName}`;
       let body: string;
       if (count === 0) {
         body = 'Tap to view your notes';
-      } else if (count <= 3) {
-        body = titles.join(', ');
+      } else if (count === 1) {
+        const raw: string = objects[0].title || objects[0].content || '';
+        body = raw.length > 60 ? raw.slice(0, 58) + '…' : raw;
       } else {
-        body = `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
+        body = `${count} notes waiting`;
       }
 
-      console.log('[GeofenceMonitoring] Scheduling notification:', title, '|', body);
       const notifId = await Notifications.scheduleNotificationAsync({
         content: {
           title,
           body,
           data: {
+            placeId,
+            placeName,
             geofenceId: event.region.identifier,
-            geofenceName: event.region.name,
             eventType: event.type,
-            screen: 'Objects',
+            screen: 'PlaceSummary',
           },
           sound: true,
         },
-        trigger: null, // Show immediately
+        trigger: null,
       });
 
-      console.log(`[GeofenceMonitoring] Notification scheduled successfully: ${title} (id: ${notifId})`);
+      console.log(`[GeofenceMonitoring] Place notification scheduled: ${title} (id: ${notifId})`);
     } catch (error) {
-      console.error('[GeofenceMonitoring] Error showing notification:', error);
+      console.warn('[GeofenceMonitoring] Error in showPlaceNotification:', error);
     }
+  }
+
+  /**
+   * Notification for a manual geofence — original behaviour.
+   */
+  private async showManualGeofenceNotification(event: GeofenceEvent): Promise<void> {
+    const { count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
+    console.log(`[GeofenceMonitoring] Manual geofence linked objects: count=${count}`);
+
+    const title = event.type === 'enter'
+      ? `📍 Arrived at ${event.region.name}`
+      : `👋 Left ${event.region.name}`;
+
+    let body: string;
+    if (count === 0) {
+      body = 'Tap to view your notes';
+    } else if (count <= 3) {
+      body = titles.join(', ');
+    } else {
+      body = `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
+    }
+
+    console.log('[GeofenceMonitoring] Scheduling manual geofence notification:', title, '|', body);
+    const notifId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: {
+          geofenceId: event.region.identifier,
+          geofenceName: event.region.name,
+          eventType: event.type,
+          screen: 'Objects',
+        },
+        sound: true,
+      },
+      trigger: null,
+    });
+
+    console.log(`[GeofenceMonitoring] Notification scheduled: ${title} (id: ${notifId})`);
   }
 
   /**
@@ -418,19 +499,28 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Respect quiet hours - check if notifications should be shown
+   * Check if current time falls within the geofence's configured quiet hours.
+   * Returns false (no suppression) if quietHoursStart/End are not set.
    */
-  private isInQuietHours(): boolean {
+  private isInQuietHours(region: GeofenceRegion): boolean {
+    if (!region.quietHoursStart || !region.quietHoursEnd) {
+      return false;
+    }
+
     const now = new Date();
-    const hour = now.getHours();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-    // Default quiet hours: 10pm - 8am
-    // TODO: Make this user-configurable
-    const quietStart = 22; // 10pm
-    const quietEnd = 8; // 8am
+    const [startH, startM] = region.quietHoursStart.split(':').map(Number);
+    const [endH, endM] = region.quietHoursEnd.split(':').map(Number);
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
 
-    const inQuietHours = hour >= quietStart || hour < quietEnd;
-    console.log(`[GeofenceMonitoring] Quiet hours check: current hour=${hour}, quiet=${inQuietHours} (${quietStart}:00-${quietEnd}:00)`);
+    // Handle overnight window (e.g. 22:00–08:00)
+    const inQuietHours = startMinutes > endMinutes
+      ? currentMinutes >= startMinutes || currentMinutes < endMinutes
+      : currentMinutes >= startMinutes && currentMinutes < endMinutes;
+
+    console.log(`[GeofenceMonitoring] Quiet hours check: ${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}, window=${region.quietHoursStart}-${region.quietHoursEnd}, quiet=${inQuietHours}`);
     return inQuietHours;
   }
 

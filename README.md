@@ -1,6 +1,6 @@
 # The Hub - Proactive Cognitive Inbox
 
-> A Zero-Friction brain-dump application that transforms passive note-taking into an active, context-aware second brain.
+> A Zero-Friction offload application that transforms passive note-taking into an active, context-aware second brain.
 
 ## 🎯 Vision
 

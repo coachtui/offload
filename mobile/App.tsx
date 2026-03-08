@@ -18,6 +18,22 @@ async function checkForUpdate() {
   }
 }
 
+function handleNotificationData(data: any) {
+  if (!navigationRef.isReady()) return;
+
+  if (data?.screen === 'PlaceSummary' && data?.placeId) {
+    console.log('[App] Navigating to PlaceSummary:', data.placeId);
+    navigationRef.navigate('PlaceSummary', {
+      placeId: data.placeId,
+      placeName: data.placeName || 'This place',
+      eventType: data.eventType === 'exit' ? 'exit' : 'enter',
+    });
+  } else if (data?.screen === 'Objects' && data?.geofenceId) {
+    console.log('[App] Navigating to Objects with geofenceId:', data.geofenceId);
+    navigationRef.navigate('Objects', { geofenceId: data.geofenceId });
+  }
+}
+
 export default function App() {
   useEffect(() => {
     if (!__DEV__) checkForUpdate();
@@ -26,11 +42,7 @@ export default function App() {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
       console.log('[App] Notification tapped:', data);
-
-      if (data?.screen === 'Objects' && data?.geofenceId && navigationRef.isReady()) {
-        console.log('[App] Navigating to Objects screen with geofenceId:', data.geofenceId);
-        navigationRef.navigate('Objects', { geofenceId: data.geofenceId });
-      }
+      handleNotificationData(data);
     });
 
     // Handle cold-start via notification tap
@@ -38,11 +50,7 @@ export default function App() {
       if (!response) return;
       const data = response.notification.request.content.data as any;
       console.log('[App] Cold start with notification:', data);
-
-      if (data?.screen === 'Objects' && data?.geofenceId && navigationRef.isReady()) {
-        console.log('[App] Navigating to Objects screen with geofenceId:', data.geofenceId);
-        navigationRef.navigate('Objects', { geofenceId: data.geofenceId });
-      }
+      handleNotificationData(data);
     });
 
     return () => subscription.remove();

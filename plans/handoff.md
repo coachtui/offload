@@ -62,8 +62,8 @@ All core features are implemented and working end-to-end on the preview build.
 ### Current Mobile Build
 - Build ID: `1af667db` — commit `6a5e4c8`
 - Fingerprint: `9ee0cdd` (iOS + Android match — OTA compatible)
-- **TODO:** Run `eas build --profile preview --platform ios` to bake in eager `checkForUpdate()` (added to `App.tsx` in commit `bdedb29`)
-- After that new build, OTA updates apply in a single relaunch
+- New build installed (2026-03-08) — includes all sparring fixes + eager `checkForUpdate()` in App.tsx
+- OTA updates now apply in a single relaunch ✅
 
 ---
 
