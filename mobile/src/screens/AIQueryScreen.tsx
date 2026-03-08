@@ -106,10 +106,7 @@ export default function AIQueryScreen({ navigation }: any) {
           <TouchableOpacity
             key={question}
             style={styles.exampleQuestionChip}
-            onPress={() => {
-              setInputText(question);
-              handleSend();
-            }}
+            onPress={() => askQuestion(question)}
           >
             <Text style={styles.exampleQuestionText}>{question}</Text>
           </TouchableOpacity>
