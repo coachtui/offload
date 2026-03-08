@@ -111,7 +111,7 @@ router.post('/search', async (req: Request, res: Response) => {
       .map((obj) => {
         const atom = obj.toAtomicObject();
         return {
-          score: scoreMap.get(obj.id) ?? 0,
+          score: Number(scoreMap.get(obj.id) ?? 0),
           objectId: obj.id,
           title: atom.title ?? null,
           cleanedText: atom.cleanedText ?? atom.content,

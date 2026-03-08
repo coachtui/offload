@@ -113,7 +113,7 @@ export async function buildContextPack(
   const retrieved: RetrievedNote[] = atomicObjects
     .map((obj) => ({
       objectId: obj.id,
-      score: scoreMap.get(obj.id) ?? 0,
+      score: Number(scoreMap.get(obj.id) ?? 0),
       title: obj.title ?? null,
       cleanedText: obj.cleanedText ?? obj.content,
       rawText: obj.rawText ?? null,
