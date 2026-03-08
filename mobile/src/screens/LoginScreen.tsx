@@ -49,14 +49,14 @@ export function LoginScreen({ navigation }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Offload</Text>
-        <Text style={styles.subtitle}>Sign in to your account</Text>
+        <Text style={styles.brand}>Offload</Text>
+        <Text style={styles.subtitle}>Sign in to continue</Text>
 
         <View style={styles.form}>
           <TextInput
             style={styles.input}
             placeholder="Email"
-            placeholderTextColor="#666"
+            placeholderTextColor="#9CA3AF"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
@@ -67,7 +67,7 @@ export function LoginScreen({ navigation }: Props) {
           <TextInput
             style={styles.input}
             placeholder="Password"
-            placeholderTextColor="#666"
+            placeholderTextColor="#9CA3AF"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -92,7 +92,8 @@ export function LoginScreen({ navigation }: Props) {
             disabled={isLoading}
           >
             <Text style={styles.linkText}>
-              Don't have an account? <Text style={styles.linkTextBold}>Sign up</Text>
+              No account?{' '}
+              <Text style={styles.linkTextBold}>Sign up</Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -104,47 +105,48 @@ export function LoginScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 32,
   },
-  title: {
+  brand: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#111827',
     textAlign: 'center',
+    letterSpacing: -0.5,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#888',
+    fontSize: 15,
+    color: '#6B7280',
     textAlign: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
   },
   form: {
-    gap: 16,
+    gap: 12,
   },
   input: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#fff',
-    borderWidth: 1,
-    borderColor: '#333',
+    color: '#111827',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
   },
   button: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#111827',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   buttonText: {
     color: '#fff',
@@ -156,11 +158,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   linkText: {
-    color: '#888',
+    color: '#6B7280',
     fontSize: 14,
   },
   linkTextBold: {
-    color: '#3b82f6',
+    color: '#111827',
     fontWeight: '600',
   },
 });
