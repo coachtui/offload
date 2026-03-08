@@ -1,11 +1,11 @@
 # Project Context: The Hub - Proactive Cognitive Inbox
 
 ## Project Overview
-"The Hub" is a **Zero-Friction** brain-dump application — a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, time, and past behavior).
+"The Hub" is a **Zero-Friction** offload application — a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, time, and past behavior).
 
 ---
 
-## Current Status (as of 2026-03-06): Phase 6 — Proactive Surfacing
+## Current Status (as of 2026-03-08): Phase 6 Complete — AI Sparring Working ✅
 
 ### What's Working
 - ✅ **Backend API** (Node.js/TypeScript on Railway): auth, CRUD, voice, RAG, search, AI routes
@@ -181,6 +181,10 @@ Decided not to pursue. Deepgram direct flow works well; WS/Whisper adds complexi
 - Backend: `listObjects` + `findByUserId` now accept domain/objectType filters
 
 ### ✅ P2 — Geofencing + Proactive Triggers (DONE)
+- **Geofence-objects join table** (migration 004): `ManageGeofenceObjectsScreen`, backend model/route/service for many-to-many linking
+- **AI Sparring fixes (2026-03-08)**: `gaps` type mismatch (`string|null` not `string[]`) was crashing app; fetch timeout added (90s for /spar); example chips fixed; `App.tsx` eager OTA check added
+
+### ✅ P2 — Geofencing + Proactive Triggers (DONE) — original notes:
 - OS-level background monitoring: `mobile/src/services/geofenceMonitoringService.ts` (iOS CoreLocation / Android Geofencing API — battery efficient, no continuous GPS)
 - Mobile CRUD: `useGeofences.ts` hook + `GeofencesScreen.tsx` + `CreateGeofenceScreen.tsx` (map interface, radius picker, permission flow)
 - Navigation: CreateGeofence registered in AppNavigator; notification taps → `Objects` screen with `geofenceId` param
