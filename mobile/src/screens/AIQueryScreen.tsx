@@ -61,12 +61,10 @@ export default function AIQueryScreen({ navigation }: any) {
           )}
 
           {/* Gaps */}
-          {item.gaps && item.gaps.length > 0 && (
+          {item.gaps && (
             <View style={styles.metaSection}>
               <Text style={styles.metaLabel}>Gaps in your notes</Text>
-              {item.gaps.map((gap, i) => (
-                <Text key={i} style={styles.gapText}>· {gap}</Text>
-              ))}
+              <Text style={styles.gapText}>{item.gaps}</Text>
             </View>
           )}
 

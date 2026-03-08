@@ -71,7 +71,7 @@ export interface SparResponse {
   citedIds: string[];
   themes: string[];
   hasContradictions: boolean;
-  gaps: string[];
+  gaps: string | null;
   contextPack: any;
 }
 

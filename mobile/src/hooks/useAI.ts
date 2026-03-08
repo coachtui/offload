@@ -6,7 +6,7 @@ export interface AIMessage {
   role: 'user' | 'assistant';
   content: string;
   themes?: string[];
-  gaps?: string[];
+  gaps?: string | null;
   citedIds?: string[];
   hasContradictions?: boolean;
   timestamp: Date;
