@@ -16,7 +16,7 @@ import { useSessions } from '../hooks/useSessions';
 import { VoiceSession } from '../types';
 import { AudioPlayer } from '../components/AudioPlayer';
 
-type SessionsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Sessions'>;
+type SessionsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'History'>;
 
 interface Props {
   navigation: SessionsScreenNavigationProp;
@@ -52,7 +52,7 @@ function getStatusColor(status: VoiceSession['status']): string {
     case 'failed':
       return '#ef4444';
     default:
-      return '#666';
+      return '#D1D5DB';
   }
 }
 
@@ -114,7 +114,7 @@ export function SessionsScreen({ navigation }: Props) {
         <TouchableOpacity
           style={styles.sessionCard}
           onPress={() => handleSessionPress(item)}
-          activeOpacity={0.7}
+          activeOpacity={0.72}
         >
           <View style={styles.cardHeader}>
             <View style={styles.statusContainer}>
@@ -129,15 +129,14 @@ export function SessionsScreen({ navigation }: Props) {
               {transcript}
             </Text>
           ) : (
-            <Text style={styles.noTranscript}>No transcript available</Text>
+            <Text style={styles.noTranscript}>No text available</Text>
           )}
 
-          <View style={styles.cardFooter}>
-            {sessionDuration ? (
+          {sessionDuration ? (
+            <View style={styles.cardFooter}>
               <Text style={styles.durationText}>{formatDuration(sessionDuration)}</Text>
-            ) : null}
-            <Text style={styles.deviceText}>{item.deviceId}</Text>
-          </View>
+            </View>
+          ) : null}
         </TouchableOpacity>
       );
     },
@@ -150,9 +149,9 @@ export function SessionsScreen({ navigation }: Props) {
     return (
       <View style={styles.emptyState}>
         <Text style={styles.emptyStateIcon}>📝</Text>
-        <Text style={styles.emptyStateTitle}>No Sessions Yet</Text>
+        <Text style={styles.emptyStateTitle}>Nothing captured yet</Text>
         <Text style={styles.emptyStateText}>
-          Your voice recording sessions will appear here
+          Your captured thoughts will appear here
         </Text>
       </View>
     );
@@ -186,14 +185,13 @@ export function SessionsScreen({ navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Sessions</Text>
+        <Text style={styles.title}>History</Text>
         <View style={styles.headerRight} />
       </View>
 
       {isLoading && sessions.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>Loading sessions...</Text>
         </View>
       ) : error && sessions.length === 0 ? (
         renderError()
@@ -229,7 +227,7 @@ export function SessionsScreen({ navigation }: Props) {
             <TouchableOpacity onPress={handleCloseModal}>
               <Text style={styles.modalCloseButton}>Close</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Session Details</Text>
+            <Text style={styles.modalTitle}>Note Details</Text>
             <View style={styles.headerRight} />
           </View>
 
@@ -264,11 +262,6 @@ export function SessionsScreen({ navigation }: Props) {
                 </View>
               )}
 
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Device</Text>
-                <Text style={styles.detailValue}>{selectedSession.deviceId}</Text>
-              </View>
-
               {selectedSession.status === 'completed' && (
                 <View style={styles.audioSection}>
                   <Text style={styles.sectionTitle}>Audio</Text>
@@ -287,7 +280,7 @@ export function SessionsScreen({ navigation }: Props) {
                 {currentTranscript ? (
                   <Text style={styles.transcriptText}>{currentTranscript}</Text>
                 ) : (
-                  <Text style={styles.noTranscriptText}>No transcript available</Text>
+                  <Text style={styles.noTranscriptText}>No text available</Text>
                 )}
               </View>
             </View>
@@ -301,7 +294,7 @@ export function SessionsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#F9FAFB',
   },
   header: {
     flexDirection: 'row',
@@ -309,8 +302,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: '#E5E7EB',
   },
   backButton: {
     color: '#3b82f6',
@@ -319,7 +313,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
   },
   headerRight: {
     width: 50,
@@ -329,11 +323,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 12,
-    color: '#666',
-    fontSize: 14,
-  },
   listContent: {
     padding: 16,
   },
@@ -341,10 +330,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sessionCard: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -364,37 +360,32 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
-    color: '#888',
+    color: '#6B7280',
     textTransform: 'capitalize',
   },
   dateText: {
     fontSize: 12,
-    color: '#666',
+    color: '#9CA3AF',
   },
   transcriptPreview: {
     fontSize: 14,
-    color: '#fff',
+    color: '#374151',
     lineHeight: 20,
     marginBottom: 8,
   },
   noTranscript: {
     fontSize: 14,
-    color: '#666',
+    color: '#9CA3AF',
     fontStyle: 'italic',
     marginBottom: 8,
   },
   cardFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   durationText: {
     fontSize: 12,
-    color: '#888',
-  },
-  deviceText: {
-    fontSize: 10,
-    color: '#444',
+    color: '#9CA3AF',
   },
   emptyState: {
     flex: 1,
@@ -409,12 +400,12 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: '#666',
+    color: '#6B7280',
     textAlign: 'center',
   },
   loadingFooter: {
@@ -450,7 +441,7 @@ const styles = StyleSheet.create({
   // Modal styles
   modalContainer: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#F9FAFB',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -458,8 +449,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: '#E5E7EB',
   },
   modalCloseButton: {
     color: '#3b82f6',
@@ -468,7 +460,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
   },
   modalLoading: {
     flex: 1,
@@ -485,15 +477,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    borderBottomColor: '#F3F4F6',
   },
   detailLabel: {
     fontSize: 14,
-    color: '#888',
+    color: '#6B7280',
   },
   detailValue: {
     fontSize: 14,
-    color: '#fff',
+    color: '#111827',
   },
   audioSection: {
     marginTop: 24,
@@ -501,12 +493,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
     marginBottom: 12,
   },
   noAudioText: {
     fontSize: 14,
-    color: '#666',
+    color: '#9CA3AF',
     fontStyle: 'italic',
   },
   transcriptSection: {
@@ -515,12 +507,12 @@ const styles = StyleSheet.create({
   },
   transcriptText: {
     fontSize: 14,
-    color: '#fff',
+    color: '#374151',
     lineHeight: 22,
   },
   noTranscriptText: {
     fontSize: 14,
-    color: '#666',
+    color: '#9CA3AF',
     fontStyle: 'italic',
   },
 });

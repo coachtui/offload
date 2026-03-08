@@ -220,8 +220,8 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       }
 
       Alert.alert(
-        'Geofence Created',
-        `"${geofence.name}" has been created${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
+        'Reminder saved',
+        `"${geofence.name}" has been saved${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
@@ -282,7 +282,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Create Geofence</Text>
+          <Text style={styles.headerTitle}>New Reminder</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancelText}>Cancel</Text>
@@ -463,7 +463,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           {loading ? (
             <ActivityIndicator color="#FFF" />
           ) : (
-            <Text style={styles.createButtonText}>Create Geofence</Text>
+            <Text style={styles.createButtonText}>Save Reminder</Text>
           )}
         </TouchableOpacity>
       </ScrollView>

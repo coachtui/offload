@@ -94,9 +94,9 @@ export default function AIQueryScreen({ navigation }: any) {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="chatbubbles-outline" size={80} color="#C7D2FE" />
-      <Text style={styles.emptyStateTitle}>AI Assistant</Text>
+      <Text style={styles.emptyStateTitle}>Chat</Text>
       <Text style={styles.emptyStateText}>
-        Ask me anything about your voice notes!
+        Ask anything about your notes.
       </Text>
       <View style={styles.exampleQuestionsContainer}>
         <Text style={styles.exampleQuestionsTitle}>Try asking:</Text>
@@ -121,7 +121,7 @@ export default function AIQueryScreen({ navigation }: any) {
           <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>AI Assistant</Text>
+          <Text style={styles.headerTitle}>Chat</Text>
           <Text style={styles.headerSubtitle}>
             {messages.length === 0 ? 'Ask me anything' : `${messages.length} messages`}
           </Text>
@@ -198,10 +198,10 @@ export default function AIQueryScreen({ navigation }: any) {
 }
 
 const EXAMPLE_QUESTIONS = [
-  'What workout plans do I have?',
-  'Summarize my recent meetings',
-  'What health-related notes have I recorded?',
-  'Show me tasks I need to do',
+  'What did I say I needed at Costco?',
+  'Summarize my gym notes this week.',
+  'What tasks did I mention for work?',
+  'What ideas have I been thinking about?',
 ];
 
 const styles = StyleSheet.create({

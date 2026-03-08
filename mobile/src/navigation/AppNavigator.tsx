@@ -28,7 +28,7 @@ function AuthStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0a0a0a' },
+        contentStyle: { backgroundColor: '#FFFFFF' },
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
@@ -42,22 +42,22 @@ function MainStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#0a0a0a' },
+        contentStyle: { backgroundColor: '#F9FAFB' },
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Record" component={RecordScreen} />
-      <Stack.Screen name="Sessions" component={SessionsScreen} />
+      <Stack.Screen name="History" component={SessionsScreen} />
       <Stack.Screen name="Objects" component={ObjectsScreen} />
-      <Stack.Screen name="Geofences" component={GeofencesScreen} />
+      <Stack.Screen name="Reminders" component={GeofencesScreen} />
       <Stack.Screen
         name="CreateGeofence"
         component={CreateGeofenceScreen}
-        options={{ headerShown: true, title: 'Create Geofence' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen name="Search" component={SearchScreen} />
-      <Stack.Screen name="AIQuery" component={AIQueryScreen} />
-      <Stack.Screen name="Synthesis" component={SynthesisScreen} />
+      <Stack.Screen name="Chat" component={AIQueryScreen} />
+      <Stack.Screen name="Insights" component={SynthesisScreen} />
       <Stack.Screen
         name="ManageGeofenceObjects"
         component={ManageGeofenceObjectsScreen}
@@ -95,6 +95,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FFFFFF',
   },
 });

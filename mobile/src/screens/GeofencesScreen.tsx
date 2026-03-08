@@ -70,7 +70,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
         const success = await disableGeofence(id);
         console.log('[GeofencesScreen] disableGeofence result:', success);
         if (success) {
-          Alert.alert('Geofence Disabled', 'Notifications paused for this geofence');
+          Alert.alert('Reminder paused', 'You won\'t be notified at this location');
         } else {
           setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
         }
@@ -101,7 +101,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
           const success = await enableGeofence(id);
           console.log('[GeofencesScreen] enableGeofence result:', success);
           if (success) {
-            Alert.alert('Geofence Enabled', 'You will be notified when entering this area');
+            Alert.alert('Reminder active', 'You\'ll be notified when you arrive here');
           } else {
             setPendingToggles(prev => { const n = { ...prev }; delete n[id]; return n; });
           }
@@ -118,19 +118,19 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
    */
   const handleDelete = (id: string, name: string) => {
     Alert.alert(
-      'Delete Geofence',
-      `Are you sure you want to delete "${name}"?\n\nThis will remove all location data associated with this geofence.`,
+      'Remove reminder',
+      `Remove "${name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             const success = await deleteGeofence(id);
             if (success) {
-              Alert.alert('Deleted', 'Geofence and location data removed');
+              Alert.alert('Removed', 'Reminder removed');
             } else {
-              Alert.alert('Error', 'Failed to delete geofence');
+              Alert.alert('Error', 'Failed to remove reminder');
             }
           },
         },
@@ -165,10 +165,10 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
 
         <View style={styles.geofenceStats}>
           <Text style={styles.statText}>
-            {displayEnabled ? '📍 Actively monitoring' : '⏸️ Paused'}
+            {displayEnabled ? '📍 Active' : '⏸️ Paused'}
           </Text>
-          {item.notifyOnEnter && <Text style={styles.statBadge}>Entry alerts</Text>}
-          {item.notifyOnExit && <Text style={styles.statBadge}>Exit alerts</Text>}
+          {item.notifyOnEnter && <Text style={styles.statBadge}>Arrival</Text>}
+          {item.notifyOnExit && <Text style={styles.statBadge}>Departure</Text>}
         </View>
 
         <View style={styles.geofenceActions}>
@@ -220,7 +220,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
         <View style={styles.dashboardSection}>
           <Text style={styles.dashboardLabel}>Active Monitoring</Text>
           <Text style={styles.dashboardValue}>
-            {privacyStats.activeRegions} of {privacyStats.maxRegions} geofences active
+            {privacyStats.activeRegions} of {privacyStats.maxRegions} reminders active
           </Text>
         </View>
 
@@ -268,12 +268,12 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
   const renderEmpty = () => (
     <View style={styles.emptyState}>
       <Text style={styles.emptyIcon}>📍</Text>
-      <Text style={styles.emptyTitle}>No Geofences Yet</Text>
+      <Text style={styles.emptyTitle}>No reminders set</Text>
       <Text style={styles.emptyText}>
-        Create geofences to get notified about relevant notes when you arrive at specific places.
+        Add a reminder to get notified about relevant notes when you arrive somewhere.
       </Text>
       <Text style={styles.privacyNote}>
-        🔒 We only store coordinates you explicitly save. Your location is never tracked.
+        🔒 Your location is never tracked or stored.
       </Text>
     </View>
   );
@@ -282,7 +282,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4F46E5" />
-        <Text style={styles.loadingText}>Loading geofences...</Text>
+        <Text style={styles.loadingText}>Loading reminders...</Text>
       </View>
     );
   }
@@ -295,7 +295,7 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Geofences</Text>
+          <Text style={styles.headerTitle}>Reminders</Text>
         </View>
         <TouchableOpacity onPress={() => setShowPrivacyDashboard(!showPrivacyDashboard)}>
           <Ionicons name="shield-checkmark-outline" size={24} color="#4F46E5" />

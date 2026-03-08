@@ -3,14 +3,14 @@ export type RootStackParamList = {
   Register: undefined;
   Home: undefined;
   Record: undefined;
-  Sessions: undefined;
+  History: undefined;
   Objects: { geofenceId?: string; objectId?: string } | undefined;
-  Geofences: undefined;
+  Reminders: undefined;
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
   Search: undefined;
-  AIQuery: undefined;
-  Synthesis: undefined;
+  Chat: undefined;
+  Insights: undefined;
   PlaceSummary: { placeId: string; placeName: string; eventType: 'enter' | 'exit' };
 };
 

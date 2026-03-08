@@ -7,6 +7,7 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
@@ -17,115 +18,88 @@ interface Props {
   navigation: HomeScreenNavigationProp;
 }
 
+const NAV_ITEMS = [
+  {
+    icon: 'chatbubble-outline' as const,
+    label: 'Chat',
+    description: 'Ask anything about your notes',
+    route: 'Chat' as const,
+    iconColor: '#4F46E5',
+    iconBg: '#EEF2FF',
+  },
+  {
+    icon: 'notifications-outline' as const,
+    label: 'Reminders',
+    description: 'Notes tied to places',
+    route: 'Reminders' as const,
+    iconColor: '#0284C7',
+    iconBg: '#E0F2FE',
+  },
+  {
+    icon: 'bar-chart-outline' as const,
+    label: 'Insights',
+    description: 'Weekly patterns',
+    route: 'Insights' as const,
+    iconColor: '#059669',
+    iconBg: '#D1FAE5',
+  },
+  {
+    icon: 'time-outline' as const,
+    label: 'History',
+    description: 'Past captures',
+    route: 'History' as const,
+    iconColor: '#D97706',
+    iconBg: '#FEF3C7',
+  },
+] as const;
+
 export function HomeScreen({ navigation }: Props) {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Offload</Text>
-        <TouchableOpacity onPress={logout} style={styles.logoutButton}>
-          <Text style={styles.logoutText}>Logout</Text>
+        <Text style={styles.brand}>Offload</Text>
+        <TouchableOpacity
+          onPress={logout}
+          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+        >
+          <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <Text style={styles.greeting}>
-          {user?.email ? `Hello, ${user.email.split('@')[0]}` : 'Welcome back'}
-        </Text>
-        <Text style={styles.subtitle}>What would you like to do?</Text>
-
-        <View style={styles.actions}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Mic button */}
+        <View style={styles.micSection}>
           <TouchableOpacity
-            style={styles.actionCard}
+            style={styles.micButton}
             onPress={() => navigation.navigate('Record')}
+            activeOpacity={0.82}
           >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>🎙️</Text>
-            </View>
-            <Text style={styles.actionTitle}>Record Voice</Text>
-            <Text style={styles.actionDescription}>
-              Capture your thoughts with real-time transcription
-            </Text>
+            <Ionicons name="mic" size={42} color="#FFFFFF" />
           </TouchableOpacity>
+          <Text style={styles.micLabel}>Capture a thought</Text>
+        </View>
 
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('Sessions')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>📝</Text>
-            </View>
-            <Text style={styles.actionTitle}>Sessions</Text>
-            <Text style={styles.actionDescription}>
-              View your past recordings and transcripts
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('Objects')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>🧠</Text>
-            </View>
-            <Text style={styles.actionTitle}>Atomic Objects</Text>
-            <Text style={styles.actionDescription}>
-              Browse your extracted thoughts and ideas
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('Search')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>🔍</Text>
-            </View>
-            <Text style={styles.actionTitle}>Semantic Search</Text>
-            <Text style={styles.actionDescription}>
-              Find objects using natural language queries
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('AIQuery')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>🤖</Text>
-            </View>
-            <Text style={styles.actionTitle}>AI Sparring</Text>
-            <Text style={styles.actionDescription}>
-              Ask questions about your thoughts and get AI answers
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('Geofences')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>📍</Text>
-            </View>
-            <Text style={styles.actionTitle}>Geofences</Text>
-            <Text style={styles.actionDescription}>
-              Manage location-based reminders
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionCard, styles.synthesisCard]}
-            onPress={() => navigation.navigate('Synthesis')}
-          >
-            <View style={styles.actionIcon}>
-              <Text style={styles.actionIconText}>✨</Text>
-            </View>
-            <Text style={styles.actionTitle}>Weekly Synthesis</Text>
-            <Text style={styles.actionDescription}>
-              AI reflection on patterns, open threads, and insights from your week
-            </Text>
-          </TouchableOpacity>
+        {/* Nav cards — 2 × 2 grid */}
+        <View style={styles.grid}>
+          {NAV_ITEMS.map((item) => (
+            <TouchableOpacity
+              key={item.route}
+              style={styles.card}
+              onPress={() => navigation.navigate(item.route)}
+              activeOpacity={0.72}
+            >
+              <View style={[styles.iconWrap, { backgroundColor: item.iconBg }]}>
+                <Ionicons name={item.icon} size={22} color={item.iconColor} />
+              </View>
+              <Text style={styles.cardLabel}>{item.label}</Text>
+              <Text style={styles.cardDesc}>{item.description}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -135,82 +109,90 @@ export function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  logoutButton: {
-    padding: 8,
+  brand: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: -0.4,
   },
   logoutText: {
-    color: '#888',
     fontSize: 14,
+    color: '#9CA3AF',
   },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
+  scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 40,
+    paddingTop: 48,
+    paddingBottom: 48,
   },
-  greeting: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 4,
+  micSection: {
+    alignItems: 'center',
+    marginBottom: 52,
   },
-  subtitle: {
+  micButton: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: '#111827',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  micLabel: {
     fontSize: 16,
-    color: '#888',
-    marginBottom: 32,
+    color: '#6B7280',
+    fontWeight: '500',
   },
-  actions: {
-    gap: 16,
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  actionCard: {
-    backgroundColor: '#1a1a1a',
+  card: {
+    width: '47.5%',
+    backgroundColor: '#F9FAFB',
     borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#333',
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  actionIcon: {
-    width: 48,
-    height: 48,
+  iconWrap: {
+    width: 44,
+    height: 44,
     borderRadius: 12,
-    backgroundColor: '#252525',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
-  actionIconText: {
-    fontSize: 24,
-  },
-  actionTitle: {
-    fontSize: 18,
+  cardLabel: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
     marginBottom: 4,
   },
-  actionDescription: {
-    fontSize: 14,
-    color: '#888',
-  },
-  synthesisCard: {
-    borderColor: '#4338ca',
-    backgroundColor: '#0f0e2a',
+  cardDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 18,
   },
 });

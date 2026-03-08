@@ -1,5 +1,5 @@
 /**
- * SynthesisScreen — weekly cross-domain reflection
+ * InsightsScreen — weekly cross-domain reflection
  * Shows the latest AI-generated synthesis and lets the user trigger a new one.
  */
 
@@ -36,7 +36,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
       setHistory(syntheses);
       if (syntheses.length > 0) setSynthesis(syntheses[0]);
     } catch (err: any) {
-      setError(err.message || 'Failed to load synthesis history');
+      setError(err.message || 'Failed to load insights');
     }
   }, []);
 
@@ -57,11 +57,10 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
       try {
         const { synthesis: result } = await apiService.triggerWeeklySynthesis({ force });
         setSynthesis(result);
-        // Refresh history to include new entry
         const { syntheses } = await apiService.getSyntheses();
         setHistory(syntheses);
       } catch (err: any) {
-        const msg = err.message || 'Failed to generate synthesis';
+        const msg = err.message || 'Failed to generate insights';
         setError(msg);
         Alert.alert('Error', msg);
       } finally {
@@ -87,9 +86,9 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
         <Header navigation={navigation} />
         <View style={styles.emptyState}>
           <Text style={styles.emptyIcon}>🧠</Text>
-          <Text style={styles.emptyTitle}>No synthesis yet</Text>
+          <Text style={styles.emptyTitle}>No insights yet</Text>
           <Text style={styles.emptySubtitle}>
-            Generate your first weekly reflection to see patterns across your notes.
+            Generate your first weekly insights to see patterns across your notes.
           </Text>
           <TouchableOpacity
             style={styles.generateButton}
@@ -99,7 +98,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
             {generating ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.generateButtonText}>Generate This Week's Synthesis</Text>
+              <Text style={styles.generateButtonText}>Generate This Week's Insights</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -179,7 +178,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
               </View>
             )}
 
-            {/* Narrative — split into paragraphs */}
+            {/* Narrative */}
             <Section title="This Week" icon="📖">
               {synthesis.narrative
                 .split(/\n\n+/)
@@ -225,7 +224,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
             {/* Past syntheses */}
             {history.length > 1 && (
-              <Section title="Past Weeks" icon="📅">
+              <Section title="Previous" icon="📅">
                 {history.slice(1).map((s) => (
                   <TouchableOpacity
                     key={s.sessionId}
@@ -251,9 +250,9 @@ function Header({ navigation }: { navigation: any }) {
   return (
     <View style={styles.header}>
       <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#f9fafb" />
+        <Ionicons name="arrow-back" size={24} color="#374151" />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Weekly Synthesis</Text>
+      <Text style={styles.headerTitle}>Insights</Text>
       <View style={{ width: 24 }} />
     </View>
   );
@@ -283,8 +282,8 @@ function CollapsibleCitedNotes({ refs }: { refs: SynthesisRef[] }) {
   return (
     <View style={styles.section}>
       <TouchableOpacity style={styles.collapsibleHeader} onPress={() => setOpen((o) => !o)}>
-        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>🔗 Cited Notes ({refs.length})</Text>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>🔗 Sources ({refs.length})</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#9CA3AF" />
       </TouchableOpacity>
       {open && <CitedNotes refs={refs} />}
     </View>
@@ -342,7 +341,7 @@ function BulletList({ items, color }: { items: string[]; color: string }) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -353,10 +352,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
+    borderBottomColor: '#E5E7EB',
   },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#f9fafb' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
 
   // Empty state
   emptyState: {
@@ -366,10 +366,10 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   emptyIcon: { fontSize: 56, marginBottom: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#f9fafb', marginBottom: 8 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#111827', marginBottom: 8 },
   emptySubtitle: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
@@ -391,14 +391,14 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 16,
   },
-  periodLabel: { fontSize: 12, color: '#6b7280', marginBottom: 2 },
-  periodText: { fontSize: 15, fontWeight: '700', color: '#f9fafb' },
-  objectCount: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  periodLabel: { fontSize: 12, color: '#9CA3AF', marginBottom: 2 },
+  periodText: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  objectCount: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
   regenButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#1e1b4b',
+    backgroundColor: '#EEF2FF',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
@@ -414,29 +414,36 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   domainChip: {
-    backgroundColor: '#1f2937',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
-  domainChipText: { color: '#9ca3af', fontSize: 12 },
+  domainChipText: { color: '#6B7280', fontSize: 12 },
 
   // Sections
   section: {
-    backgroundColor: '#111827',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
   },
   sectionTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#f9fafb',
+    color: '#111827',
     marginBottom: 12,
   },
   narrative: {
     fontSize: 14,
-    color: '#d1d5db',
+    color: '#374151',
     lineHeight: 22,
   },
   narrativeParagraph: {
@@ -464,18 +471,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
-    backgroundColor: '#1f2937',
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#E5E7EB',
   },
-  typeBadgeText: { fontSize: 11, color: '#9ca3af' },
-  citedTitle: { fontSize: 13, color: '#d1d5db', lineHeight: 18 },
+  typeBadgeText: { fontSize: 11, color: '#6B7280' },
+  citedTitle: { fontSize: 13, color: '#374151', lineHeight: 18 },
 
   // Bullets
   bulletList: { gap: 8 },
   bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
-  bulletText: { flex: 1, fontSize: 14, color: '#d1d5db', lineHeight: 20 },
+  bulletText: { flex: 1, fontSize: 14, color: '#374151', lineHeight: 20 },
 
   // History
   historyItem: {
@@ -484,8 +491,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2937',
+    borderBottomColor: '#F3F4F6',
   },
-  historyDate: { fontSize: 14, color: '#d1d5db' },
-  historyCount: { fontSize: 12, color: '#6b7280' },
+  historyDate: { fontSize: 14, color: '#374151' },
+  historyCount: { fontSize: 12, color: '#9CA3AF' },
 });
