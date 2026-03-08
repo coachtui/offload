@@ -218,11 +218,9 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
               </Section>
             )}
 
-            {/* Cited Notes */}
+            {/* Cited Notes — collapsible */}
             {synthesis.citedObjects && synthesis.citedObjects.length > 0 && (
-              <Section title="Cited Notes" icon="🔗">
-                <CitedNotes refs={synthesis.citedObjects} />
-              </Section>
+              <CollapsibleCitedNotes refs={synthesis.citedObjects} />
             )}
 
             {/* Past syntheses */}
@@ -276,6 +274,19 @@ function Section({
         {icon} {title}
       </Text>
       {children}
+    </View>
+  );
+}
+
+function CollapsibleCitedNotes({ refs }: { refs: SynthesisRef[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.section}>
+      <TouchableOpacity style={styles.collapsibleHeader} onPress={() => setOpen((o) => !o)}>
+        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>🔗 Cited Notes ({refs.length})</Text>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6b7280" />
+      </TouchableOpacity>
+      {open && <CitedNotes refs={refs} />}
     </View>
   );
 }
@@ -432,8 +443,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
+  collapsibleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+
   // Cited notes
-  citedList: { gap: 10 },
+  citedList: { gap: 10, marginTop: 12 },
   citedRow: { gap: 4 },
   citedBadges: { flexDirection: 'row', gap: 6 },
   badge: {

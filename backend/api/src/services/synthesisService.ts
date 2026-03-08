@@ -100,10 +100,11 @@ RULES:
 6. Write in second person ("You've been thinking about...", "You mentioned...")
 7. If there's not enough data, say so honestly — do not pad with generic advice
 8. In the narrative, separate each paragraph with a blank line (\\n\\n)
+9. Do NOT include inline citation markers like [1] or [ref_N] in the narrative text — write naturally, as if speaking directly to the person. Attribution is handled separately via cited_refs.
 
 RETURN valid JSON with this exact structure:
 {
-  "narrative": "2–3 paragraphs separated by \\n\\n. Be specific and personal.",
+  "narrative": "2–3 paragraphs separated by \\n\\n. Write naturally — no inline citation numbers.",
   "patterns": ["recurring theme or pattern 1", "..."],
   "open_threads": ["unresolved question or pending decision 1", "..."],
   "contradictions": ["brief description of a contradiction, or empty array if none"],
