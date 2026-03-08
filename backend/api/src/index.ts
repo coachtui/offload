@@ -61,6 +61,8 @@ app.get('/health', async (req, res) => {
 // Jobs
 import { startEmbeddingRetryJob } from './jobs/embeddingRetry';
 import { startRetentionJob } from './jobs/retentionJob';
+import { startImportanceScoreJob } from './jobs/importanceScoreJob';
+import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesisJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -70,6 +72,8 @@ import voiceRoutes from './routes/voice';
 import ragRoutes from './routes/rag';
 import synthesisRoutes from './routes/synthesis';
 import placesRoutes from './routes/places';
+import dashboardRoutes from './routes/dashboard';
+import ideasRoutes from './routes/ideas';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
@@ -78,6 +82,8 @@ app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/rag', ragRoutes);
 app.use('/api/v1/synthesis', synthesisRoutes);
 app.use('/api/v1/places', placesRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/ideas', ideasRoutes);
 
 app.get('/api/v1', (req, res) => {
   res.json({
@@ -91,6 +97,8 @@ app.get('/api/v1', (req, res) => {
       voice: '/api/v1/voice',
       rag: '/api/v1/rag',
       places: '/api/v1/places',
+      dashboard: '/api/v1/dashboard',
+      ideas: '/api/v1/ideas',
     },
   });
 });
@@ -172,4 +180,6 @@ server.listen(PORT, async () => {
   // Start background jobs
   startEmbeddingRetryJob();
   startRetentionJob();
+  startImportanceScoreJob();
+  startMonthlyLongTermSynthesisJob();
 });

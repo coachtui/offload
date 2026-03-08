@@ -148,17 +148,7 @@ export function RecordScreen({ navigation }: Props) {
 
             {/* Contradiction warning */}
             {isDone && contradictions.length > 0 && (
-              <View style={styles.contradictionBanner}>
-                <Text style={styles.contradictionTitle}>⚠ Possible contradiction</Text>
-                {contradictions.slice(0, 2).map((c, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => navigation.navigate('Objects', { objectId: c.objectId })}
-                  >
-                    <Text style={styles.contradictionText}>{c.description}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <ContraDetailBanner contradictions={contradictions} navigation={navigation} />
             )}
 
             {/* Related notes */}
@@ -175,6 +165,9 @@ export function RecordScreen({ navigation }: Props) {
                       <Text style={styles.relatedType}>{note.type}</Text>
                       <Text style={styles.relatedScore}>{Math.round(note.score * 100)}%</Text>
                     </View>
+                    {note.mentionCount !== undefined && note.mentionCount >= 3 && (
+                      <Text style={styles.mentionBadge}>Mentioned {note.mentionCount}× before</Text>
+                    )}
                     {note.title && (
                       <Text style={styles.relatedNoteTitle} numberOfLines={1}>{note.title}</Text>
                     )}
@@ -224,6 +217,49 @@ export function RecordScreen({ navigation }: Props) {
         </Text>
       </View>
     </SafeAreaView>
+  );
+}
+
+function ContraDetailBanner({
+  contradictions,
+  navigation,
+}: {
+  contradictions: import('../services/api').ConflictItem[];
+  navigation: any;
+}) {
+  const [expandedIdx, setExpandedIdx] = React.useState<number | null>(null);
+  return (
+    <View style={styles.contradictionBanner}>
+      <Text style={styles.contradictionTitle}>⚠ Possible contradiction</Text>
+      {contradictions.slice(0, 2).map((c, i) => (
+        <View key={i}>
+          <TouchableOpacity onPress={() => setExpandedIdx(expandedIdx === i ? null : i)}>
+            <Text style={styles.contradictionText}>{c.description}</Text>
+          </TouchableOpacity>
+          {expandedIdx === i && (
+            <View style={styles.contradictionDetail}>
+              <Text style={styles.contradictionConfidence}>
+                Confidence: {Math.round(c.confidence * 100)}%
+              </Text>
+              <View style={styles.contradictionActions}>
+                <TouchableOpacity
+                  style={styles.contradictionActionBtn}
+                  onPress={() => navigation.navigate('Objects', { objectId: c.objectId })}
+                >
+                  <Text style={styles.contradictionActionText}>View note</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.contradictionActionBtn, styles.contradictionActionBtnPrimary]}
+                  onPress={() => setExpandedIdx(null)}
+                >
+                  <Text style={[styles.contradictionActionText, { color: '#fff' }]}>Changed my mind</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -388,6 +424,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2,
+  },
+  contradictionDetail: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f59e0b22',
+  },
+  contradictionConfidence: {
+    color: '#888',
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  contradictionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  contradictionActionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#f59e0b44',
+  },
+  contradictionActionBtnPrimary: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#f59e0b',
+  },
+  contradictionActionText: {
+    color: '#f59e0b',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  mentionBadge: {
+    color: '#6366f1',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   relatedSection: {
     marginTop: 24,

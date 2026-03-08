@@ -12,6 +12,7 @@ import { authenticate } from '../auth/middleware';
 import { semanticSearch } from '../services/vectorService';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { buildContextPack, sparWithContext, detectContradictions } from '../services/sparringService';
+import { pool } from '../db/connection';
 
 const router = Router();
 
@@ -258,6 +259,34 @@ router.post('/contradictions', async (req: Request, res: Response) => {
     console.log(`[RAG] POST /contradictions — userId: ${userId}, statement length: ${statement.length}`);
 
     const result = await detectContradictions(userId, statement, excludeIds);
+
+    // Persist contradiction edges to hub.relationships (fire-and-forget)
+    if (result.hasConflict && excludeIds.length > 0) {
+      const sourceObjectId = excludeIds[0];
+      setImmediate(async () => {
+        for (const conflict of result.conflicts) {
+          try {
+            await pool.query(
+              `INSERT INTO hub.relationships
+                 (user_id, source_id, target_id, edge_type, confidence, metadata, created_by)
+               VALUES ($1, $2, $3, 'contradicts', $4, $5, 'system')
+               ON CONFLICT (source_id, target_id, edge_type)
+                 DO UPDATE SET confidence = EXCLUDED.confidence,
+                               metadata   = EXCLUDED.metadata`,
+              [
+                userId,
+                sourceObjectId,
+                conflict.objectId,
+                conflict.confidence,
+                JSON.stringify({ description: conflict.description }),
+              ]
+            );
+          } catch (err) {
+            console.warn('[rag] contradiction persist to hub.relationships failed:', err);
+          }
+        }
+      });
+    }
 
     return res.json(result);
   } catch (error) {

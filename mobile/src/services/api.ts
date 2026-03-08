@@ -72,6 +72,7 @@ export interface RagSearchResult {
   temporalHints?: { hasDate: boolean; dateText: string | null; urgency: string | null };
   createdAt: string;
   sourceTranscriptId: string | null;
+  mentionCount?: number;
 }
 
 export interface SparResponse {
@@ -103,6 +104,31 @@ export interface PlaceNotifyResponse {
   cooldown: boolean;
   objects: AtomicObject[];
   placeName: string | null;
+}
+
+export interface DashboardMetrics {
+  cognitiveLoad: { score: number; level: 'low' | 'moderate' | 'high' | 'overloaded' };
+  activeCommitments: number;
+  openLoops: number;
+  unresolvedDecisions: number;
+  newIdeasThisWeek: number;
+  staleActionables: number;
+  dormantIdeasCount: number;
+  domainDistribution: Record<string, number>;
+  topDomainThisWeek: string | null;
+  lastSynthesisDate: string | null;
+  objectsThisWeek: number;
+}
+
+export interface DormantIdea {
+  id: string;
+  title: string | null;
+  cleanedText: string;
+  importanceScore: number;
+  mentionCount: number;
+  daysDormant: number;
+  domain: string;
+  createdAt: string;
 }
 
 export interface ConflictItem {
@@ -535,6 +561,38 @@ class ApiService {
 
   async unlinkPlaceObject(placeId: string, objectId: string): Promise<void> {
     await this.request(`/api/v1/places/${placeId}/objects/${objectId}`, { method: 'DELETE' });
+  }
+
+  async getDashboard(): Promise<DashboardMetrics> {
+    return this.request<DashboardMetrics>('/api/v1/dashboard');
+  }
+
+  async getDormantIdeas(options?: { limit?: number; minImportance?: number; dormantDays?: number }): Promise<{ ideas: DormantIdea[] }> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.minImportance) params.set('minImportance', String(options.minImportance));
+    if (options?.dormantDays) params.set('dormantDays', String(options.dormantDays));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request(`/api/v1/ideas/dormant${qs}`);
+  }
+
+  async updateObjectState(objectId: string, state: 'open' | 'active' | 'resolved' | 'archived', evolvedFromId?: string): Promise<{ object: any }> {
+    return this.request(`/api/v1/objects/${objectId}/state`, {
+      method: 'POST',
+      body: JSON.stringify({ state, evolvedFromId }),
+    });
+  }
+
+  async reviewDecision(objectId: string, actualOutcome: string, outcomeAccuracy?: number): Promise<{ object: any }> {
+    return this.request(`/api/v1/objects/${objectId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ actualOutcome, outcomeAccuracy }),
+    });
+  }
+
+  async getSynthesisTrends(months?: number): Promise<any> {
+    const qs = months ? `?months=${months}` : '';
+    return this.request(`/api/v1/synthesis/trends${qs}`);
   }
 }
 

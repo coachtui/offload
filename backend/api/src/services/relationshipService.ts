@@ -5,6 +5,7 @@
 
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { findSimilar } from './vectorService';
+import { pool } from '../db/connection';
 
 /**
  * Relationship type
@@ -179,7 +180,7 @@ export async function updateObjectRelationships(objectId: string, userId: string
     .filter((r) => r.type === 'references')
     .map((r) => r.toObjectId);
 
-  // Update the object with detected relationships
+  // Update the object with detected relationships (legacy arrays for backward compat)
   const object = await AtomicObjectModel.findById(objectId);
   if (object && object.userId === userId) {
     await object.update({
@@ -189,6 +190,37 @@ export async function updateObjectRelationships(objectId: string, userId: string
         references: Array.from(new Set(references)),
       },
     });
+
+    // Write to hub.relationships table (idempotent via ON CONFLICT)
+    const edgeTypeMap: Record<string, string> = {
+      similar: 'related_to',
+      temporal: 'temporal',
+      contradicts: 'contradicts',
+      references: 'references',
+    };
+
+    for (const rel of relationships) {
+      try {
+        await pool.query(
+          `INSERT INTO hub.relationships
+             (user_id, source_id, target_id, edge_type, confidence, metadata, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, 'system')
+           ON CONFLICT (source_id, target_id, edge_type)
+             DO UPDATE SET confidence = EXCLUDED.confidence,
+                           metadata   = EXCLUDED.metadata`,
+          [
+            userId,
+            objectId,
+            rel.toObjectId,
+            edgeTypeMap[rel.type] ?? rel.type,
+            rel.confidence,
+            JSON.stringify({ reason: rel.reason ?? '' }),
+          ]
+        );
+      } catch (err) {
+        console.warn('[relationshipService] Failed to write edge to hub.relationships:', err);
+      }
+    }
 
     console.log(
       `Updated relationships for object ${objectId}: ${relatedObjects.length} related, ${contradictions.length} contradictions`

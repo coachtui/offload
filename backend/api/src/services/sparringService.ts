@@ -12,6 +12,7 @@ import axios from 'axios';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { semanticSearch, type SemanticSearchOptions } from './vectorService';
 import type { AtomicObject } from '@shared/types';
+import { pool } from '../db/connection';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,20 @@ export async function buildContextPack(
 
   const fullObjects = await AtomicObjectModel.findByIds(objectIds);
   const atomicObjects = fullObjects.map((obj) => obj.toAtomicObject());
+
+  // Track retrieval: increment mention_count, update last_accessed_at (fire-and-forget)
+  if (objectIds.length > 0) {
+    setImmediate(() =>
+      pool.query(
+        `UPDATE hub.atomic_objects
+         SET mention_count    = mention_count + 1,
+             last_accessed_at = NOW()
+         WHERE id = ANY($1::uuid[])
+           AND deleted_at IS NULL`,
+        [objectIds]
+      ).catch((err: Error) => console.warn('[sparring] mention_count update failed:', err))
+    );
+  }
 
   // Build retrieved notes list (ordered by score desc)
   const retrieved: RetrievedNote[] = atomicObjects

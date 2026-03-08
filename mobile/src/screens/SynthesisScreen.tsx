@@ -13,6 +13,7 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +31,16 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Dormant ideas
+  const [dormantIdeas, setDormantIdeas] = useState<import('../services/api').DormantIdea[]>([]);
+  const [dormantLoading, setDormantLoading] = useState(false);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  // Decision reviews
+  const [pendingDecisions, setPendingDecisions] = useState<import('../types').AtomicObject[]>([]);
+  const [decisionReviewText, setDecisionReviewText] = useState<Record<string, string>>({});
+  const [submittedDecisions, setSubmittedDecisions] = useState<Set<string>>(new Set());
+
   const loadHistory = useCallback(async () => {
     try {
       const { syntheses } = await apiService.getSyntheses();
@@ -42,6 +53,21 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
   useEffect(() => {
     loadHistory().finally(() => setLoading(false));
+    // Load dormant ideas
+    setDormantLoading(true);
+    apiService.getDormantIdeas({ limit: 5, dormantDays: 14 })
+      .then(({ ideas }) => setDormantIdeas(ideas))
+      .catch(() => {})
+      .finally(() => setDormantLoading(false));
+    // Load pending decisions
+    apiService.getObjects({ objectType: ['decision'], limit: 5 })
+      .then(({ objects }) => {
+        const pending = objects.filter((o: any) =>
+          o.objectType === 'decision' && (!o.state || o.state === 'open' || o.state === 'active')
+        );
+        setPendingDecisions(pending);
+      })
+      .catch(() => {});
   }, [loadHistory]);
 
   const handleRefresh = useCallback(async () => {
@@ -69,6 +95,22 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
     },
     []
   );
+
+  const handleArchiveIdea = useCallback(async (id: string) => {
+    try {
+      await apiService.updateObjectState(id, 'archived');
+      setDismissedIds((prev) => new Set([...prev, id]));
+    } catch { /* silent */ }
+  }, []);
+
+  const handleReviewDecision = useCallback(async (id: string) => {
+    const outcome = decisionReviewText[id];
+    if (!outcome?.trim()) return;
+    try {
+      await apiService.reviewDecision(id, outcome.trim());
+      setSubmittedDecisions((prev) => new Set([...prev, id]));
+    } catch { /* silent */ }
+  }, [decisionReviewText]);
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString('en-US', {
@@ -220,6 +262,68 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
             {/* Cited Notes — collapsible */}
             {synthesis.citedObjects && synthesis.citedObjects.length > 0 && (
               <CollapsibleCitedNotes refs={synthesis.citedObjects} />
+            )}
+
+            {/* Revisit — dormant ideas */}
+            {(dormantLoading || dormantIdeas.filter(i => !dismissedIds.has(i.id)).length > 0) && (
+              <Section title="Revisit" icon="💡">
+                {dormantLoading ? (
+                  <ActivityIndicator size="small" color="#6366f1" />
+                ) : (
+                  dormantIdeas
+                    .filter((idea) => !dismissedIds.has(idea.id))
+                    .map((idea) => (
+                      <View key={idea.id} style={styles.dormantCard}>
+                        <View style={styles.dormantCardHeader}>
+                          <Text style={styles.dormantAge}>{idea.daysDormant}d dormant</Text>
+                          <TouchableOpacity onPress={() => handleArchiveIdea(idea.id)}>
+                            <Text style={styles.dormantArchive}>Archive</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.dormantText} numberOfLines={3}>
+                          {idea.title || idea.cleanedText}
+                        </Text>
+                        {idea.mentionCount > 0 && (
+                          <Text style={styles.dormantMention}>Referenced {idea.mentionCount}× in past</Text>
+                        )}
+                      </View>
+                    ))
+                )}
+              </Section>
+            )}
+
+            {/* Decision Reviews */}
+            {pendingDecisions.filter(d => !submittedDecisions.has(d.id)).length > 0 && (
+              <Section title="Decision Reviews" icon="⚖️">
+                {pendingDecisions
+                  .filter((d) => !submittedDecisions.has(d.id))
+                  .map((decision) => (
+                    <View key={decision.id} style={styles.decisionCard}>
+                      <Text style={styles.decisionText} numberOfLines={2}>
+                        {decision.title || decision.content}
+                      </Text>
+                      <TextInput
+                        style={styles.decisionInput}
+                        placeholder="How did this turn out?"
+                        placeholderTextColor="#9CA3AF"
+                        value={decisionReviewText[decision.id] ?? ''}
+                        onChangeText={(text) =>
+                          setDecisionReviewText((prev) => ({ ...prev, [decision.id]: text }))
+                        }
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.decisionSubmit,
+                          !decisionReviewText[decision.id]?.trim() && styles.decisionSubmitDisabled,
+                        ]}
+                        onPress={() => handleReviewDecision(decision.id)}
+                        disabled={!decisionReviewText[decision.id]?.trim()}
+                      >
+                        <Text style={styles.decisionSubmitText}>Record Outcome</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+              </Section>
             )}
 
             {/* Past syntheses */}
@@ -483,6 +587,51 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
   bulletText: { flex: 1, fontSize: 14, color: '#374151', lineHeight: 20 },
+
+  // Dormant ideas
+  dormantCard: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  dormantCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  dormantAge: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
+  dormantArchive: { fontSize: 11, color: '#6366f1', fontWeight: '600' },
+  dormantText: { fontSize: 13, color: '#374151', lineHeight: 18 },
+  dormantMention: { fontSize: 11, color: '#6366f1', marginTop: 4 },
+
+  // Decision reviews
+  decisionCard: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  decisionText: { fontSize: 13, color: '#374151', marginBottom: 8, lineHeight: 18 },
+  decisionInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#111827',
+    marginBottom: 8,
+  },
+  decisionSubmit: {
+    backgroundColor: '#6366f1',
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  decisionSubmitDisabled: { opacity: 0.4 },
+  decisionSubmitText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 
   // History
   historyItem: {

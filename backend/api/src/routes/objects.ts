@@ -314,4 +314,139 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/v1/objects/:id/state
+ * Transition an object's lifecycle state.
+ * Body: { state: 'open' | 'active' | 'resolved' | 'archived', evolvedFromId?: string }
+ */
+router.post('/:id/state', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+    }
+
+    const { state, evolvedFromId } = req.body as { state: string; evolvedFromId?: string };
+
+    const VALID_STATES = ['open', 'active', 'resolved', 'archived'];
+    if (!state || !VALID_STATES.includes(state)) {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: `state must be one of: ${VALID_STATES.join(', ')}`,
+      });
+    }
+
+    const { pool } = await import('../db/connection');
+    const checkResult = await pool.query(
+      `SELECT id, state FROM hub.atomic_objects
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+      [req.params.id, req.user.id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Object not found' });
+    }
+
+    const VALID_TRANSITIONS: Record<string, string[]> = {
+      open:     ['active', 'resolved', 'archived'],
+      active:   ['resolved', 'archived', 'open'],
+      resolved: ['archived'],
+      archived: ['open'],
+      null:     ['open', 'active', 'resolved', 'archived'],
+    };
+
+    const currentState = checkResult.rows[0].state ?? 'open';
+    const allowed = VALID_TRANSITIONS[currentState] ?? VALID_TRANSITIONS['null'];
+    if (!allowed.includes(state)) {
+      return res.status(400).json({
+        error: 'INVALID_TRANSITION',
+        message: `Cannot transition from '${currentState}' to '${state}'`,
+      });
+    }
+
+    await pool.query(
+      `UPDATE hub.atomic_objects
+       SET state = $1,
+           state_updated_at = NOW(),
+           evolved_from_id = COALESCE($2, evolved_from_id)
+       WHERE id = $3 AND user_id = $4`,
+      [state, evolvedFromId ?? null, req.params.id, req.user.id]
+    );
+
+    return res.json({ id: req.params.id, state, stateUpdatedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('[objects] state transition error:', error);
+    return res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to update state',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/decisions/:id/review
+ * Record actual outcome for a decision object.
+ * Body: { actualOutcome: string, accuracyScore?: number (0-1) }
+ */
+router.post('/:id/review', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+    }
+
+    const { actualOutcome, accuracyScore } = req.body as {
+      actualOutcome: string;
+      accuracyScore?: number;
+    };
+
+    if (!actualOutcome || typeof actualOutcome !== 'string') {
+      return res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'actualOutcome is required',
+      });
+    }
+
+    const { pool } = await import('../db/connection');
+    const checkResult = await pool.query(
+      `SELECT id, object_type FROM hub.atomic_objects
+       WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+      [req.params.id, req.user.id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Object not found' });
+    }
+
+    if (checkResult.rows[0].object_type !== 'decision') {
+      return res.status(400).json({
+        error: 'INVALID_TYPE',
+        message: 'Review can only be recorded for decision objects',
+      });
+    }
+
+    await pool.query(
+      `UPDATE hub.atomic_objects
+       SET actual_outcome       = $1,
+           outcome_evaluated_at = NOW(),
+           outcome_accuracy     = $2,
+           state                = 'resolved',
+           state_updated_at     = NOW()
+       WHERE id = $3 AND user_id = $4`,
+      [actualOutcome, accuracyScore ?? null, req.params.id, req.user.id]
+    );
+
+    return res.json({
+      id: req.params.id,
+      actualOutcome,
+      outcomeEvaluatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('[objects] decision review error:', error);
+    return res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to record review',
+    });
+  }
+});
+
 export default router;
+

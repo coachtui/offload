@@ -13,6 +13,7 @@ import axios from 'axios';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { Session } from '../models/Session';
 import type { AtomicObject } from '@shared/types';
+import { pool } from '../db/connection';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -321,5 +322,93 @@ Generate a weekly synthesis.`;
     `[synthesisService] Synthesis complete — ${corpus.length} objects, ${parsed.patterns.length} patterns`
   );
 
+  // Persist patterns to hub.patterns for long-term trend analysis (fire-and-forget)
+  if (parsed.patterns.length > 0) {
+    setImmediate(async () => {
+      try {
+        await persistSynthesisPatterns(
+          userId,
+          parsed.patterns,
+          session.id,
+          periodStart,
+          periodEnd
+        );
+      } catch (err) {
+        console.warn('[synthesisService] Pattern persistence failed (non-fatal):', err);
+      }
+    });
+  }
+
   return synthesis;
+}
+
+// ─── Pattern persistence ──────────────────────────────────────────────────────
+
+function classifyPatternType(
+  description: string
+): 'theme' | 'behavior' | 'contradiction' | 'focus' | 'habit' {
+  const d = description.toLowerCase();
+  if (d.includes('contradict') || d.includes('conflicting') || d.includes('tension')) {
+    return 'contradiction';
+  }
+  if (d.includes('habit') || d.includes('routine') || d.includes('consistently') || d.includes('every day')) {
+    return 'habit';
+  }
+  if (d.includes('focus') || d.includes('spending time') || d.includes('attention') || d.includes('preoccupied')) {
+    return 'focus';
+  }
+  if (d.includes('behavior') || d.includes('tend to') || d.includes('often') || d.includes('repeatedly')) {
+    return 'behavior';
+  }
+  return 'theme';
+}
+
+async function persistSynthesisPatterns(
+  userId: string,
+  patterns: string[],
+  sessionId: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<void> {
+  // Check if already processed this session
+  const existing = await pool.query(
+    `SELECT description FROM hub.patterns
+     WHERE user_id = $1 AND last_seen_at > NOW() - INTERVAL '90 days'`,
+    [userId]
+  );
+
+  const existingRows = existing.rows as { description: string }[];
+
+  for (const patternDesc of patterns) {
+    if (!patternDesc || patternDesc.trim().length < 5) continue;
+
+    const patternWords = new Set(
+      patternDesc.toLowerCase().split(/\s+/).filter((w) => w.length > 4)
+    );
+
+    const match = existingRows.find((row) => {
+      const existingWords = row.description.toLowerCase().split(/\s+/).filter((w) => w.length > 4);
+      const overlap = existingWords.filter((w: string) => patternWords.has(w)).length;
+      return overlap >= 3;
+    });
+
+    if (match) {
+      await pool.query(
+        `UPDATE hub.patterns
+         SET frequency = frequency + 1,
+             last_seen_at = NOW(),
+             synthesis_session_id = $1
+         WHERE user_id = $2 AND description = $3`,
+        [sessionId, userId, match.description]
+      );
+    } else {
+      const patternType = classifyPatternType(patternDesc);
+      await pool.query(
+        `INSERT INTO hub.patterns
+           (user_id, synthesis_session_id, period_start, period_end, description, pattern_type)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [userId, sessionId, periodStart, periodEnd, patternDesc.trim(), patternType]
+      );
+    }
+  }
 }

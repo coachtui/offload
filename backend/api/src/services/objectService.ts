@@ -17,6 +17,7 @@ import {
   findSimilar,
   type SemanticSearchResult,
 } from './vectorService';
+import { updateObjectRelationships } from './relationshipService';
 
 // Validation schema for createObject input
 export const createObjectSchema = z.object({
@@ -114,6 +115,17 @@ export async function createObject(
       // Best-effort status update
     }
     atomicObject.embeddingStatus = 'failed';
+  }
+
+  // Detect and persist relationships (fire-and-forget, never blocks response)
+  if (process.env.ENABLE_RELATIONSHIPS !== 'false') {
+    setImmediate(async () => {
+      try {
+        await updateObjectRelationships(atomicObject.id, userId);
+      } catch (err) {
+        console.warn('[objectService] Relationship detection failed (non-fatal):', err);
+      }
+    });
   }
 
   return atomicObject;

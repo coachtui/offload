@@ -20,7 +20,7 @@ import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
 import { useSearch } from '../hooks/useSearch';
 import { AtomicObject } from '../types';
-import type { RagSearchResult } from '../services/api';
+import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
 
 type ObjectsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Objects'>;
@@ -40,6 +40,13 @@ const DOMAIN_COLORS: Record<string, string> = {
   finance: '#06b6d4',
   project: '#ec4899',
   misc: '#6b7280',
+};
+
+const STATE_COLORS: Record<string, string> = {
+  open: '#6b7280',
+  active: '#3b82f6',
+  resolved: '#22c55e',
+  archived: '#9ca3af',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -115,9 +122,22 @@ export function ObjectsScreen({ navigation }: Props) {
   const [staleObjects, setStaleObjects] = useState<AtomicObject[]>([]);
   const [staleExpanded, setStaleExpanded] = useState(true);
 
+  // Dashboard
+  const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
+  const [dashboardExpanded, setDashboardExpanded] = useState(false);
+
+  // State update
+  const [updatingState, setUpdatingState] = useState(false);
+
   useEffect(() => {
     apiService.getStaleActionables()
       .then(({ objects }) => setStaleObjects(objects))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    apiService.getDashboard()
+      .then((metrics) => setDashboard(metrics))
       .catch(() => {});
   }, []);
 
@@ -222,6 +242,32 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [selectedObject]);
 
+  const handleStateChange = useCallback(
+    (objectId: string, currentState: string) => {
+      const states: Array<'open' | 'active' | 'resolved' | 'archived'> = ['open', 'active', 'resolved', 'archived'];
+      const options = states.filter((s) => s !== currentState);
+      Alert.alert(
+        'Change State',
+        'Move this note to:',
+        [
+          ...options.map((s) => ({
+            text: s.charAt(0).toUpperCase() + s.slice(1),
+            onPress: async () => {
+              setUpdatingState(true);
+              try {
+                await apiService.updateObjectState(objectId, s);
+                await fetchObjectDetail(objectId);
+              } catch { /* silent */ }
+              finally { setUpdatingState(false); }
+            },
+          })),
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+    },
+    [fetchObjectDetail]
+  );
+
   const handleSaveEdit = useCallback(async () => {
     if (selectedObject && editContent.trim()) {
       const success = await updateObject(selectedObject.id, { content: editContent.trim() });
@@ -301,6 +347,47 @@ export function ObjectsScreen({ navigation }: Props) {
       </View>
     );
   }, [geofenceId, geofenceObjects, handleObjectPress]);
+
+  const renderDashboardCard = useCallback(() => {
+    if (!dashboard) return null;
+    const loadColor = dashboard.cognitiveLoad.level === 'low' ? '#22c55e'
+      : dashboard.cognitiveLoad.level === 'moderate' ? '#f59e0b'
+      : '#ef4444';
+    return (
+      <View style={styles.dashboardCard}>
+        <TouchableOpacity
+          style={styles.dashboardHeader}
+          onPress={() => setDashboardExpanded((v) => !v)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.dashboardTitleRow}>
+            <View style={[styles.dashboardLoadDot, { backgroundColor: loadColor }]} />
+            <Text style={styles.dashboardTitle}>
+              Cognitive Load: {dashboard.cognitiveLoad.level}
+            </Text>
+          </View>
+          <Text style={styles.dashboardChevron}>{dashboardExpanded ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+        {dashboardExpanded && (
+          <View style={styles.dashboardBody}>
+            <View style={styles.dashboardGrid}>
+              <DashStat label="Active" value={dashboard.activeCommitments} />
+              <DashStat label="Open Loops" value={dashboard.openLoops} />
+              <DashStat label="Decisions" value={dashboard.unresolvedDecisions} />
+              <DashStat label="New Ideas" value={dashboard.newIdeasThisWeek} />
+              <DashStat label="This Week" value={dashboard.objectsThisWeek} />
+              <DashStat label="Dormant" value={dashboard.dormantIdeasCount} />
+            </View>
+            {dashboard.topDomainThisWeek && (
+              <Text style={styles.dashboardTopDomain}>
+                Top domain this week: {dashboard.topDomainThisWeek}
+              </Text>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  }, [dashboard, dashboardExpanded]);
 
   const renderStaleBanner = useCallback(() => {
     if (staleObjects.length === 0) return null;
@@ -560,6 +647,9 @@ export function ObjectsScreen({ navigation }: Props) {
       {/* Geofence Context Banner (when navigated from notification) */}
       {renderGeofenceContext()}
 
+      {/* Dashboard summary card */}
+      {renderDashboardCard()}
+
       {/* Stale Actionables Banner */}
       {renderStaleBanner()}
 
@@ -653,6 +743,27 @@ export function ObjectsScreen({ navigation }: Props) {
                     )}
                   </View>
                 </View>
+
+                {/* State */}
+                {selectedObject && (
+                  <View style={styles.detailSection}>
+                    <Text style={styles.detailLabel}>State</Text>
+                    <View style={styles.stateRow}>
+                      <View style={[styles.stateBadge, { backgroundColor: STATE_COLORS[(selectedObject as any).state ?? 'open'] ?? '#6b7280' }]}>
+                        <Text style={styles.stateBadgeText}>{(selectedObject as any).state ?? 'open'}</Text>
+                      </View>
+                      {!editMode && (
+                        <TouchableOpacity
+                          style={styles.stateChangeBtn}
+                          onPress={() => handleStateChange(selectedObject.id, (selectedObject as any).state ?? 'open')}
+                          disabled={updatingState}
+                        >
+                          <Text style={styles.stateChangeBtnText}>{updatingState ? '...' : 'Change'}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
 
                 {/* Content */}
                 <View style={styles.detailSection}>
@@ -769,6 +880,15 @@ export function ObjectsScreen({ navigation }: Props) {
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+function DashStat({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.dashStat}>
+      <Text style={styles.dashStatValue}>{value}</Text>
+      <Text style={styles.dashStatLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -1261,4 +1381,57 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
+
+  // Dashboard card
+  dashboardCard: {
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  dashboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  dashboardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dashboardLoadDot: { width: 8, height: 8, borderRadius: 4 },
+  dashboardTitle: { color: '#ccc', fontSize: 13, fontWeight: '600' },
+  dashboardChevron: { color: '#555', fontSize: 11 },
+  dashboardBody: { paddingHorizontal: 16, paddingBottom: 12 },
+  dashboardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dashStat: {
+    backgroundColor: '#222',
+    borderRadius: 8,
+    padding: 10,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  dashStatValue: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  dashStatLabel: { color: '#666', fontSize: 10, marginTop: 2 },
+  dashboardTopDomain: { color: '#666', fontSize: 12 },
+
+  // State badge
+  stateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  stateBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  stateBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  stateChangeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  stateChangeBtnText: { color: '#888', fontSize: 12 },
 });
