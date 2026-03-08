@@ -79,7 +79,7 @@ router.get('/dormant', async (req: Request, res: Response) => {
       createdAt: new Date(row.created_at).toISOString(),
     }));
 
-    return res.json({ dormantIdeas: ideas, total: ideas.length });
+    return res.json({ ideas, total: ideas.length });
   } catch (error) {
     console.error('[ideas] Error fetching dormant ideas:', error);
     return res.status(500).json({
