@@ -139,20 +139,30 @@ class ApiService {
    */
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs = 30000
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = await this.getHeaders();
 
     console.log(`[ApiService] ${options.method || 'GET'} ${endpoint} — auth: ${!!headers['Authorization']}`);
 
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        ...headers,
-        ...options.headers,
-      },
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers: {
+          ...headers,
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (response.status === 401) {
       // Token is invalid or expired — clear it and signal AuthError
@@ -361,6 +371,29 @@ class ApiService {
     });
   }
 
+  /** Replace the full set of linked objects for a geofence */
+  async setGeofenceObjects(geofenceId: string, objectIds: string[]): Promise<void> {
+    await this.request(`/api/v1/geofences/${geofenceId}/objects`, {
+      method: 'PUT',
+      body: JSON.stringify({ objectIds }),
+    });
+  }
+
+  /** Add a single object link to a geofence (idempotent) */
+  async addGeofenceObject(geofenceId: string, objectId: string): Promise<void> {
+    await this.request(`/api/v1/geofences/${geofenceId}/objects`, {
+      method: 'POST',
+      body: JSON.stringify({ objectId }),
+    });
+  }
+
+  /** Remove a single object link from a geofence */
+  async removeGeofenceObject(geofenceId: string, objectId: string): Promise<void> {
+    await this.request(`/api/v1/geofences/${geofenceId}/objects/${objectId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // RAG methods
   async ragSearch(query: string, options?: {
     topK?: number;
@@ -399,7 +432,7 @@ class ApiService {
     return this.request('/api/v1/rag/spar', {
       method: 'POST',
       body: JSON.stringify({ query, ...options }),
-    });
+    }, 90000); // 90s — LLM calls can be slow
   }
 
   // Deepgram voice methods

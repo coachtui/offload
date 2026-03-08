@@ -2,7 +2,7 @@
  * Geofence model
  */
 
-import { query, queryOne, queryMany } from '../db/queries';
+import { query, queryOne, queryMany, transaction } from '../db/queries';
 import type { Geofence, GeoPoint, GeofenceCreateRequest } from '@shared/types';
 
 export interface GeofenceRow {
@@ -286,7 +286,62 @@ export class GeofenceModel {
    * Delete geofence
    */
   async delete(): Promise<void> {
+    // hub.geofence_objects rows are removed automatically via ON DELETE CASCADE
     await query('DELETE FROM hub.geofences WHERE id = $1', [this.id]);
+  }
+
+  // ─── Join-table helpers ────────────────────────────────────────────────────
+
+  /**
+   * Return IDs of all objects linked to this geofence (ordered by link creation time)
+   */
+  static async getLinkedObjectIds(geofenceId: string): Promise<string[]> {
+    const rows = await queryMany<{ object_id: string }>(
+      'SELECT object_id FROM hub.geofence_objects WHERE geofence_id = $1 ORDER BY created_at ASC',
+      [geofenceId]
+    );
+    return rows.map((r) => r.object_id);
+  }
+
+  /**
+   * Atomically replace the full set of linked objects for a geofence.
+   * Runs inside a transaction: delete all existing links then insert the new set.
+   */
+  static async setLinkedObjects(geofenceId: string, objectIds: string[]): Promise<void> {
+    type DbClient = { query: (text: string, values?: any[]) => Promise<any> };
+    await transaction(async (client) => {
+      const c = client as unknown as DbClient;
+      await c.query(
+        'DELETE FROM hub.geofence_objects WHERE geofence_id = $1',
+        [geofenceId]
+      );
+      for (const objectId of objectIds) {
+        await c.query(
+          'INSERT INTO hub.geofence_objects (geofence_id, object_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+          [geofenceId, objectId]
+        );
+      }
+    });
+  }
+
+  /**
+   * Add a single linked object (idempotent — duplicate links are silently ignored)
+   */
+  static async addLinkedObject(geofenceId: string, objectId: string): Promise<void> {
+    await query(
+      'INSERT INTO hub.geofence_objects (geofence_id, object_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [geofenceId, objectId]
+    );
+  }
+
+  /**
+   * Remove a single linked object. No-op if the link doesn't exist.
+   */
+  static async removeLinkedObject(geofenceId: string, objectId: string): Promise<void> {
+    await query(
+      'DELETE FROM hub.geofence_objects WHERE geofence_id = $1 AND object_id = $2',
+      [geofenceId, objectId]
+    );
   }
 
   /**

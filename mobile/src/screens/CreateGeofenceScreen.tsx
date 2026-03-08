@@ -3,7 +3,7 @@
  * Privacy-first geofence creation with map interface
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,16 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { locationService, LocationUsageReason } from '../services/locationService';
 import { useGeofences } from '../hooks/useGeofences';
+import { apiService } from '../services/api';
+import { AtomicObject } from '../types';
 
 interface CreateGeofenceScreenProps {
   navigation: any;
@@ -35,20 +39,79 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   const [notifyOnEnter, setNotifyOnEnter] = useState(true);
   const [notifyOnExit, setNotifyOnExit] = useState(false);
 
+  // Linked notes state
+  const [linkedObjectIds, setLinkedObjectIds] = useState<string[]>([]);
+  const [linkedObjectsMap, setLinkedObjectsMap] = useState<Record<string, string>>({}); // id → title/content
+  const [showObjectPicker, setShowObjectPicker] = useState(false);
+  const [pickerObjects, setPickerObjects] = useState<AtomicObject[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [tempSelected, setTempSelected] = useState<string[]>([]);
+
   // UI state
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
   const { createGeofence } = useGeofences();
 
-  /**
-   * Request location permission and get current location
-   */
+  // ─── Object Picker ──────────────────────────────────────────────────────────
+
+  const openObjectPicker = useCallback(async () => {
+    setTempSelected([...linkedObjectIds]);
+    setPickerSearch('');
+    setShowObjectPicker(true);
+    setPickerLoading(true);
+    try {
+      const { objects } = await apiService.getObjects({ limit: 50 });
+      setPickerObjects(objects);
+    } catch {
+      setPickerObjects([]);
+    } finally {
+      setPickerLoading(false);
+    }
+  }, [linkedObjectIds]);
+
+  const filteredPickerObjects = pickerSearch.trim()
+    ? pickerObjects.filter((o) => {
+        const label = (o.title || o.content || '').toLowerCase();
+        return label.includes(pickerSearch.toLowerCase());
+      })
+    : pickerObjects;
+
+  const togglePickerItem = useCallback((id: string) => {
+    setTempSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }, []);
+
+  const confirmPicker = useCallback(() => {
+    // Build title map for display
+    const map: Record<string, string> = {};
+    for (const id of tempSelected) {
+      const obj = pickerObjects.find((o) => o.id === id);
+      if (obj) map[id] = obj.title || obj.content || id;
+    }
+    setLinkedObjectIds(tempSelected);
+    setLinkedObjectsMap(map);
+    setShowObjectPicker(false);
+    console.log(`[CreateGeofence] Linked ${tempSelected.length} object(s) selected`);
+  }, [tempSelected, pickerObjects]);
+
+  const removeLinkedObject = useCallback((id: string) => {
+    setLinkedObjectIds((prev) => prev.filter((x) => x !== id));
+    setLinkedObjectsMap((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  // ─── Location ───────────────────────────────────────────────────────────────
+
   const requestLocationAccess = async () => {
     setLocationLoading(true);
 
     try {
-      // Show explanation first
       const reason: LocationUsageReason = {
         action: 'create_geofence',
         description: locationService.getPermissionExplanation('create_geofence'),
@@ -98,20 +161,15 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     }
   };
 
-  /**
-   * Handle map press to set geofence location
-   */
   const handleMapPress = (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setLocation({ latitude, longitude });
     console.log('[CreateGeofence] Location set via map:', latitude, longitude);
   };
 
-  /**
-   * Validate and create geofence
-   */
+  // ─── Create ──────────────────────────────────────────────────────────────────
+
   const handleCreate = async () => {
-    // Validation
     if (!name.trim()) {
       Alert.alert('Validation Error', 'Please enter a name for this geofence');
       return;
@@ -130,7 +188,6 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     setLoading(true);
 
     try {
-      // Explain background permission if notifications enabled
       if (notifyOnEnter || notifyOnExit) {
         await explainBackgroundPermission();
       }
@@ -145,20 +202,28 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
         notifyOnExit,
       });
 
-      if (geofence) {
-        Alert.alert(
-          'Geofence Created',
-          `"${geofence.name}" has been created successfully.`,
-          [
-            {
-              text: 'OK',
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
-      } else {
+      if (!geofence) {
         Alert.alert('Error', 'Failed to create geofence');
+        return;
       }
+
+      // Link selected objects after geofence is created
+      if (linkedObjectIds.length > 0) {
+        try {
+          console.log(`[CreateGeofence] Linking ${linkedObjectIds.length} object(s) to geofence ${geofence.id}`);
+          await apiService.setGeofenceObjects(geofence.id, linkedObjectIds);
+          console.log('[CreateGeofence] Objects linked successfully');
+        } catch (linkErr) {
+          // Non-fatal — geofence was created; user can manage links later
+          console.warn('[CreateGeofence] Failed to link objects (non-fatal):', linkErr);
+        }
+      }
+
+      Alert.alert(
+        'Geofence Created',
+        `"${geofence.name}" has been created${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
     } catch (error: any) {
       console.error('[CreateGeofence] Error creating:', error);
       Alert.alert('Error', error.message || 'Failed to create geofence');
@@ -167,9 +232,6 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     }
   };
 
-  /**
-   * Explain background permission requirement
-   */
   const explainBackgroundPermission = async () => {
     return new Promise<void>((resolve) => {
       Alert.alert(
@@ -209,6 +271,8 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   useEffect(() => {
     requestLocationAccess();
   }, []);
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -358,6 +422,38 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           )}
         </View>
 
+        {/* Linked Notes */}
+        <View style={styles.formGroup}>
+          <View style={styles.linkedNotesHeader}>
+            <Text style={styles.label}>Linked Notes{linkedObjectIds.length > 0 ? ` (${linkedObjectIds.length})` : ''}</Text>
+            <TouchableOpacity style={styles.linkButton} onPress={openObjectPicker}>
+              <Text style={styles.linkButtonText}>+ Add Notes</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.linkedNotesSubtext}>
+            Notes linked here will appear in notifications when you arrive or leave
+          </Text>
+
+          {linkedObjectIds.length > 0 ? (
+            <View style={styles.linkedChips}>
+              {linkedObjectIds.map((id) => (
+                <View key={id} style={styles.linkedChip}>
+                  <Text style={styles.linkedChipText} numberOfLines={1}>
+                    {linkedObjectsMap[id] || id}
+                  </Text>
+                  <TouchableOpacity onPress={() => removeLinkedObject(id)} style={styles.linkedChipRemove}>
+                    <Text style={styles.linkedChipRemoveText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.linkedEmptyState}>
+              <Text style={styles.linkedEmptyText}>No notes linked yet</Text>
+            </View>
+          )}
+        </View>
+
         {/* Create Button */}
         <TouchableOpacity
           style={[styles.createButton, loading && styles.createButtonDisabled]}
@@ -371,6 +467,96 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Object Picker Modal */}
+      <Modal
+        visible={showObjectPicker}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowObjectPicker(false)}
+      >
+        <SafeAreaView style={styles.pickerContainer}>
+          {/* Picker Header */}
+          <View style={styles.pickerHeader}>
+            <TouchableOpacity onPress={() => setShowObjectPicker(false)}>
+              <Text style={styles.pickerCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.pickerTitle}>Link Notes</Text>
+            <TouchableOpacity onPress={confirmPicker}>
+              <Text style={styles.pickerDone}>
+                Done{tempSelected.length > 0 ? ` (${tempSelected.length})` : ''}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search */}
+          <View style={styles.pickerSearchContainer}>
+            <TextInput
+              style={styles.pickerSearchInput}
+              placeholder="Filter notes..."
+              placeholderTextColor="#9CA3AF"
+              value={pickerSearch}
+              onChangeText={setPickerSearch}
+              autoCorrect={false}
+            />
+          </View>
+
+          {/* Object List */}
+          {pickerLoading ? (
+            <View style={styles.pickerLoading}>
+              <ActivityIndicator size="large" color="#4F46E5" />
+              <Text style={styles.pickerLoadingText}>Loading notes...</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredPickerObjects}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                const isSelected = tempSelected.includes(item.id);
+                const label = item.title || item.content;
+                return (
+                  <TouchableOpacity
+                    style={[styles.pickerItem, isSelected && styles.pickerItemSelected]}
+                    onPress={() => togglePickerItem(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.pickerItemCheck}>
+                      {isSelected ? (
+                        <View style={styles.pickerCheckFilled}>
+                          <Text style={styles.pickerCheckMark}>✓</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.pickerCheckEmpty} />
+                      )}
+                    </View>
+                    <View style={styles.pickerItemContent}>
+                      <Text style={styles.pickerItemLabel} numberOfLines={2}>{label}</Text>
+                      <View style={styles.pickerItemMeta}>
+                        {item.objectType && (
+                          <Text style={styles.pickerItemBadge}>{item.objectType}</Text>
+                        )}
+                        {item.domain && (
+                          <Text style={[styles.pickerItemBadge, styles.pickerItemDomainBadge]}>
+                            {item.domain}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={
+                <View style={styles.pickerEmpty}>
+                  <Text style={styles.pickerEmptyText}>
+                    {pickerSearch ? 'No matching notes' : 'No notes found'}
+                  </Text>
+                </View>
+              }
+              contentContainerStyle={styles.pickerList}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -548,6 +734,80 @@ const styles = StyleSheet.create({
     marginTop: 10,
     lineHeight: 18,
   },
+  // Linked Notes section
+  linkedNotesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  linkedNotesSubtext: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+  linkButton: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  linkButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  linkedChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  linkedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 10,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    maxWidth: '100%',
+  },
+  linkedChipText: {
+    fontSize: 13,
+    color: '#3730A3',
+    fontWeight: '500',
+    maxWidth: 220,
+  },
+  linkedChipRemove: {
+    marginLeft: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#C7D2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linkedChipRemoveText: {
+    fontSize: 14,
+    color: '#3730A3',
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  linkedEmptyState: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    padding: 14,
+    alignItems: 'center',
+  },
+  linkedEmptyText: {
+    fontSize: 13,
+    color: '#9CA3AF',
+  },
   createButton: {
     backgroundColor: '#4F46E5',
     padding: 16,
@@ -563,5 +823,129 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Object Picker Modal
+  pickerContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  pickerCancel: {
+    fontSize: 16,
+    color: '#6B7280',
+  },
+  pickerTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  pickerDone: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#4F46E5',
+  },
+  pickerSearchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  pickerSearchInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111827',
+  },
+  pickerLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pickerLoadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  pickerList: {
+    paddingVertical: 8,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  pickerItemSelected: {
+    backgroundColor: '#F5F3FF',
+  },
+  pickerItemCheck: {
+    marginRight: 14,
+  },
+  pickerCheckEmpty: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+  },
+  pickerCheckFilled: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#4F46E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerCheckMark: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pickerItemContent: {
+    flex: 1,
+  },
+  pickerItemLabel: {
+    fontSize: 14,
+    color: '#111827',
+    lineHeight: 20,
+  },
+  pickerItemMeta: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  pickerItemBadge: {
+    fontSize: 11,
+    color: '#6B7280',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    textTransform: 'capitalize',
+    overflow: 'hidden',
+  },
+  pickerItemDomainBadge: {
+    color: '#4F46E5',
+    backgroundColor: '#EEF2FF',
+  },
+  pickerEmpty: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  pickerEmptyText: {
+    fontSize: 14,
+    color: '#9CA3AF',
   },
 });

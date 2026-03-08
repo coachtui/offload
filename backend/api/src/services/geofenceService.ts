@@ -85,13 +85,18 @@ export async function checkLocation(
 }> {
   const activeGeofences = await GeofenceModel.findByLocation(userId, location);
 
-  const objectIds = [...new Set(activeGeofences.flatMap((gf) => gf.associatedObjects))];
+  // Collect linked object IDs from the join table for all active geofences
+  const linkedIdArrays = await Promise.all(
+    activeGeofences.map((gf) => GeofenceModel.getLinkedObjectIds(gf.id))
+  );
+  const objectIds = [...new Set(linkedIdArrays.flat())];
+
   const [pinned, candidates] = await Promise.all([
     objectIds.length > 0 ? AtomicObjectModel.findByIds(objectIds) : Promise.resolve([]),
     AtomicObjectModel.findGeofenceCandidates(userId),
   ]);
 
-  // Merge: pinned objects first, then ML-flagged candidates not already included
+  // Merge: explicitly linked first, then ML-flagged candidates not already included
   const pinnedIds = new Set(pinned.map((o) => o.id));
   const merged = [...pinned, ...candidates.filter((o) => !pinnedIds.has(o.id))];
 
@@ -102,7 +107,11 @@ export async function checkLocation(
 }
 
 /**
- * Get atomic objects associated with a specific geofence, including ML-flagged candidates
+ * Get atomic objects explicitly linked to a geofence (join table only).
+ *
+ * Returns only objects the user has deliberately pinned to this geofence.
+ * Does NOT mix in ML-flagged candidates — that separation is intentional.
+ * If the geofence is disabled, returns an empty list so nothing is surfaced.
  */
 export async function getGeofenceObjects(
   userId: string,
@@ -112,17 +121,78 @@ export async function getGeofenceObjects(
   if (!geofence) throw new Error('Geofence not found');
   if (geofence.userId !== userId) throw new Error('Unauthorized');
 
-  const [pinned, candidates] = await Promise.all([
-    geofence.associatedObjects.length > 0
-      ? AtomicObjectModel.findByIds(geofence.associatedObjects)
-      : Promise.resolve([]),
-    AtomicObjectModel.findGeofenceCandidates(userId),
-  ]);
+  if (!geofence.notificationSettings.enabled) {
+    console.log(`[geofenceService] getGeofenceObjects: geofence ${geofenceId} is disabled — returning empty`);
+    return [];
+  }
 
-  // Merge: pinned first, then ML-flagged candidates not already included
-  const pinnedIds = new Set(pinned.map((o) => o.id));
-  const merged = [...pinned, ...candidates.filter((o) => !pinnedIds.has(o.id))];
-  return merged.map((o) => o.toAtomicObject());
+  const linkedIds = await GeofenceModel.getLinkedObjectIds(geofenceId);
+  console.log(`[geofenceService] getGeofenceObjects: geofence ${geofenceId} has ${linkedIds.length} linked object(s)`);
+
+  if (linkedIds.length === 0) return [];
+
+  const objects = await AtomicObjectModel.findByIds(linkedIds);
+  // findByIds respects soft-delete (deleted_at IS NULL) and preserves order
+  console.log(`[geofenceService] getGeofenceObjects: resolved ${objects.length}/${linkedIds.length} objects (delta = stale/deleted IDs)`);
+  return objects.map((o) => o.toAtomicObject());
+}
+
+/**
+ * Replace the full set of linked objects for a geofence.
+ * Validates ownership of both the geofence and all supplied object IDs.
+ */
+export async function setGeofenceLinkedObjects(
+  userId: string,
+  geofenceId: string,
+  objectIds: string[]
+): Promise<void> {
+  const geofence = await GeofenceModel.findById(geofenceId);
+  if (!geofence) throw new Error('Geofence not found');
+  if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  // Validate object ownership — silently drop IDs that don't belong to the user or don't exist
+  const validIds = objectIds.length > 0
+    ? await filterValidObjectIds(userId, objectIds)
+    : [];
+
+  console.log(`[geofenceService] setGeofenceLinkedObjects: geofence ${geofenceId} → ${validIds.length} object(s) (${objectIds.length - validIds.length} invalid/foreign IDs dropped)`);
+  await GeofenceModel.setLinkedObjects(geofenceId, validIds);
+}
+
+/**
+ * Add a single object link to a geofence (idempotent).
+ */
+export async function addGeofenceLinkedObject(
+  userId: string,
+  geofenceId: string,
+  objectId: string
+): Promise<void> {
+  const geofence = await GeofenceModel.findById(geofenceId);
+  if (!geofence) throw new Error('Geofence not found');
+  if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  const object = await AtomicObjectModel.findById(objectId);
+  if (!object) throw new Error('Object not found');
+  if (object.userId !== userId) throw new Error('Unauthorized');
+
+  console.log(`[geofenceService] addGeofenceLinkedObject: geofence ${geofenceId} ← object ${objectId}`);
+  await GeofenceModel.addLinkedObject(geofenceId, objectId);
+}
+
+/**
+ * Remove a single object link from a geofence. No-op if the link doesn't exist.
+ */
+export async function removeGeofenceLinkedObject(
+  userId: string,
+  geofenceId: string,
+  objectId: string
+): Promise<void> {
+  const geofence = await GeofenceModel.findById(geofenceId);
+  if (!geofence) throw new Error('Geofence not found');
+  if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  console.log(`[geofenceService] removeGeofenceLinkedObject: geofence ${geofenceId} ✕ object ${objectId}`);
+  await GeofenceModel.removeLinkedObject(geofenceId, objectId);
 }
 
 /**
@@ -170,4 +240,13 @@ export async function deleteGeofence(
   }
 
   await geofence.delete();
+}
+
+/**
+ * Filter a list of object IDs to those that exist, are not soft-deleted,
+ * and belong to the given user. Used to guard against cross-user linking.
+ */
+async function filterValidObjectIds(userId: string, objectIds: string[]): Promise<string[]> {
+  const objects = await AtomicObjectModel.findByIds(objectIds);
+  return objects.filter((o) => o.userId === userId).map((o) => o.id);
 }

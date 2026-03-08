@@ -173,13 +173,13 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
 
         <View style={styles.geofenceActions}>
           <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => {
-              // TODO: Navigate to edit screen
-              Alert.alert('Edit', 'Edit functionality coming soon');
-            }}
+            style={[styles.actionButton, styles.notesButton]}
+            onPress={() => navigation.navigate('ManageGeofenceObjects', {
+              geofenceId: item.id,
+              geofenceName: item.name,
+            })}
           >
-            <Text style={styles.actionButtonText}>Edit</Text>
+            <Text style={[styles.actionButtonText, styles.notesButtonText]}>Linked Notes</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -455,6 +455,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
+  },
+  notesButton: {
+    backgroundColor: '#EEF2FF',
+  },
+  notesButtonText: {
+    color: '#4338CA',
   },
   deleteButton: {
     backgroundColor: '#FEE2E2',

@@ -325,18 +325,27 @@ class GeofenceMonitoringService {
         return;
       }
 
-      // Fetch relevant objects count
-      console.log('[GeofenceMonitoring] Fetching object count...');
-      const objectCount = await this.getRelevantObjectCount(event.region.identifier);
-      console.log('[GeofenceMonitoring] Object count:', objectCount);
+      // Fetch linked objects summary (count + top titles)
+      console.log('[GeofenceMonitoring] Fetching linked objects summary...');
+      const { count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
+      console.log(`[GeofenceMonitoring] Linked objects: count=${count} titles=${JSON.stringify(titles)}`);
 
       const title = event.type === 'enter'
         ? `📍 Arrived at ${event.region.name}`
         : `👋 Left ${event.region.name}`;
 
-      const body = objectCount > 0
-        ? `You have ${objectCount} relevant note${objectCount > 1 ? 's' : ''}`
-        : 'Tap to view your notes';
+      // Build a useful body:
+      //   0 objects → generic prompt
+      //   1–3 objects → show titles inline e.g. "leg day, buy creatine, stretch ankle"
+      //   4+ objects  → show first 2 titles + overflow count e.g. "leg day, buy creatine +2 more"
+      let body: string;
+      if (count === 0) {
+        body = 'Tap to view your notes';
+      } else if (count <= 3) {
+        body = titles.join(', ');
+      } else {
+        body = `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
+      }
 
       console.log('[GeofenceMonitoring] Scheduling notification:', title, '|', body);
       const notifId = await Notifications.scheduleNotificationAsync({
@@ -361,18 +370,20 @@ class GeofenceMonitoringService {
   }
 
   /**
-   * Get count of relevant objects for a geofence via API
+   * Fetch the linked objects for a geofence and return count + top-3 truncated titles.
    *
    * KNOWN ISSUE: Uses JWT from SecureStore which may be expired when background task fires.
-   * Currently fails gracefully (returns 0). Full solution requires token refresh infrastructure.
-   * TODO: Implement token refresh or local caching strategy
+   * Fails gracefully (returns count=0, titles=[]).
+   * TODO: Implement token refresh or local caching strategy.
    */
-  private async getRelevantObjectCount(geofenceId: string): Promise<number> {
+  private async getLinkedObjectsSummary(
+    geofenceId: string
+  ): Promise<{ count: number; titles: string[] }> {
     try {
       const token = await SecureStore.getItemAsync('accessToken');
       if (!token) {
-        console.warn('[GeofenceMonitoring] No access token found for object count API call');
-        return 0;
+        console.warn('[GeofenceMonitoring] No access token — skipping linked objects fetch');
+        return { count: 0, titles: [] };
       }
 
       const response = await fetch(
@@ -381,15 +392,28 @@ class GeofenceMonitoringService {
       );
 
       if (!response.ok) {
-        console.warn(`[GeofenceMonitoring] API call failed (status ${response.status}) - token may be expired`);
-        return 0;
+        console.warn(`[GeofenceMonitoring] API call failed (status ${response.status}) — token may be expired`);
+        return { count: 0, titles: [] };
       }
 
       const data = await response.json();
-      return (data.objects?.length as number) || 0;
+      const objects: any[] = data.objects || [];
+      const count = objects.length;
+
+      // Extract top-3 titles, truncated to 35 chars each so the notification stays readable
+      const titles = objects
+        .slice(0, 3)
+        .map((o: any) => {
+          const raw: string = o.title || o.content || '';
+          return raw.length > 35 ? raw.slice(0, 33) + '…' : raw;
+        })
+        .filter(Boolean);
+
+      console.log(`[GeofenceMonitoring] getLinkedObjectsSummary: geofence ${geofenceId} → count=${count}`);
+      return { count, titles };
     } catch (error) {
-      console.warn('[GeofenceMonitoring] Error fetching object count:', error);
-      return 0;
+      console.warn('[GeofenceMonitoring] Error fetching linked objects summary:', error);
+      return { count: 0, titles: [] };
     }
   }
 

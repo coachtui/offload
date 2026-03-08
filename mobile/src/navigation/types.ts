@@ -7,6 +7,7 @@ export type RootStackParamList = {
   Objects: { geofenceId?: string; objectId?: string } | undefined;
   Geofences: undefined;
   CreateGeofence: undefined;
+  ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
   Search: undefined;
   AIQuery: undefined;
   Synthesis: undefined;

@@ -9,6 +9,9 @@ import {
   listGeofences,
   checkLocation,
   getGeofenceObjects,
+  setGeofenceLinkedObjects,
+  addGeofenceLinkedObject,
+  removeGeofenceLinkedObject,
   updateGeofence,
   deleteGeofence,
 } from '../services/geofenceService';
@@ -72,6 +75,94 @@ router.get('/:id/objects', async (req: Request, res: Response) => {
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to get geofence objects',
     });
+  }
+});
+
+/**
+ * PUT /api/v1/geofences/:id/objects
+ * Replace the full set of linked objects for a geofence.
+ * Body: { objectIds: string[] }
+ */
+router.put('/:id/objects', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const schema = z.object({ objectIds: z.array(z.string().uuid()) });
+    const { objectIds } = schema.parse(req.body);
+
+    console.log(`[geofences] PUT /:id/objects geofenceId=${req.params.id} objectIds=${JSON.stringify(objectIds)}`);
+    await setGeofenceLinkedObjects(req.user.id, req.params.id, objectIds);
+    console.log(`[geofences] PUT /:id/objects: ${objectIds.length} object(s) linked to geofence ${req.params.id}`);
+    res.json({ ok: true, linkedCount: objectIds.length });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors });
+      return;
+    }
+    if (error instanceof Error) {
+      if (error.message === 'Geofence not found') { res.status(404).json({ error: 'NOT_FOUND', message: error.message }); return; }
+      if (error.message === 'Unauthorized') { res.status(403).json({ error: 'FORBIDDEN', message: error.message }); return; }
+    }
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Failed to set linked objects' });
+  }
+});
+
+/**
+ * POST /api/v1/geofences/:id/objects
+ * Add a single linked object to a geofence (idempotent).
+ * Body: { objectId: string }
+ */
+router.post('/:id/objects', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const schema = z.object({ objectId: z.string().uuid() });
+    const { objectId } = schema.parse(req.body);
+
+    console.log(`[geofences] POST /:id/objects geofenceId=${req.params.id} objectId=${objectId}`);
+    await addGeofenceLinkedObject(req.user.id, req.params.id, objectId);
+    console.log(`[geofences] POST /:id/objects: linked object ${objectId} to geofence ${req.params.id}`);
+    res.status(201).json({ ok: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', message: 'Invalid input', details: error.errors });
+      return;
+    }
+    if (error instanceof Error) {
+      if (error.message === 'Geofence not found' || error.message === 'Object not found') { res.status(404).json({ error: 'NOT_FOUND', message: error.message }); return; }
+      if (error.message === 'Unauthorized') { res.status(403).json({ error: 'FORBIDDEN', message: error.message }); return; }
+    }
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Failed to add linked object' });
+  }
+});
+
+/**
+ * DELETE /api/v1/geofences/:id/objects/:objectId
+ * Remove a single linked object from a geofence.
+ */
+router.delete('/:id/objects/:objectId', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    console.log(`[geofences] DELETE /:id/objects/:objectId geofenceId=${req.params.id} objectId=${req.params.objectId}`);
+    await removeGeofenceLinkedObject(req.user.id, req.params.id, req.params.objectId);
+    console.log(`[geofences] DELETE /:id/objects/:objectId: unlinked object ${req.params.objectId} from geofence ${req.params.id}`);
+    res.status(204).send();
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'Geofence not found') { res.status(404).json({ error: 'NOT_FOUND', message: error.message }); return; }
+      if (error.message === 'Unauthorized') { res.status(403).json({ error: 'FORBIDDEN', message: error.message }); return; }
+    }
+    res.status(500).json({ error: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : 'Failed to remove linked object' });
   }
 });
 
