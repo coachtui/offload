@@ -15,8 +15,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAI, AIMessage } from '../hooks/useAI';
 
-export default function AIQueryScreen({ navigation }: any) {
-  const [inputText, setInputText] = useState('');
+export default function AIQueryScreen({ navigation, route }: any) {
+  const initialQuery: string | undefined = route?.params?.initialQuery;
+  const [inputText, setInputText] = useState(initialQuery ?? '');
   const { messages, loading, error, askQuestion, clearConversation } = useAI();
   const flatListRef = useRef<FlatList>(null);
 
@@ -94,7 +95,7 @@ export default function AIQueryScreen({ navigation }: any) {
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons name="chatbubbles-outline" size={80} color="#C7D2FE" />
-      <Text style={styles.emptyStateTitle}>Chat</Text>
+      <Text style={styles.emptyStateTitle}>Ask Offload</Text>
       <Text style={styles.emptyStateText}>
         Ask anything about your notes.
       </Text>
@@ -121,7 +122,7 @@ export default function AIQueryScreen({ navigation }: any) {
           <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Chat</Text>
+          <Text style={styles.headerTitle}>Ask Offload</Text>
           <Text style={styles.headerSubtitle}>
             {messages.length === 0 ? 'Ask me anything' : `${messages.length} messages`}
           </Text>

@@ -1,5 +1,9 @@
 import { registerRootComponent } from 'expo';
 
+// IMPORTANT: must be imported before registerRootComponent so TaskManager.defineTask
+// runs in both the foreground and the background task JS context.
+import './src/services/geofenceMonitoringService';
+
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

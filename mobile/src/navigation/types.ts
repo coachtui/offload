@@ -8,7 +8,7 @@ export type RootStackParamList = {
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
   Search: undefined;
-  Chat: undefined;
+  AskOffload: { initialQuery?: string } | undefined;
   Insights: undefined;
   PlaceSummary: { placeId: string; placeName: string; eventType: 'enter' | 'exit' };
 };

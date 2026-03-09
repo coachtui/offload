@@ -199,6 +199,17 @@ export default function SearchScreen({ navigation }: any) {
         contentContainerStyle={styles.resultsList}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={
+          results.length > 0 ? (
+            <TouchableOpacity
+              style={styles.askOffloadBtn}
+              onPress={() => navigation.navigate('AskOffload', { initialQuery: query })}
+              activeOpacity={0.78}
+            >
+              <Text style={styles.askOffloadBtnText}>Ask Offload about these results</Text>
+            </TouchableOpacity>
+          ) : null
+        }
       />
     </SafeAreaView>
   );
@@ -348,4 +359,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
+  askOffloadBtn: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  askOffloadBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
 });

@@ -4,10 +4,11 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useDeepgramTranscription } from '../hooks/useDeepgramTranscription';
 import { RootStackParamList } from '../navigation/types';
@@ -82,15 +83,15 @@ export function RecordScreen({ navigation }: Props) {
       case 'error':
         return '#ef4444';
       default:
-        return '#888';
+        return '#9CA3AF';
     }
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
         <Text style={styles.title}>Record</Text>
         <View style={styles.headerRight}>
@@ -103,12 +104,7 @@ export function RecordScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.statusBar}>
-        <View
-          style={[
-            styles.statusIndicator,
-            { backgroundColor: getStatusColor() },
-          ]}
-        />
+        <View style={[styles.statusIndicator, { backgroundColor: getStatusColor() }]} />
         <Text style={styles.statusText}>{getStatusText()}</Text>
       </View>
 
@@ -118,6 +114,7 @@ export function RecordScreen({ navigation }: Props) {
       >
         {!hasTranscript && status === 'idle' ? (
           <View style={styles.emptyState}>
+            <Ionicons name="mic-outline" size={52} color="#D1D5DB" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyStateText}>
               Tap the record button to start capturing your thoughts
             </Text>
@@ -127,12 +124,12 @@ export function RecordScreen({ navigation }: Props) {
           </View>
         ) : (
           <View>
-            {finalTranscript && (
+            {finalTranscript ? (
               <Text style={styles.transcriptText}>{finalTranscript}</Text>
-            )}
-            {partialTranscript && (
+            ) : null}
+            {partialTranscript ? (
               <Text style={styles.partialText}>{partialTranscript}</Text>
-            )}
+            ) : null}
             {isRecording && !partialTranscript && !finalTranscript && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color="#3b82f6" />
@@ -168,9 +165,9 @@ export function RecordScreen({ navigation }: Props) {
                     {note.mentionCount !== undefined && note.mentionCount >= 3 && (
                       <Text style={styles.mentionBadge}>Mentioned {note.mentionCount}× before</Text>
                     )}
-                    {note.title && (
+                    {note.title ? (
                       <Text style={styles.relatedNoteTitle} numberOfLines={1}>{note.title}</Text>
-                    )}
+                    ) : null}
                     <Text style={styles.relatedNoteText} numberOfLines={2}>{note.cleanedText}</Text>
                   </TouchableOpacity>
                 ))}
@@ -188,15 +185,12 @@ export function RecordScreen({ navigation }: Props) {
 
       <View style={styles.controlsContainer}>
         <TouchableOpacity
-          style={[
-            styles.recordButton,
-            isRecording && styles.recordButtonActive,
-          ]}
+          style={[styles.recordButton, isRecording && styles.recordButtonActive]}
           onPress={handleRecordPress}
           disabled={isConnecting || isProcessing}
         >
           {isConnecting || isProcessing ? (
-            <ActivityIndicator size="large" color="#fff" />
+            <ActivityIndicator size="large" color="#111827" />
           ) : (
             <View
               style={[
@@ -252,7 +246,9 @@ function ContraDetailBanner({
                   style={[styles.contradictionActionBtn, styles.contradictionActionBtnPrimary]}
                   onPress={() => setExpandedIdx(null)}
                 >
-                  <Text style={[styles.contradictionActionText, { color: '#fff' }]}>Changed my mind</Text>
+                  <Text style={[styles.contradictionActionText, { color: '#fff' }]}>
+                    Changed my mind
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -266,40 +262,38 @@ function ContraDetailBanner({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1a1a1a',
-  },
-  backButton: {
-    color: '#3b82f6',
-    fontSize: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '600',
-    color: '#fff',
+    color: '#111827',
   },
   headerRight: {
     minWidth: 50,
     alignItems: 'flex-end',
   },
   clearButton: {
-    color: '#888',
+    color: '#6B7280',
     fontSize: 14,
   },
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: '#111',
+    paddingVertical: 10,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F3F4F6',
   },
   statusIndicator: {
     width: 8,
@@ -308,8 +302,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   statusText: {
-    color: '#888',
-    fontSize: 12,
+    color: '#6B7280',
+    fontSize: 13,
   },
   transcriptContainer: {
     flex: 1,
@@ -323,25 +317,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 48,
+    paddingTop: 40,
   },
   emptyStateText: {
-    color: '#666',
+    color: '#6B7280',
     fontSize: 16,
     textAlign: 'center',
+    lineHeight: 24,
   },
   emptyStateSubtext: {
-    color: '#444',
-    fontSize: 12,
+    color: '#9CA3AF',
+    fontSize: 13,
     textAlign: 'center',
     marginTop: 8,
   },
   transcriptText: {
-    color: '#fff',
+    color: '#111827',
     fontSize: 18,
     lineHeight: 28,
   },
   partialText: {
-    color: '#666',
+    color: '#9CA3AF',
     fontSize: 18,
     lineHeight: 28,
     fontStyle: 'italic',
@@ -361,33 +357,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   errorContainer: {
-    backgroundColor: '#7f1d1d',
+    backgroundColor: '#FEE2E2',
     paddingHorizontal: 24,
     paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
   },
   errorText: {
-    color: '#fca5a5',
+    color: '#DC2626',
     fontSize: 14,
   },
   controlsContainer: {
     alignItems: 'center',
     paddingVertical: 32,
-    paddingBottom: 48,
-    borderTopWidth: 1,
-    borderTopColor: '#1a1a1a',
+    paddingBottom: 40,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
   },
   recordButton: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#F9FAFB',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#333',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
   },
   recordButtonActive: {
     borderColor: '#ef4444',
+    borderWidth: 3,
   },
   recordButtonInner: {
     width: 32,
@@ -401,26 +406,27 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   recordHint: {
-    color: '#666',
+    color: '#6B7280',
     fontSize: 14,
-    marginTop: 16,
+    marginTop: 14,
   },
+  // Contradiction banner
   contradictionBanner: {
     marginTop: 20,
-    backgroundColor: '#2d1a00',
+    backgroundColor: '#FEF3C7',
     borderRadius: 10,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#f59e0b44',
+    borderColor: '#FDE68A',
   },
   contradictionTitle: {
-    color: '#f59e0b',
+    color: '#92400E',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 6,
   },
   contradictionText: {
-    color: '#d97706',
+    color: '#B45309',
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2,
@@ -429,10 +435,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#f59e0b22',
+    borderTopColor: '#FDE68A',
   },
   contradictionConfidence: {
-    color: '#888',
+    color: '#6B7280',
     fontSize: 11,
     marginBottom: 8,
   },
@@ -445,17 +451,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#f59e0b44',
+    borderColor: '#F59E0B',
   },
   contradictionActionBtnPrimary: {
-    backgroundColor: '#f59e0b',
-    borderColor: '#f59e0b',
+    backgroundColor: '#F59E0B',
+    borderColor: '#F59E0B',
   },
   contradictionActionText: {
-    color: '#f59e0b',
+    color: '#B45309',
     fontSize: 12,
     fontWeight: '600',
   },
+  // Related notes
   mentionBadge: {
     color: '#6366f1',
     fontSize: 11,
@@ -466,7 +473,7 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   relatedTitle: {
-    color: '#666',
+    color: '#6B7280',
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -474,12 +481,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   relatedCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#F9FAFB',
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#222',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E7EB',
   },
   relatedCardHeader: {
     flexDirection: 'row',
@@ -487,7 +494,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   relatedType: {
-    color: '#555',
+    color: '#6B7280',
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
@@ -499,13 +506,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   relatedNoteTitle: {
-    color: '#ccc',
+    color: '#374151',
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 2,
   },
   relatedNoteText: {
-    color: '#666',
+    color: '#6B7280',
     fontSize: 13,
     lineHeight: 18,
   },

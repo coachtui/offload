@@ -55,7 +55,7 @@ function MainStack() {
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Search" component={SearchScreen} />
-      <Stack.Screen name="Chat" component={AIQueryScreen} />
+      <Stack.Screen name="AskOffload" component={AIQueryScreen} />
       <Stack.Screen name="Insights" component={SynthesisScreen} />
       <Stack.Screen
         name="ManageGeofenceObjects"
