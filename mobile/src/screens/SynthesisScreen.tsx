@@ -274,10 +274,18 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
                   dormantIdeas
                     .filter((idea) => !dismissedIds.has(idea.id))
                     .map((idea) => (
-                      <View key={idea.id} style={styles.dormantCard}>
+                      <TouchableOpacity
+                        key={idea.id}
+                        style={styles.dormantCard}
+                        onPress={() => navigation.navigate('Objects', { objectId: idea.id })}
+                        activeOpacity={0.75}
+                      >
                         <View style={styles.dormantCardHeader}>
                           <Text style={styles.dormantAge}>{idea.daysDormant}d dormant</Text>
-                          <TouchableOpacity onPress={() => handleArchiveIdea(idea.id)}>
+                          <TouchableOpacity
+                            onPress={(e) => { e.stopPropagation(); handleArchiveIdea(idea.id); }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
                             <Text style={styles.dormantArchive}>Archive</Text>
                           </TouchableOpacity>
                         </View>
@@ -287,7 +295,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
                         {idea.mentionCount > 0 && (
                           <Text style={styles.dormantMention}>Referenced {idea.mentionCount}× in past</Text>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     ))
                 )}
               </Section>
