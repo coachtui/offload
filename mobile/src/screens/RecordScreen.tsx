@@ -62,7 +62,7 @@ export function RecordScreen({ navigation }: Props) {
   function getStatusText(): string {
     switch (status) {
       case 'connecting':
-        return 'Connecting to Deepgram...';
+        return 'Starting recording...';
       case 'recording':
         return `Recording ${formatDuration(duration)}`;
       case 'processing':

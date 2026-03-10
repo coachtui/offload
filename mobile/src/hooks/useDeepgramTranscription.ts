@@ -264,6 +264,9 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         console.log('[Recording] sent CloseStream to Deepgram, waiting for flush...');
         await new Promise(resolve => setTimeout(resolve, 1500));
       }
+      // Null out handlers before intentional close so onerror doesn't fire and show a spurious error
+      wsRef.current.onerror = null;
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
       console.log('[Recording] Deepgram WebSocket closed');
