@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
-import { apiService, RagSearchResult } from '../services/api';
-import { AtomicObject } from '../types';
+import { RagSearchResult } from '../services/api';
 import { useSearch } from '../hooks/useSearch';
 import { useForYou } from '../hooks/useForYou';
 import { AppSearchBar } from '../components/ui';
@@ -50,6 +49,14 @@ const NAV_ITEMS = [
     iconColor: '#059669',
     iconBg: '#D1FAE5',
   },
+  {
+    icon: 'albums-outline' as const,
+    label: 'Notes',
+    description: 'Browse all your captures',
+    route: 'Objects' as const,
+    iconColor: '#B45309',
+    iconBg: '#FEF3C7',
+  },
 ] as const;
 
 function formatRelativeTime(date: Date | string): string {
@@ -69,26 +76,12 @@ function formatRelativeTime(date: Date | string): string {
 export function HomeScreen({ navigation }: Props) {
   const { logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [recentObjects, setRecentObjects] = useState<AtomicObject[]>([]);
-  const [recentLoading, setRecentLoading] = useState(true);
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
   const { items: forYouItems } = useForYou();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSearchMode = searchQuery.trim().length > 0;
   const [forYouExpanded, setForYouExpanded] = useState(false);
-  const [recentExpanded, setRecentExpanded] = useState(false);
-
-  // Fetch recent captures on mount
-  useEffect(() => {
-    apiService
-      .getObjects({ limit: 5 })
-      .then((res) => {
-        setRecentObjects(res.objects);
-        setRecentLoading(false);
-      })
-      .catch(() => setRecentLoading(false));
-  }, []);
 
   const handleSearchChange = useCallback(
     (text: string) => {
@@ -299,64 +292,6 @@ export function HomeScreen({ navigation }: Props) {
             </View>
           ) : null}
 
-          {/* Recent captures */}
-          <View style={styles.recentSection}>
-            <TouchableOpacity
-              style={styles.recentSectionHeader}
-              onPress={() => setRecentExpanded((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.recentSectionTitle}>Recent captures</Text>
-              <Ionicons
-                name={recentExpanded ? 'chevron-up' : 'chevron-down'}
-                size={15}
-                color="#9CA3AF"
-              />
-            </TouchableOpacity>
-
-            {recentExpanded && recentLoading ? (
-              <ActivityIndicator
-                size="small"
-                color="#9CA3AF"
-                style={{ marginTop: 16 }}
-              />
-            ) : recentExpanded && recentObjects.length === 0 ? (
-              <Text style={styles.recentEmpty}>
-                Your captured thoughts will appear here
-              </Text>
-            ) : recentExpanded ? (
-              recentObjects.map((obj) => (
-                <TouchableOpacity
-                  key={obj.id}
-                  style={styles.recentRow}
-                  onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.recentContent}>
-                    <Text style={styles.recentRowTitle} numberOfLines={1}>
-                      {obj.title ?? obj.content}
-                    </Text>
-                    <View style={styles.recentRowMeta}>
-                      <Text style={styles.recentRowTime}>
-                        {formatRelativeTime(obj.createdAt)}
-                      </Text>
-                      {obj.source?.location ? (
-                        <>
-                          <Text style={styles.recentMetaDot}>·</Text>
-                          <Ionicons
-                            name="location-outline"
-                            size={11}
-                            color="#9CA3AF"
-                          />
-                        </>
-                      ) : null}
-                    </View>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
-                </TouchableOpacity>
-              ))
-            ) : null}
-          </View>
         </ScrollView>
       )}
     </SafeAreaView>
@@ -523,58 +458,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#6B7280',
-  },
-  // Recent captures
-  recentSection: {
-    // no extra margin needed — grid has marginBottom:32
-  },
-  recentSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  recentSectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  recentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F3F4F6',
-  },
-  recentContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  recentRowTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  recentRowMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-    gap: 4,
-  },
-  recentRowTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  recentMetaDot: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  recentEmpty: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 8,
   },
   // Search mode — results list
   searchList: {
