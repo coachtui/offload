@@ -158,7 +158,7 @@ export function HomeScreen({ navigation }: Props) {
         <AppSearchBar
           value={searchQuery}
           onChangeText={handleSearchChange}
-          placeholder="Search your notes"
+          placeholder="Forget Anything?"
           loading={isSearchMode && searchLoading}
         />
       </View>
