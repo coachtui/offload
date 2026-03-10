@@ -208,6 +208,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const [searchText, setSearchText] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [detailsExpanded, setDetailsExpanded] = useState(true);
   const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
   const [updatingState, setUpdatingState] = useState(false);
 
@@ -320,6 +321,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const openDetail = useCallback(async (id: string) => {
     setModalVisible(true);
     setEditMode(false);
+    setDetailsExpanded(true);
     setAiDetailsExpanded(false);
     await fetchObjectDetail(id);
   }, [fetchObjectDetail]);
@@ -331,6 +333,7 @@ export function ObjectsScreen({ navigation }: Props) {
     setModalVisible(false);
     setEditMode(false);
     setEditContent('');
+    setDetailsExpanded(true);
     setAiDetailsExpanded(false);
     clearDetail();
   }, [clearDetail]);
@@ -818,50 +821,64 @@ export function ObjectsScreen({ navigation }: Props) {
                   <View style={styles.divider} />
 
                   {/* Details */}
-                  <Text style={styles.sectionLabel}>Details</Text>
-                  <View style={styles.detailsCard}>
-                    {selectedObject.objectType && (
-                      <DetailRow
-                        label="Type"
-                        value={TYPE_LABELS[selectedObject.objectType] || selectedObject.objectType}
-                      />
-                    )}
-                    {selectedObject.domain && selectedObject.domain !== 'misc' && (
-                      <DetailRow
-                        label="Area"
-                        value={DOMAIN_LABELS[selectedObject.domain] || selectedObject.domain}
-                      />
-                    )}
-                    <DetailRow
-                      label="Priority"
-                      value={selectedObject.metadata.urgency}
-                      valueColor={URGENCY_COLORS[selectedObject.metadata.urgency]}
-                      capitalize
+                  <TouchableOpacity
+                    style={styles.advancedToggle}
+                    onPress={() => setDetailsExpanded((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.sectionLabel}>Details</Text>
+                    <Ionicons
+                      name={detailsExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={Colors.textFaint}
                     />
-                    <DetailRow
-                      label="Status"
-                      customValue={
-                        <StatusPicker
-                          currentState={(selectedObject as any).state ?? 'open'}
-                          onChangeState={(s) => handleStatusChange(selectedObject.id, s)}
-                          updating={updatingState}
+                  </TouchableOpacity>
+
+                  {detailsExpanded && (
+                    <View style={styles.detailsCard}>
+                      {selectedObject.objectType && (
+                        <DetailRow
+                          label="Type"
+                          value={TYPE_LABELS[selectedObject.objectType] || selectedObject.objectType}
                         />
-                      }
-                    />
-                    <DetailRow
-                      label="Captured"
-                      value={
-                        selectedObject.source.type === 'voice' ? 'Voice recording'
-                          : selectedObject.source.type === 'text' ? 'Typed'
-                          : 'Imported'
-                      }
-                    />
-                    <DetailRow
-                      label="Created"
-                      value={formatFullDate(selectedObject.createdAt)}
-                      isLast
-                    />
-                  </View>
+                      )}
+                      {selectedObject.domain && selectedObject.domain !== 'misc' && (
+                        <DetailRow
+                          label="Area"
+                          value={DOMAIN_LABELS[selectedObject.domain] || selectedObject.domain}
+                        />
+                      )}
+                      <DetailRow
+                        label="Priority"
+                        value={selectedObject.metadata.urgency}
+                        valueColor={URGENCY_COLORS[selectedObject.metadata.urgency]}
+                        capitalize
+                      />
+                      <DetailRow
+                        label="Status"
+                        customValue={
+                          <StatusPicker
+                            currentState={(selectedObject as any).state ?? 'open'}
+                            onChangeState={(s) => handleStatusChange(selectedObject.id, s)}
+                            updating={updatingState}
+                          />
+                        }
+                      />
+                      <DetailRow
+                        label="Captured"
+                        value={
+                          selectedObject.source.type === 'voice' ? 'Voice recording'
+                            : selectedObject.source.type === 'text' ? 'Typed'
+                            : 'Imported'
+                        }
+                      />
+                      <DetailRow
+                        label="Created"
+                        value={formatFullDate(selectedObject.createdAt)}
+                        isLast
+                      />
+                    </View>
+                  )}
 
                   {/* Keywords */}
                   {selectedObject.metadata.tags.length > 0 && (
