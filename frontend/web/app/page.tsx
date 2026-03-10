@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import PublicNav from '@/components/PublicNav';
 import Footer from '@/components/Footer';
+import HeroIllustration from '@/components/HeroIllustration';
 
 // ── Inline SVG icons ──────────────────────────────────────────────────────
 
@@ -177,50 +178,64 @@ export default function LandingPage() {
       <PublicNav />
 
       {/* ── Hero ──────────────────────────────────────────────────────── */}
-      <section className="px-6 pt-20 pb-24 text-center">
-        <div className="max-w-3xl mx-auto">
-          {/* Pill badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-10 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full">
-            <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
-            Private by default
-          </div>
+      <section className="px-6 pt-16 pb-20 lg:pt-24 lg:pb-28">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
 
-          <h1 className="text-5xl sm:text-6xl font-bold text-gray-900 tracking-tight leading-[1.08] mb-6 text-balance">
-            Offload what&apos;s
-            <br />
-            on your mind.
-          </h1>
+            {/* Text column */}
+            <div className="text-center lg:text-left order-2 lg:order-1">
+              {/* Pill badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-10 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full">
+                <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
+                Private by default
+              </div>
 
-          <p className="text-xl text-gray-500 leading-relaxed mb-10 max-w-xl mx-auto">
-            Capture thoughts instantly. AI organizes them. Your notes return when they matter.
-          </p>
+              <h1 className="text-5xl sm:text-6xl font-bold text-gray-900 tracking-tight leading-[1.08] mb-6 text-balance">
+                Offload what&apos;s
+                <br />
+                on your mind.
+              </h1>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
-            <Link
-              href="/signup"
-              className="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
-            >
-              Get Started
-            </Link>
-            <Link
-              href="/login"
-              className="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
-            >
-              Log In
-            </Link>
-          </div>
+              <p className="text-xl text-gray-500 leading-relaxed mb-10 max-w-xl mx-auto lg:mx-0">
+                Capture thoughts instantly. AI organizes them. Your notes return when they matter.
+              </p>
 
-          {/* Trust chips */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {TRUST_CHIPS.map((chip) => (
-              <span
-                key={chip}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-full"
-              >
-                <CheckIcon className="text-gray-400 flex-shrink-0" />
-                {chip}
-              </span>
-            ))}
+              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 mb-12">
+                <Link
+                  href="/signup"
+                  className="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-colors"
+                >
+                  Get Started
+                </Link>
+                <Link
+                  href="/login"
+                  className="w-full sm:w-auto px-8 py-3.5 text-base font-semibold text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
+                >
+                  Log In
+                </Link>
+              </div>
+
+              {/* Trust chips */}
+              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                {TRUST_CHIPS.map((chip) => (
+                  <span
+                    key={chip}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 rounded-full"
+                  >
+                    <CheckIcon className="text-gray-400 flex-shrink-0" />
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Illustration column */}
+            <div className="flex items-center justify-center order-1 lg:order-2">
+              <div className="w-[260px] sm:w-[320px] lg:w-[480px] xl:w-[520px]">
+                <HeroIllustration />
+              </div>
+            </div>
+
           </div>
         </div>
       </section>
