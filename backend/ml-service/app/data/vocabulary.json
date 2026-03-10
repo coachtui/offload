@@ -1,0 +1,438 @@
+{
+  "version": "1.0",
+  "region": "hawaii-honolulu",
+  "description": "Local vocabulary for Hawaii/Honolulu region — place names and construction/field terms. Used for Deepgram keyword boosting (Layer A) and transcript post-processing correction (Layer B).",
+  "places": [
+    {
+      "canonical": "Puʻuhale",
+      "asr_keyword": "Puuhale",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Puuhale",
+        "pu uhale",
+        "poohale",
+        "pooholly",
+        "pu'uhale",
+        "puuhale road",
+        "pu uhale road",
+        "poohale road"
+      ]
+    },
+    {
+      "canonical": "Waiakamilo",
+      "asr_keyword": "Waiakamilo",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Waiakamilo",
+        "waikamilo",
+        "why a kamilo",
+        "waia kamilo",
+        "wyakamilo",
+        "why yah kamilo",
+        "waiakamilo road",
+        "waikamilo road"
+      ]
+    },
+    {
+      "canonical": "Dillingham",
+      "asr_keyword": "Dillingham",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Dillingham",
+        "dilling ham",
+        "dillengham",
+        "dillinham",
+        "dillingham boulevard",
+        "dillingham blvd",
+        "dilling ham boulevard"
+      ]
+    },
+    {
+      "canonical": "Kamehameha",
+      "asr_keyword": "Kamehameha",
+      "keyword_boost": 2,
+      "category": "highway",
+      "aliases": [
+        "Kamehameha",
+        "kame hame ha",
+        "kamehameha highway",
+        "kam highway",
+        "kam hwy"
+      ]
+    },
+    {
+      "canonical": "Kalihi",
+      "asr_keyword": "Kalihi",
+      "keyword_boost": 2,
+      "category": "neighborhood",
+      "aliases": [
+        "Kalihi",
+        "kalihi street",
+        "kalihi valley",
+        "kalihi side",
+        "ka lihi"
+      ]
+    },
+    {
+      "canonical": "Nimitz",
+      "asr_keyword": "Nimitz",
+      "keyword_boost": 2,
+      "category": "highway",
+      "aliases": [
+        "Nimitz",
+        "nimitz highway",
+        "nimitz hwy",
+        "nymitz"
+      ]
+    },
+    {
+      "canonical": "Moanalua",
+      "asr_keyword": "Moanalua",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Moanalua",
+        "moa na lua",
+        "moana lua",
+        "moanalua road",
+        "moanalua freeway",
+        "moanalua valley"
+      ]
+    },
+    {
+      "canonical": "Likelike",
+      "asr_keyword": "Likelike",
+      "keyword_boost": 2,
+      "category": "highway",
+      "aliases": [
+        "Likelike",
+        "like like",
+        "likelike highway",
+        "like like highway"
+      ]
+    },
+    {
+      "canonical": "Kapālama",
+      "asr_keyword": "Kapalama",
+      "keyword_boost": 2,
+      "category": "neighborhood",
+      "aliases": [
+        "Kapalama",
+        "Kapālama",
+        "kapa lama",
+        "kapaalama",
+        "kapalama canal"
+      ]
+    },
+    {
+      "canonical": "Halawa",
+      "asr_keyword": "Halawa",
+      "keyword_boost": 2,
+      "category": "area",
+      "aliases": [
+        "Halawa",
+        "halawa valley",
+        "halawa heights",
+        "ha lawa"
+      ]
+    },
+    {
+      "canonical": "Sand Island",
+      "asr_keyword": "Sand Island",
+      "keyword_boost": 2,
+      "category": "area",
+      "aliases": [
+        "Sand Island",
+        "sand island access road",
+        "sand island road"
+      ]
+    },
+    {
+      "canonical": "Honolulu Harbor",
+      "asr_keyword": "Honolulu Harbor",
+      "keyword_boost": 2,
+      "category": "landmark",
+      "aliases": [
+        "Honolulu Harbor",
+        "honolulu harbor",
+        "the harbor"
+      ]
+    },
+    {
+      "canonical": "Kunia",
+      "asr_keyword": "Kunia",
+      "keyword_boost": 2,
+      "category": "area",
+      "aliases": [
+        "Kunia",
+        "kunia road",
+        "ku nia",
+        "koo nia"
+      ]
+    },
+    {
+      "canonical": "Middle Street",
+      "asr_keyword": "Middle Street",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Middle Street",
+        "middle street",
+        "the middle street"
+      ]
+    },
+    {
+      "canonical": "Mapunapuna",
+      "asr_keyword": "Mapunapuna",
+      "keyword_boost": 2,
+      "category": "neighborhood",
+      "aliases": [
+        "Mapunapuna",
+        "ma puna puna",
+        "mapuna puna"
+      ]
+    },
+    {
+      "canonical": "Iwilei",
+      "asr_keyword": "Iwilei",
+      "keyword_boost": 2,
+      "category": "neighborhood",
+      "aliases": [
+        "Iwilei",
+        "iwi lei",
+        "i wi lei"
+      ]
+    },
+    {
+      "canonical": "Auld Lane",
+      "asr_keyword": "Auld Lane",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Auld Lane",
+        "old lane",
+        "auld"
+      ]
+    },
+    {
+      "canonical": "Lagoon Drive",
+      "asr_keyword": "Lagoon Drive",
+      "keyword_boost": 2,
+      "category": "street",
+      "aliases": [
+        "Lagoon Drive",
+        "lagoon drive",
+        "lagoon dr"
+      ]
+    },
+    {
+      "canonical": "Ala Moana",
+      "asr_keyword": "Ala Moana",
+      "keyword_boost": 1,
+      "category": "area",
+      "aliases": [
+        "Ala Moana",
+        "ala moana",
+        "alamoana"
+      ]
+    }
+  ],
+  "construction_terms": [
+    {
+      "canonical": "drainage inlet",
+      "keyword_boost": 1,
+      "aliases": [
+        "drainage inlet",
+        "draining let",
+        "draining lets",
+        "drain inlet",
+        "draining inlet",
+        "draininglet",
+        "drainage lets"
+      ]
+    },
+    {
+      "canonical": "manhole",
+      "keyword_boost": 1,
+      "aliases": [
+        "manhole",
+        "man hole",
+        "manholes"
+      ]
+    },
+    {
+      "canonical": "trench plate",
+      "keyword_boost": 1,
+      "aliases": [
+        "trench plate",
+        "trench plates",
+        "french plate",
+        "french plates"
+      ]
+    },
+    {
+      "canonical": "vac truck",
+      "keyword_boost": 1,
+      "aliases": [
+        "vac truck",
+        "vac-truck",
+        "vacuum truck",
+        "vack truck",
+        "back truck"
+      ]
+    },
+    {
+      "canonical": "Godwin pump",
+      "keyword_boost": 1,
+      "aliases": [
+        "Godwin pump",
+        "godwin pump",
+        "godwin",
+        "god win pump"
+      ]
+    },
+    {
+      "canonical": "dewatering",
+      "keyword_boost": 1,
+      "aliases": [
+        "dewatering",
+        "de watering",
+        "dewatered"
+      ]
+    },
+    {
+      "canonical": "traffic control",
+      "keyword_boost": 1,
+      "aliases": [
+        "traffic control",
+        "traffic controller",
+        "traffic control plan"
+      ]
+    },
+    {
+      "canonical": "lane closure",
+      "keyword_boost": 1,
+      "aliases": [
+        "lane closure",
+        "lane closures",
+        "lane closed"
+      ]
+    },
+    {
+      "canonical": "utility conflict",
+      "keyword_boost": 1,
+      "aliases": [
+        "utility conflict",
+        "utility conflicts",
+        "util conflict"
+      ]
+    },
+    {
+      "canonical": "asphalt patch",
+      "keyword_boost": 1,
+      "aliases": [
+        "asphalt patch",
+        "asphalt patching",
+        "asphalt patches",
+        "asp patch"
+      ]
+    },
+    {
+      "canonical": "curb and gutter",
+      "keyword_boost": 1,
+      "aliases": [
+        "curb and gutter",
+        "curb and gutter work",
+        "curb gutter"
+      ]
+    },
+    {
+      "canonical": "submittal",
+      "keyword_boost": 1,
+      "aliases": [
+        "submittal",
+        "submittals",
+        "sub mittal",
+        "submittle"
+      ]
+    },
+    {
+      "canonical": "punch list",
+      "keyword_boost": 1,
+      "aliases": [
+        "punch list",
+        "punchlist",
+        "punch lists",
+        "punch-list"
+      ]
+    },
+    {
+      "canonical": "turnover",
+      "keyword_boost": 1,
+      "aliases": [
+        "turnover",
+        "turn over",
+        "turnover package",
+        "turn over package"
+      ]
+    },
+    {
+      "canonical": "shoring",
+      "keyword_boost": 1,
+      "aliases": [
+        "shoring",
+        "shore-ing",
+        "shore up"
+      ]
+    },
+    {
+      "canonical": "conduit",
+      "keyword_boost": 1,
+      "aliases": [
+        "conduit",
+        "conduits",
+        "con duit"
+      ]
+    },
+    {
+      "canonical": "catch basin",
+      "keyword_boost": 1,
+      "aliases": [
+        "catch basin",
+        "catch basins",
+        "catch-basin"
+      ]
+    },
+    {
+      "canonical": "storm drain",
+      "keyword_boost": 1,
+      "aliases": [
+        "storm drain",
+        "storm drains",
+        "storm drainage"
+      ]
+    },
+    {
+      "canonical": "RFI",
+      "keyword_boost": 1,
+      "aliases": [
+        "RFI",
+        "rfi",
+        "request for information"
+      ]
+    },
+    {
+      "canonical": "change order",
+      "keyword_boost": 1,
+      "aliases": [
+        "change order",
+        "change orders",
+        "CO",
+        "C.O."
+      ]
+    }
+  ]
+}

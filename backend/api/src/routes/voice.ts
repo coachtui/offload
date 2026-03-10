@@ -10,6 +10,7 @@ import { parseTranscript, checkMLServiceHealth } from '../services/mlService';
 import { createObject } from '../services/objectService';
 import { Session } from '../models/Session';
 import { resolveObjectPlaces } from '../services/placeService';
+import { DEEPGRAM_KEYWORDS } from '../config/keywords';
 
 const router = Router();
 
@@ -58,7 +59,7 @@ router.get('/deepgram-token', async (req: Request, res: Response) => {
     // temporary-token endpoint requires Member-level permissions which this
     // key does not have; passing the key directly is equivalent for our use case.
     console.log('[Voice] returning Deepgram key as token — key length:', apiKey.length);
-    res.json({ token: apiKey });
+    res.json({ token: apiKey, keywords: DEEPGRAM_KEYWORDS });
   } catch (error) {
     console.error('[Voice] error getting Deepgram token:', error);
     res.status(500).json({

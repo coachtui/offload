@@ -13,6 +13,7 @@ from ..prompts.transcript_parser import (
     create_user_prompt,
     create_few_shot_examples
 )
+from .transcript_cleaner import get_cleaner
 
 
 class TranscriptParser:
@@ -37,10 +38,35 @@ class TranscriptParser:
         """
         start_time = time.time()
 
+        # Layer B: clean transcript before sending to LLM
+        cleaner = get_cleaner()
+        cleaned_transcript, corrections = cleaner.clean(request.transcript)
+
+        # Build a modified request with the cleaned transcript and correction context
+        context = dict(request.context or {})
+        if corrections:
+            context["transcript_corrections"] = [
+                {
+                    "original": c.original,
+                    "corrected": c.corrected,
+                    "confidence": round(c.confidence, 2),
+                }
+                for c in corrections
+            ]
+
+        parse_request = TranscriptParseRequest(
+            transcript=cleaned_transcript,
+            user_id=request.user_id,
+            session_id=request.session_id,
+            timestamp=request.timestamp,
+            location=request.location,
+            context=context if context else None,
+        )
+
         if self.use_anthropic:
-            atomic_objects = await self._parse_with_claude(request)
+            atomic_objects = await self._parse_with_claude(parse_request)
         else:
-            atomic_objects = await self._parse_with_openai(request)
+            atomic_objects = await self._parse_with_openai(parse_request)
 
         processing_time = time.time() - start_time
         return atomic_objects, self.model, processing_time

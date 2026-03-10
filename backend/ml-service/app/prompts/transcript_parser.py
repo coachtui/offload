@@ -35,6 +35,23 @@ DOMAIN (pick the best fit for life area):
 - misc: doesn't clearly fit elsewhere
 - unknown: cannot determine
 
+PLACE NAME HANDLING — CRITICAL:
+- The user operates in Honolulu, Hawaiʻi and on local construction jobsites
+- Local street/area names MUST be preserved exactly as given — do NOT paraphrase them
+- Examples of valid local names: Puʻuhale, Waiakamilo, Middle Street, Dillingham, Kamehameha, Kalihi, Nimitz, Moanalua, Likelike, Kapālama, Sand Island, Halawa, Kunia, Mapunapuna
+- If a transcript already contains a corrected place name, use it exactly in cleaned_text and entities
+- Multi-segment place references like "Middle Street to Puʻuhale" are ONE location hint covering a corridor — include both as separate entries in location_hints.places
+
+FIELD SPEECH HANDLING:
+- The user often speaks in abbreviated, fragmented field shorthand
+- "set up crew to clear drains" is a task, not ambiguous
+- Infer reasonable structure even if grammar is incomplete
+- Common field/construction vocabulary to recognize:
+  drainage inlet, manhole, trench plate, vac truck, Godwin pump, dewatering,
+  traffic control, lane closure, utility conflict, asphalt patch, curb and gutter,
+  submittal, punch list, turnover, shoring, conduit, catch basin, storm drain,
+  RFI, change order
+
 OUTPUT FORMAT — return a JSON object with this EXACT structure:
 {
   "atomic_objects": [
@@ -66,19 +83,24 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
 
 FIELD RULES:
 - raw_text: take the actual words from the transcript; minimal editing
-- cleaned_text: remove "um", "uh", "like", "you know", false starts; fix clear speech errors; do NOT rewrite meaning
+- cleaned_text: remove "um", "uh", "like", "you know", false starts; fix clear speech errors; do NOT rewrite meaning; preserve local place names exactly
 - title: only set if cleaned_text is longer than ~15 words; otherwise null
-- entities: only named things — people (first name is fine), specific places, specific companies/products
-- temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
-- location_hints.geofence_candidate: true if the note could be triggered by arriving at or leaving a specific place (school, gym, home, office, store, etc.)
+- entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
+- temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
+- location_hints.places: list ALL mentioned places, including streets, jobsites, neighborhoods
+- location_hints.geofence_candidate: true if the note could be triggered by arriving at or leaving a specific place (school, gym, home, office, store, jobsite, street corner, etc.)
 - actionability.next_action: the single clearest next physical action, stated cleanly
 
 RETURN ONLY VALID JSON. No markdown fences, no explanation, no prefix text."""
 
 
-EXAMPLE_INPUT = """I need to call the pump supplier tomorrow morning about the pricing — their quote was way too high. Also been thinking the app dashboard is too cluttered, maybe we should simplify the main view. Oh and I should remember to pick up Marcus from school at 3pm Thursday."""
+# ---------------------------------------------------------------------------
+# Few-shot example 1 — General use case
+# ---------------------------------------------------------------------------
 
-EXAMPLE_OUTPUT = """{
+EXAMPLE_1_INPUT = """I need to call the pump supplier tomorrow morning about the pricing — their quote was way too high. Also been thinking the app dashboard is too cluttered, maybe we should simplify the main view. Oh and I should remember to pick up Marcus from school at 3pm Thursday."""
+
+EXAMPLE_1_OUTPUT = """{
   "atomic_objects": [
     {
       "raw_text": "I need to call the pump supplier tomorrow morning about the pricing — their quote was way too high",
@@ -153,6 +175,110 @@ EXAMPLE_OUTPUT = """{
 }"""
 
 
+# ---------------------------------------------------------------------------
+# Few-shot example 2 — Honolulu jobsite / field speech
+# ---------------------------------------------------------------------------
+
+EXAMPLE_2_INPUT = """Set up crew to clear drainage inlets from Middle Street to Puʻuhale today. Need traffic control out there too. Also check on the vac truck at Sand Island, make sure it's ready for dewatering tomorrow morning. Reminder for the punch list walk at Kapālama, that's Friday."""
+
+EXAMPLE_2_OUTPUT = """{
+  "atomic_objects": [
+    {
+      "raw_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
+      "cleaned_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
+      "title": "Clear drainage inlets: Middle Street to Puʻuhale",
+      "type": "task",
+      "domain": "work",
+      "tags": ["drainage", "crew", "Middle Street", "Puuhale", "today"],
+      "entities": ["Middle Street", "Puʻuhale"],
+      "confidence": 0.97,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "today",
+        "urgency": "high"
+      },
+      "location_hints": {
+        "places": ["Middle Street", "Puʻuhale"],
+        "geofence_candidate": true
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Deploy crew to clear drainage inlets from Middle Street to Puʻuhale"
+      }
+    },
+    {
+      "raw_text": "Need traffic control out there too",
+      "cleaned_text": "Set up traffic control at Middle Street to Puʻuhale work zone",
+      "title": null,
+      "type": "task",
+      "domain": "work",
+      "tags": ["traffic control", "safety", "Middle Street"],
+      "entities": ["Middle Street", "Puʻuhale"],
+      "confidence": 0.90,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "today",
+        "urgency": "high"
+      },
+      "location_hints": {
+        "places": ["Middle Street", "Puʻuhale"],
+        "geofence_candidate": true
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Arrange traffic control for work zone on Middle Street"
+      }
+    },
+    {
+      "raw_text": "check on the vac truck at Sand Island, make sure it's ready for dewatering tomorrow morning",
+      "cleaned_text": "Check vac truck at Sand Island — confirm ready for dewatering tomorrow morning",
+      "title": "Confirm vac truck ready for dewatering at Sand Island",
+      "type": "task",
+      "domain": "work",
+      "tags": ["vac truck", "dewatering", "Sand Island", "equipment"],
+      "entities": ["Sand Island"],
+      "confidence": 0.96,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "tomorrow morning",
+        "urgency": "high"
+      },
+      "location_hints": {
+        "places": ["Sand Island"],
+        "geofence_candidate": true
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Check vac truck at Sand Island and confirm dewatering readiness"
+      }
+    },
+    {
+      "raw_text": "Reminder for the punch list walk at Kapālama, that's Friday",
+      "cleaned_text": "Punch list walk at Kapālama on Friday",
+      "title": null,
+      "type": "reminder",
+      "domain": "work",
+      "tags": ["punch list", "walk", "Kapalama", "Friday"],
+      "entities": ["Kapālama"],
+      "confidence": 0.98,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "Friday",
+        "urgency": "medium"
+      },
+      "location_hints": {
+        "places": ["Kapālama"],
+        "geofence_candidate": true
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Attend punch list walk at Kapālama on Friday"
+      }
+    }
+  ]
+}"""
+
+
 def create_user_prompt(transcript: str, context: dict = None) -> str:
     """Create user prompt with transcript and optional context"""
     prompt = f"Parse this transcript:\n\n{transcript}\n\n"
@@ -165,6 +291,13 @@ def create_user_prompt(transcript: str, context: dict = None) -> str:
             prompt += f"- Known entities in this user's notes: {', '.join(context['recent_entities'])}\n"
         if context.get("user_preferences"):
             prompt += f"- User preferences: {context['user_preferences']}\n"
+        if context.get("transcript_corrections"):
+            corrections = context["transcript_corrections"]
+            if corrections:
+                correction_lines = "; ".join(
+                    f"'{c['original']}' → '{c['corrected']}'" for c in corrections
+                )
+                prompt += f"- Pre-processing corrections applied: {correction_lines}\n"
         prompt += "\n"
 
     prompt += 'Return the parsed atomic objects as {"atomic_objects": [...]}.'
@@ -176,10 +309,18 @@ def create_few_shot_examples() -> List[dict]:
     return [
         {
             "role": "user",
-            "content": f"Parse this transcript:\n\n{EXAMPLE_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+            "content": f"Parse this transcript:\n\n{EXAMPLE_1_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
         },
         {
             "role": "assistant",
-            "content": EXAMPLE_OUTPUT
-        }
+            "content": EXAMPLE_1_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_2_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_2_OUTPUT
+        },
     ]

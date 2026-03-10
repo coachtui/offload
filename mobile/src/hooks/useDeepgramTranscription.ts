@@ -97,9 +97,11 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       // ── 3. Deepgram token fetch ────────────────────────────────────────
       console.log('[Recording] fetching Deepgram token from backend...');
       let token: string;
+      let keywords: string[] = [];
       try {
         const result = await apiService.getDeepgramToken();
         token = result.token;
+        keywords = result.keywords ?? [];
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         console.error('[Recording] Deepgram token fetch failed:', detail);
@@ -109,10 +111,14 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         console.error('[Recording] Deepgram token is empty');
         throw new Error('Voice service unavailable. Please try again later.');
       }
-      console.log('[Recording] Deepgram token received, length:', token.length);
+      console.log('[Recording] Deepgram token received, length:', token.length, '— keywords:', keywords.length);
 
       // ── 4. Deepgram WebSocket connection ───────────────────────────────
-      const deepgramUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true`;
+      // Build keyword params for vocabulary biasing (Layer A)
+      const keywordParams = keywords.length > 0
+        ? '&' + keywords.map(k => `keywords=${encodeURIComponent(k)}`).join('&')
+        : '';
+      const deepgramUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true${keywordParams}`;
       console.log('[Recording] connecting to Deepgram...');
       const ws = new WebSocket(deepgramUrl, ['token', token]);
       wsRef.current = ws;

@@ -492,7 +492,7 @@ class ApiService {
   }
 
   // Deepgram voice methods
-  async getDeepgramToken(): Promise<{ token: string }> {
+  async getDeepgramToken(): Promise<{ token: string; keywords: string[] }> {
     return this.request('/api/v1/voice/deepgram-token');
   }
 
