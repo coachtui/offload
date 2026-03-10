@@ -16,6 +16,7 @@ import { RootStackParamList } from '../navigation/types';
 import { apiService, RagSearchResult } from '../services/api';
 import { AtomicObject } from '../types';
 import { useSearch } from '../hooks/useSearch';
+import { useForYou } from '../hooks/useForYou';
 import { AppSearchBar } from '../components/ui';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -71,6 +72,7 @@ export function HomeScreen({ navigation }: Props) {
   const [recentObjects, setRecentObjects] = useState<AtomicObject[]>([]);
   const [recentLoading, setRecentLoading] = useState(true);
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
+  const { items: forYouItems } = useForYou();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSearchMode = searchQuery.trim().length > 0;
@@ -228,6 +230,44 @@ export function HomeScreen({ navigation }: Props) {
             </TouchableOpacity>
             <Text style={styles.micLabel}>Capture a thought</Text>
           </View>
+
+          {/* For you right now */}
+          {forYouItems.length > 0 ? (
+            <View style={styles.forYouSection}>
+              <Text style={styles.forYouTitle}>For you right now</Text>
+              {forYouItems.map((obj) => {
+                const badge = obj.objectType ?? obj.domain ?? null;
+                return (
+                  <TouchableOpacity
+                    key={obj.id}
+                    style={styles.forYouRow}
+                    onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.forYouContent}>
+                      <Text style={styles.forYouRowTitle} numberOfLines={1}>
+                        {obj.title ?? obj.content}
+                      </Text>
+                      <View style={styles.forYouRowMeta}>
+                        <Text style={styles.forYouRowTime}>
+                          {formatRelativeTime(obj.createdAt)}
+                        </Text>
+                        {badge ? (
+                          <>
+                            <Text style={styles.forYouMetaDot}>·</Text>
+                            <View style={styles.forYouBadge}>
+                              <Text style={styles.forYouBadgeText}>{badge}</Text>
+                            </View>
+                          </>
+                        ) : null}
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : null}
 
           {/* Nav cards — 2 × 2 grid */}
           <View style={styles.grid}>
@@ -411,6 +451,61 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6B7280',
     lineHeight: 18,
+  },
+  // For you right now
+  forYouSection: {
+    marginBottom: 32,
+  },
+  forYouTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 12,
+  },
+  forYouRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F3F4F6',
+  },
+  forYouContent: {
+    flex: 1,
+    marginRight: 8,
+  },
+  forYouRowTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#111827',
+  },
+  forYouRowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+    gap: 4,
+  },
+  forYouRowTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  forYouMetaDot: {
+    fontSize: 12,
+    color: '#9CA3AF',
+  },
+  forYouBadge: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  forYouBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   // Recent captures
   recentSection: {
