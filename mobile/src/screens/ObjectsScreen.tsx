@@ -6,6 +6,7 @@ import {
   Alert,
   TouchableOpacity,
   FlatList,
+  SectionList,
   ActivityIndicator,
   RefreshControl,
   Modal,
@@ -20,11 +21,16 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
-import { useSearch } from '../hooks/useSearch';
+import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
 import { AppScreen, AppHeader, AppSearchBar, Colors, Spacing, Radius } from '../components/ui';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type PrimaryFilter = 'all' | 'todo' | 'reminders' | 'ideas' | 'saved';
+type NoteStatus = 'open' | 'active' | 'resolved' | 'archived';
 
 type ObjectsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Objects'>;
 
@@ -32,8 +38,18 @@ interface Props {
   navigation: ObjectsScreenNavigationProp;
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const DOMAINS = ['work', 'personal', 'health', 'family', 'finance', 'project', 'misc'];
 const OBJECT_TYPES = ['task', 'idea', 'reminder', 'decision', 'question', 'observation'];
+
+const PRIMARY_FILTERS: Array<{ key: PrimaryFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'todo', label: 'To Do' },
+  { key: 'reminders', label: 'Reminders' },
+  { key: 'ideas', label: 'Ideas' },
+  { key: 'saved', label: 'Saved' },
+];
 
 const DOMAIN_COLORS: Record<string, string> = {
   work: '#3b82f6',
@@ -45,25 +61,65 @@ const DOMAIN_COLORS: Record<string, string> = {
   misc: '#6b7280',
 };
 
-const STATE_COLORS: Record<string, string> = {
+const DOMAIN_LABELS: Record<string, string> = {
+  work: 'Work',
+  personal: 'Personal',
+  health: 'Health',
+  family: 'Family',
+  finance: 'Finance',
+  project: 'Project',
+  misc: 'Other',
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  task: 'To Do',
+  reminder: 'Reminder',
+  idea: 'Idea',
+  decision: 'Decision',
+  question: 'Question',
+  observation: 'Note',
+  journal: 'Journal',
+  reference: 'Reference',
+};
+
+const STATUS_LABELS: Record<NoteStatus, string> = {
+  open: 'Open',
+  active: 'In Progress',
+  resolved: 'Done',
+  archived: 'Archived',
+};
+
+const STATUS_COLORS: Record<string, string> = {
   open: '#6b7280',
   active: '#3b82f6',
   resolved: '#22c55e',
   archived: '#9ca3af',
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  task: '#3b82f6',
-  idea: '#f59e0b',
-  reminder: '#ef4444',
-  decision: '#10b981',
-  question: '#a855f7',
-  observation: '#6b7280',
-  journal: '#ec4899',
-  reference: '#6ee7b7',
+const URGENCY_COLORS: Record<string, string> = {
+  high: '#ef4444',
+  medium: '#f59e0b',
+  low: '#22c55e',
 };
 
-function formatDate(date: Date | string): string {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatRelativeDate(date: Date | string): string {
+  const d = new Date(date);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) {
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffHours < 1) return 'Just now';
+    return 'Today';
+  }
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatFullDate(date: Date | string): string {
   const d = new Date(date);
   return d.toLocaleString(undefined, {
     month: 'short',
@@ -74,67 +130,109 @@ function formatDate(date: Date | string): string {
   });
 }
 
-function getUrgencyColor(urgency: 'low' | 'medium' | 'high'): string {
-  switch (urgency) {
-    case 'high':
-      return '#ef4444';
-    case 'medium':
-      return '#f59e0b';
-    case 'low':
-      return '#22c55e';
-    default:
-      return '#666';
+function getFriendlyType(objectType?: string | null): string {
+  if (!objectType) return 'Note';
+  return TYPE_LABELS[objectType] || objectType;
+}
+
+function getFriendlyDomain(domain?: string | null): string {
+  if (!domain || domain === 'misc' || domain === 'unknown') return '';
+  return DOMAIN_LABELS[domain] || domain;
+}
+
+function buildCardSubtitle(objectType?: string | null, domain?: string | null): string {
+  const type = getFriendlyType(objectType);
+  const domainLabel = getFriendlyDomain(domain);
+  if (domainLabel) return `${domainLabel} ${type.toLowerCase()}`;
+  return type;
+}
+
+function primaryFilterToObjectTypes(filter: PrimaryFilter): string[] | undefined {
+  switch (filter) {
+    case 'todo': return ['task'];
+    case 'reminders': return ['reminder'];
+    case 'ideas': return ['idea'];
+    case 'saved': return ['reference', 'observation', 'decision', 'question', 'journal'];
+    default: return undefined;
   }
 }
+
+// ─── Date grouping ────────────────────────────────────────────────────────────
+
+type DateBucket = 'Today' | 'Yesterday' | 'This Week' | 'Earlier';
+
+interface NoteSection {
+  title: DateBucket;
+  data: AtomicObject[];
+}
+
+function getDateBucket(date: Date | string): DateBucket {
+  const d = new Date(date);
+  const now = new Date();
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return 'This Week';
+  return 'Earlier';
+}
+
+function groupNotesByDate(items: AtomicObject[]): NoteSection[] {
+  const buckets: Record<DateBucket, AtomicObject[]> = {
+    Today: [], Yesterday: [], 'This Week': [], Earlier: [],
+  };
+  for (const item of items) {
+    buckets[getDateBucket(item.createdAt)].push(item);
+  }
+  const order: DateBucket[] = ['Today', 'Yesterday', 'This Week', 'Earlier'];
+  return order.filter((b) => buckets[b].length > 0).map((b) => ({ title: b, data: buckets[b] }));
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ObjectsScreen({ navigation }: Props) {
   const route = useRoute<RouteProp<RootStackParamList, 'Objects'>>();
   const geofenceId = route.params?.geofenceId;
   const initialObjectId = route.params?.objectId;
+
   const {
-    objects,
-    isLoading,
-    isRefreshing,
-    error,
-    hasMore,
-    filters,
-    object: selectedObject,
-    isLoadingDetail,
-    isUpdating,
-    updateError,
-    refresh,
-    loadMore,
-    setFilters,
-    fetchObjectDetail,
-    updateObject,
-    clearDetail,
+    objects, isLoading, isRefreshing, error, hasMore,
+    object: selectedObject, isLoadingDetail, isUpdating, updateError,
+    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail,
   } = useObjects();
 
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
 
+  // UI state
   const [modalVisible, setModalVisible] = useState(false);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [aiDetailsExpanded, setAiDetailsExpanded] = useState(false);
+  const [updatingState, setUpdatingState] = useState(false);
+
+  // Filter state
+  const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
+  const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+
+  // Pending filter state (inside sheet before Apply)
+  const [pendingDomains, setPendingDomains] = useState<string[]>([]);
+  const [pendingTypes, setPendingTypes] = useState<string[]>([]);
 
   const isSearchMode = searchText.trim().length > 0;
+  const hasActiveFilters = selectedDomains.length > 0 || selectedTypes.length > 0;
 
-  // Stale actionables
+  // Context data
   const [staleObjects, setStaleObjects] = useState<AtomicObject[]>([]);
   const [staleExpanded, setStaleExpanded] = useState(true);
-
-  // Dashboard
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
-
-  // State update
-  const [updatingState, setUpdatingState] = useState(false);
+  const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
 
   useEffect(() => {
     apiService.getStaleActionables()
-      .then(({ objects }) => setStaleObjects(objects))
+      .then(({ objects: items }) => setStaleObjects(items))
       .catch(() => {});
   }, []);
 
@@ -144,27 +242,25 @@ export function ObjectsScreen({ navigation }: Props) {
       .catch(() => {});
   }, []);
 
-  // Auto-open detail modal when navigated with an objectId (e.g. from SearchScreen or RecordScreen)
   useEffect(() => {
     if (!initialObjectId) return;
     setModalVisible(true);
     fetchObjectDetail(initialObjectId);
   }, [initialObjectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Geofence context (when navigated from a notification)
-  const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
-
   useEffect(() => {
     if (!geofenceId) return;
     apiService.getGeofenceObjects(geofenceId)
-      .then(({ objects }) => setGeofenceObjects(objects))
+      .then(({ objects: items }) => setGeofenceObjects(items))
       .catch(() => {});
   }, [geofenceId]);
 
+  // ─── Filter logic ─────────────────────────────────────────────────────────
+
   const triggerSearch = useCallback((text: string, domains: string[], types: string[]) => {
     search(text, {
-      domain: domains.length ? domains : undefined,
-      objectType: types.length ? types : undefined,
+      domain: domains.length ? (domains as ObjectDomain[]) : undefined,
+      objectType: types.length ? (types as ObjectType[]) : undefined,
     });
   }, [search]);
 
@@ -181,60 +277,61 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [searchText, selectedDomains, selectedTypes, triggerSearch]);
 
-  const handleDomainToggle = useCallback((domain: string) => {
-    const next = selectedDomains.includes(domain)
-      ? selectedDomains.filter(d => d !== domain)
-      : [...selectedDomains, domain];
-    setSelectedDomains(next);
+  const handlePrimaryFilterPress = useCallback((filter: PrimaryFilter) => {
+    setPrimaryFilter(filter);
+    const types = primaryFilterToObjectTypes(filter) ?? [];
+    setSelectedTypes(types);
     if (searchText.trim()) {
-      triggerSearch(searchText, next, selectedTypes);
+      triggerSearch(searchText, selectedDomains, types);
     } else {
-      triggerBrowse(next, selectedTypes);
+      triggerBrowse(selectedDomains, types);
     }
-  }, [selectedDomains, selectedTypes, searchText, triggerSearch, triggerBrowse]);
+  }, [searchText, selectedDomains, triggerSearch, triggerBrowse]);
 
-  const handleTypeToggle = useCallback((type: string) => {
-    const next = selectedTypes.includes(type)
-      ? selectedTypes.filter(t => t !== type)
-      : [...selectedTypes, type];
-    setSelectedTypes(next);
+  const handleOpenFilterSheet = useCallback(() => {
+    setPendingDomains(selectedDomains);
+    setPendingTypes(selectedTypes);
+    setFilterSheetVisible(true);
+  }, [selectedDomains, selectedTypes]);
+
+  const handleApplyFilters = useCallback(() => {
+    setSelectedDomains(pendingDomains);
+    setSelectedTypes(pendingTypes);
+    setPrimaryFilter('all');
+    setFilterSheetVisible(false);
     if (searchText.trim()) {
-      triggerSearch(searchText, selectedDomains, next);
+      triggerSearch(searchText, pendingDomains, pendingTypes);
     } else {
-      triggerBrowse(selectedDomains, next);
+      triggerBrowse(pendingDomains, pendingTypes);
     }
-  }, [selectedTypes, selectedDomains, searchText, triggerSearch, triggerBrowse]);
+  }, [pendingDomains, pendingTypes, searchText, triggerSearch, triggerBrowse]);
 
-  const handleClearFilters = useCallback(() => {
+  const handleClearAllFilters = useCallback(() => {
     setSearchText('');
     setSelectedDomains([]);
     setSelectedTypes([]);
+    setPrimaryFilter('all');
     clearResults();
     setFilters({});
   }, [setFilters, clearResults]);
 
-  const handleObjectPress = useCallback(
-    async (object: AtomicObject) => {
-      setModalVisible(true);
-      setEditMode(false);
-      await fetchObjectDetail(object.id);
-    },
-    [fetchObjectDetail]
-  );
+  // ─── Modal / detail actions ───────────────────────────────────────────────
 
-  const handleSearchResultPress = useCallback(
-    async (result: RagSearchResult) => {
-      setModalVisible(true);
-      setEditMode(false);
-      await fetchObjectDetail(result.objectId);
-    },
-    [fetchObjectDetail]
-  );
+  const openDetail = useCallback(async (id: string) => {
+    setModalVisible(true);
+    setEditMode(false);
+    setAiDetailsExpanded(false);
+    await fetchObjectDetail(id);
+  }, [fetchObjectDetail]);
+
+  const handleObjectPress = useCallback((item: AtomicObject) => openDetail(item.id), [openDetail]);
+  const handleSearchResultPress = useCallback((item: RagSearchResult) => openDetail(item.objectId), [openDetail]);
 
   const handleCloseModal = useCallback(() => {
     setModalVisible(false);
     setEditMode(false);
     setEditContent('');
+    setAiDetailsExpanded(false);
     clearDetail();
   }, [clearDetail]);
 
@@ -245,73 +342,71 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [selectedObject]);
 
-  const handleStateChange = useCallback(
-    (objectId: string, currentState: string) => {
-      const states: Array<'open' | 'active' | 'resolved' | 'archived'> = ['open', 'active', 'resolved', 'archived'];
-      const options = states.filter((s) => s !== currentState);
-      Alert.alert(
-        'Change State',
-        'Move this note to:',
-        [
-          ...options.map((s) => ({
-            text: s.charAt(0).toUpperCase() + s.slice(1),
-            onPress: async () => {
-              setUpdatingState(true);
-              try {
-                await apiService.updateObjectState(objectId, s);
-                await fetchObjectDetail(objectId);
-              } catch { /* silent */ }
-              finally { setUpdatingState(false); }
-            },
-          })),
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-    },
-    [fetchObjectDetail]
-  );
-
-  const handleSaveEdit = useCallback(async () => {
-    if (selectedObject && editContent.trim()) {
-      const success = await updateObject(selectedObject.id, { content: editContent.trim() });
-      if (success) {
-        setEditMode(false);
-      }
-    }
-  }, [selectedObject, editContent, updateObject]);
-
   const handleCancelEdit = useCallback(() => {
     setEditMode(false);
     setEditContent('');
   }, []);
 
-  const renderStaleCard = useCallback(
-    (item: AtomicObject) => {
-      const daysOld = Math.floor(
-        (Date.now() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24)
-      );
-      const label = item.title || item.content;
-      return (
-        <TouchableOpacity
-          key={item.id}
-          style={styles.staleCard}
-          onPress={() => handleObjectPress(item)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.staleCardAge}>{daysOld}d old</Text>
-          <Text style={styles.staleCardContent} numberOfLines={2}>
-            {label}
-          </Text>
-          {item.actionability?.nextAction ? (
-            <Text style={styles.staleCardAction} numberOfLines={1}>
-              {item.actionability.nextAction}
-            </Text>
-          ) : null}
-        </TouchableOpacity>
-      );
-    },
-    [handleObjectPress]
-  );
+  const handleSaveEdit = useCallback(async () => {
+    if (selectedObject && editContent.trim()) {
+      const success = await updateObject(selectedObject.id, { content: editContent.trim() });
+      if (success) setEditMode(false);
+    }
+  }, [selectedObject, editContent, updateObject]);
+
+  const handleStatusChange = useCallback(async (objectId: string, newState: NoteStatus) => {
+    setUpdatingState(true);
+    try {
+      await apiService.updateObjectState(objectId, newState);
+      await fetchObjectDetail(objectId);
+    } catch { /* silent */ }
+    finally { setUpdatingState(false); }
+  }, [fetchObjectDetail]);
+
+  const handleMarkDone = useCallback(() => {
+    if (!selectedObject) return;
+    const currentState = (selectedObject as any).state ?? 'open';
+    if (currentState !== 'resolved') {
+      handleStatusChange(selectedObject.id, 'resolved');
+    }
+  }, [selectedObject, handleStatusChange]);
+
+  // ─── Renders: list screen ─────────────────────────────────────────────────
+
+  const renderPrimaryFilters = useCallback(() => (
+    <View style={styles.primaryFilterBar}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.primaryFilterContent}
+      >
+        {PRIMARY_FILTERS.map((f) => {
+          const isActive = primaryFilter === f.key;
+          return (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.primaryPill, isActive && styles.primaryPillActive]}
+              onPress={() => handlePrimaryFilterPress(f.key)}
+            >
+              <Text style={[styles.primaryPillText, isActive && styles.primaryPillTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      <TouchableOpacity
+        style={[styles.filterIconBtn, hasActiveFilters && styles.filterIconBtnActive]}
+        onPress={handleOpenFilterSheet}
+      >
+        <Ionicons
+          name="options-outline"
+          size={18}
+          color={hasActiveFilters ? Colors.accent : Colors.textMuted}
+        />
+      </TouchableOpacity>
+    </View>
+  ), [primaryFilter, hasActiveFilters, handlePrimaryFilterPress, handleOpenFilterSheet]);
 
   const renderGeofenceContext = useCallback(() => {
     if (!geofenceId || geofenceObjects.length === 0) return null;
@@ -320,30 +415,22 @@ export function ObjectsScreen({ navigation }: Props) {
         <View style={styles.geofenceBannerHeader}>
           <View style={styles.geofenceDot} />
           <Text style={styles.geofenceBannerTitle}>
-            At this location ({geofenceObjects.length} note{geofenceObjects.length !== 1 ? 's' : ''})
+            At this location · {geofenceObjects.length} note{geofenceObjects.length !== 1 ? 's' : ''}
           </Text>
         </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.staleCardsRow}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextCardsRow}>
           {geofenceObjects.map((item) => (
             <TouchableOpacity
               key={item.id}
-              style={[styles.staleCard, styles.geofenceCard]}
+              style={[styles.contextCard, styles.geofenceCard]}
               onPress={() => handleObjectPress(item)}
               activeOpacity={0.7}
             >
-              <Text style={styles.geofenceCardLabel}>linked</Text>
-              <Text style={styles.staleCardContent} numberOfLines={2}>
-                {item.title || item.content}
-              </Text>
-              {item.actionability?.nextAction ? (
-                <Text style={styles.staleCardAction} numberOfLines={1}>
-                  {item.actionability.nextAction}
-                </Text>
-              ) : null}
+              <Text style={styles.geofenceCardLabel}>nearby</Text>
+              <Text style={styles.contextCardContent} numberOfLines={2}>{item.title || item.content}</Text>
+              {item.actionability?.nextAction && (
+                <Text style={styles.contextCardAction} numberOfLines={1}>{item.actionability.nextAction}</Text>
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -353,9 +440,12 @@ export function ObjectsScreen({ navigation }: Props) {
 
   const renderDashboardCard = useCallback(() => {
     if (!dashboard) return null;
-    const loadColor = dashboard.cognitiveLoad.level === 'low' ? '#22c55e'
-      : dashboard.cognitiveLoad.level === 'moderate' ? '#f59e0b'
-      : '#ef4444';
+    const loadLevel = dashboard.cognitiveLoad.level;
+    const loadColor = loadLevel === 'low' ? '#22c55e' : loadLevel === 'moderate' ? '#f59e0b' : '#ef4444';
+    const totalNeedsAttention = dashboard.activeCommitments + dashboard.openLoops;
+    const message = totalNeedsAttention > 0
+      ? `${totalNeedsAttention} item${totalNeedsAttention !== 1 ? 's' : ''} need your attention`
+      : "You're all caught up";
     return (
       <View style={styles.dashboardCard}>
         <TouchableOpacity
@@ -364,26 +454,24 @@ export function ObjectsScreen({ navigation }: Props) {
           activeOpacity={0.7}
         >
           <View style={styles.dashboardTitleRow}>
-            <View style={[styles.dashboardLoadDot, { backgroundColor: loadColor }]} />
-            <Text style={styles.dashboardTitle}>
-              Cognitive Load: {dashboard.cognitiveLoad.level}
-            </Text>
+            <View style={[styles.dashboardDot, { backgroundColor: loadColor }]} />
+            <Text style={styles.dashboardTitle}>{message}</Text>
           </View>
-          <Text style={styles.dashboardChevron}>{dashboardExpanded ? '▲' : '▼'}</Text>
+          <Ionicons name={dashboardExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textFaint} />
         </TouchableOpacity>
         {dashboardExpanded && (
           <View style={styles.dashboardBody}>
             <View style={styles.dashboardGrid}>
-              <DashStat label="Active" value={dashboard.activeCommitments} />
-              <DashStat label="Open Loops" value={dashboard.openLoops} />
+              <DashStat label="In Progress" value={dashboard.activeCommitments} />
+              <DashStat label="Open" value={dashboard.openLoops} />
               <DashStat label="Decisions" value={dashboard.unresolvedDecisions} />
-              <DashStat label="New Ideas" value={dashboard.newIdeasThisWeek} />
+              <DashStat label="Ideas" value={dashboard.newIdeasThisWeek} />
               <DashStat label="This Week" value={dashboard.objectsThisWeek} />
               <DashStat label="Dormant" value={dashboard.dormantIdeasCount} />
             </View>
             {dashboard.topDomainThisWeek && (
-              <Text style={styles.dashboardTopDomain}>
-                Top domain this week: {dashboard.topDomainThisWeek}
+              <Text style={styles.dashboardMeta}>
+                Most active: {DOMAIN_LABELS[dashboard.topDomainThisWeek] || dashboard.topDomainThisWeek}
               </Text>
             )}
           </View>
@@ -401,220 +489,452 @@ export function ObjectsScreen({ navigation }: Props) {
           onPress={() => setStaleExpanded((v) => !v)}
           activeOpacity={0.7}
         >
-          <View style={styles.staleBannerTitleRow}>
+          <View style={styles.staleTitleRow}>
             <View style={styles.staleDot} />
-            <Text style={styles.staleBannerTitle}>
-              Needs Attention ({staleObjects.length})
-            </Text>
+            <Text style={styles.staleBannerTitle}>Don't forget ({staleObjects.length})</Text>
           </View>
-          <Text style={styles.staleBannerChevron}>{staleExpanded ? '▲' : '▼'}</Text>
+          <Ionicons name={staleExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textFaint} />
         </TouchableOpacity>
         {staleExpanded && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.staleCardsRow}
-          >
-            {staleObjects.map(renderStaleCard)}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextCardsRow}>
+            {staleObjects.map((item) => {
+              const daysOld = Math.floor((Date.now() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.contextCard}
+                  onPress={() => handleObjectPress(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.staleCardAge}>{daysOld}d ago</Text>
+                  <Text style={styles.contextCardContent} numberOfLines={2}>{item.title || item.content}</Text>
+                  {item.actionability?.nextAction && (
+                    <Text style={styles.contextCardAction} numberOfLines={1}>{item.actionability.nextAction}</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         )}
       </View>
     );
-  }, [staleObjects, staleExpanded, renderStaleCard]);
+  }, [staleObjects, staleExpanded, handleObjectPress]);
 
-  const renderFilterChips = useCallback(() => (
-    <>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipRow}
-        contentContainerStyle={styles.chipRowContent}
+  const renderNoteCard = useCallback(({ item }: { item: AtomicObject }) => {
+    const title = item.title || item.content;
+    const subtitle = buildCardSubtitle(item.objectType, item.domain);
+    const urgency = item.metadata?.urgency;
+    const showUrgency = urgency === 'high' || urgency === 'medium';
+    const currentState = (item as any).state ?? 'open';
+    const isDone = currentState === 'resolved' || currentState === 'archived';
+
+    return (
+      <TouchableOpacity
+        style={[styles.noteRow, isDone && styles.noteRowDone]}
+        onPress={() => handleObjectPress(item)}
+        activeOpacity={0.7}
       >
-        {DOMAINS.map((domain) => {
-          const isSelected = selectedDomains.includes(domain);
-          return (
-            <TouchableOpacity
-              key={domain}
-              style={[styles.chip, isSelected && { backgroundColor: DOMAIN_COLORS[domain] ?? '#3b82f6' }]}
-              onPress={() => handleDomainToggle(domain)}
-            >
-              <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                {domain}
+        <Text style={[styles.noteTitle, isDone && styles.noteTitleDone]} numberOfLines={2}>
+          {title}
+        </Text>
+        <View style={styles.noteMeta}>
+          <Text style={styles.noteSubtitle}>{subtitle}</Text>
+          <Text style={styles.noteDot}> · </Text>
+          <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
+          {showUrgency && (
+            <>
+              <Text style={styles.noteDot}> · </Text>
+              <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
+              <Text style={[styles.noteUrgency, { color: URGENCY_COLORS[urgency!] }]}>
+                {urgency === 'high' ? 'Urgent' : 'Medium priority'}
               </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipRow}
-        contentContainerStyle={styles.chipRowContent}
-      >
-        {OBJECT_TYPES.map((type) => {
-          const isSelected = selectedTypes.includes(type);
-          return (
-            <TouchableOpacity
-              key={type}
-              style={[styles.chip, isSelected && { backgroundColor: TYPE_COLORS[type] ?? '#6b7280' }]}
-              onPress={() => handleTypeToggle(type)}
-            >
-              <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-                {type}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-    </>
-  ), [selectedDomains, selectedTypes, handleDomainToggle, handleTypeToggle]);
-
-  const renderObjectCard = useCallback(
-    ({ item }: { item: AtomicObject }) => {
-      const label = item.title || item.content;
-      const domainColor = item.domain ? (DOMAIN_COLORS[item.domain] ?? '#6b7280') : '#6b7280';
-      const typeColor = item.objectType ? (TYPE_COLORS[item.objectType] ?? '#6b7280') : '#6b7280';
-      return (
-        <TouchableOpacity
-          style={styles.objectCard}
-          onPress={() => handleObjectPress(item)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.cardHeader}>
-            <View style={styles.categoryTags}>
-              {item.objectType && (
-                <View style={[styles.categoryTag, { backgroundColor: typeColor }]}>
-                  <Text style={styles.categoryTagText}>{item.objectType}</Text>
-                </View>
-              )}
-              {item.domain && (
-                <View style={[styles.categoryTag, { backgroundColor: domainColor, opacity: 0.8 }]}>
-                  <Text style={styles.categoryTagText}>{item.domain}</Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.urgencyBadge}>
-              <View
-                style={[
-                  styles.urgencyDot,
-                  { backgroundColor: getUrgencyColor(item.metadata.urgency) },
-                ]}
-              />
-              <Text style={styles.urgencyText}>{item.metadata.urgency}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.contentPreview} numberOfLines={3}>
-            {label}
-          </Text>
-
-          <View style={styles.cardFooter}>
-            <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
-            <View style={styles.tagsContainer}>
-              {item.metadata.tags.slice(0, 2).map((tag) => (
-                <Text key={tag} style={styles.tagText}>
-                  #{tag}
-                </Text>
-              ))}
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [handleObjectPress]
-  );
-
-  const renderSearchResultCard = useCallback(
-    ({ item }: { item: RagSearchResult }) => {
-      const typeColor = TYPE_COLORS[item.type] ?? '#6b7280';
-      const domainColor = DOMAIN_COLORS[item.domain] ?? '#6b7280';
-      return (
-        <TouchableOpacity
-          style={styles.objectCard}
-          onPress={() => handleSearchResultPress(item)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.cardHeader}>
-            <View style={styles.categoryTags}>
-              <View style={[styles.categoryTag, { backgroundColor: typeColor }]}>
-                <Text style={styles.categoryTagText}>{item.type}</Text>
-              </View>
-              <View style={[styles.categoryTag, { backgroundColor: domainColor, opacity: 0.8 }]}>
-                <Text style={styles.categoryTagText}>{item.domain}</Text>
-              </View>
-            </View>
-            <Text style={styles.scoreText}>{Math.round(item.score * 100)}% match</Text>
-          </View>
-
-          {item.title && (
-            <Text style={styles.searchResultTitle} numberOfLines={1}>{item.title}</Text>
+            </>
           )}
-          <Text style={styles.contentPreview} numberOfLines={3}>
-            {item.cleanedText}
+        </View>
+        {item.actionability?.nextAction && !isDone && (
+          <Text style={styles.noteNextAction} numberOfLines={1}>
+            → {item.actionability.nextAction}
           </Text>
+        )}
+      </TouchableOpacity>
+    );
+  }, [handleObjectPress]);
 
-          <View style={styles.cardFooter}>
-            <Text style={styles.dateText}>
-              {formatDate(item.createdAt)}
-            </Text>
-            <View style={styles.tagsContainer}>
-              {item.tags.slice(0, 2).map((tag) => (
-                <Text key={tag} style={styles.tagText}>#{tag}</Text>
-              ))}
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    },
-    [handleSearchResultPress]
-  );
+  const renderSearchResultCard = useCallback(({ item }: { item: RagSearchResult }) => {
+    const subtitle = buildCardSubtitle(item.type, item.domain);
+    const urgency = item.temporalHints?.urgency;
+    const showUrgency = urgency === 'high' || urgency === 'medium';
+
+    return (
+      <TouchableOpacity
+        style={styles.noteRow}
+        onPress={() => handleSearchResultPress(item)}
+        activeOpacity={0.7}
+      >
+        {item.title && (
+          <Text style={styles.noteTitle} numberOfLines={2}>{item.title}</Text>
+        )}
+        <Text
+          style={item.title ? styles.noteBody : styles.noteTitle}
+          numberOfLines={item.title ? 2 : 3}
+        >
+          {item.cleanedText}
+        </Text>
+        <View style={styles.noteMeta}>
+          <Text style={styles.noteSubtitle}>{subtitle}</Text>
+          <Text style={styles.noteDot}> · </Text>
+          <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
+          <Text style={styles.noteDot}> · </Text>
+          <Text style={styles.matchScore}>{Math.round(item.score * 100)}% match</Text>
+          {showUrgency && (
+            <>
+              <Text style={styles.noteDot}> · </Text>
+              <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  }, [handleSearchResultPress]);
 
   const renderEmpty = useCallback(() => {
     if (isLoading || searchLoading) return null;
-
     const hasFilters = isSearchMode || selectedDomains.length > 0 || selectedTypes.length > 0;
-
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyStateIcon}>{hasFilters ? '🔍' : '🧠'}</Text>
-        <Text style={styles.emptyStateTitle}>
-          {hasFilters ? 'No Results' : 'No Notes Yet'}
-        </Text>
+        <Text style={styles.emptyStateIcon}>{hasFilters ? '🔍' : '📝'}</Text>
+        <Text style={styles.emptyStateTitle}>{hasFilters ? 'Nothing here' : 'No notes yet'}</Text>
         <Text style={styles.emptyStateText}>
           {hasFilters
-            ? 'Try adjusting your search or filters'
-            : 'Your captured thoughts and ideas will appear here'}
+            ? 'Try a different search or clear your filters'
+            : 'Your saved thoughts and ideas will appear here'}
         </Text>
         {hasFilters && (
-          <TouchableOpacity style={styles.clearFiltersButton} onPress={handleClearFilters}>
-            <Text style={styles.clearFiltersText}>Clear Filters</Text>
+          <TouchableOpacity style={styles.clearFiltersBtn} onPress={handleClearAllFilters}>
+            <Text style={styles.clearFiltersBtnText}>Clear Filters</Text>
           </TouchableOpacity>
         )}
       </View>
     );
-  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, handleClearFilters]);
+  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, handleClearAllFilters]);
+
+  const renderSectionHeader = useCallback(
+    ({ section: { title } }: { section: NoteSection }) => (
+      <View style={styles.listSectionHeader}>
+        <Text style={styles.listSectionHeaderText}>{title}</Text>
+      </View>
+    ),
+    []
+  );
 
   const renderFooter = useCallback(() => {
     if (!hasMore || isLoading) return null;
-
     return (
       <View style={styles.loadingFooter}>
-        <ActivityIndicator color="#3b82f6" />
+        <ActivityIndicator color={Colors.accent} />
       </View>
     );
   }, [hasMore, isLoading]);
 
-  const renderError = useCallback(() => {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorIcon}>!</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={refresh}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }, [error, refresh]);
+  // ─── Filter Sheet ─────────────────────────────────────────────────────────
+
+  const renderFilterSheet = () => (
+    <Modal
+      visible={filterSheetVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => setFilterSheetVisible(false)}
+    >
+      <SafeAreaView style={styles.sheetContainer} edges={['top']}>
+        <View style={styles.sheetHeader}>
+          <TouchableOpacity onPress={() => setFilterSheetVisible(false)}>
+            <Text style={styles.sheetCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.sheetTitle}>Filter Notes</Text>
+          <TouchableOpacity onPress={() => { setPendingDomains([]); setPendingTypes([]); }}>
+            <Text style={styles.sheetReset}>Reset</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sheetSectionLabel}>Area</Text>
+          <View style={styles.sheetChipsWrap}>
+            {DOMAINS.map((domain) => {
+              const isSelected = pendingDomains.includes(domain);
+              const color = DOMAIN_COLORS[domain] ?? '#6b7280';
+              return (
+                <TouchableOpacity
+                  key={domain}
+                  style={[styles.sheetChip, isSelected && { backgroundColor: color, borderColor: color }]}
+                  onPress={() => setPendingDomains(prev =>
+                    prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
+                  )}
+                >
+                  <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
+                    {DOMAIN_LABELS[domain] || domain}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.sheetSectionLabel, { marginTop: 28 }]}>Type</Text>
+          <View style={styles.sheetChipsWrap}>
+            {OBJECT_TYPES.map((type) => {
+              const isSelected = pendingTypes.includes(type);
+              return (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.sheetChip, isSelected && styles.sheetChipSelected]}
+                  onPress={() => setPendingTypes(prev =>
+                    prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+                  )}
+                >
+                  <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
+                    {TYPE_LABELS[type] || type}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        <View style={styles.sheetFooter}>
+          <TouchableOpacity style={styles.applyBtn} onPress={handleApplyFilters}>
+            <Text style={styles.applyBtnText}>
+              Apply{pendingDomains.length + pendingTypes.length > 0
+                ? ` · ${pendingDomains.length + pendingTypes.length} selected`
+                : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+
+  // ─── Detail Modal ─────────────────────────────────────────────────────────
+
+  const renderDetailModal = () => (
+    <Modal
+      visible={modalVisible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={handleCloseModal}
+    >
+      <SafeAreaView style={styles.modalContainer} edges={['top']}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalKeyboardView}
+        >
+          <AppHeader
+            title={editMode ? 'Edit Note' : 'Note'}
+            left={
+              <TouchableOpacity onPress={editMode ? handleCancelEdit : handleCloseModal}>
+                <Text style={editMode ? styles.headerCancelBtn : styles.headerCloseBtn}>
+                  {editMode ? 'Cancel' : 'Close'}
+                </Text>
+              </TouchableOpacity>
+            }
+            right={
+              selectedObject && !editMode ? (
+                <TouchableOpacity onPress={handleEditPress}>
+                  <Text style={styles.headerEditBtn}>Edit</Text>
+                </TouchableOpacity>
+              ) : editMode ? (
+                <TouchableOpacity onPress={handleSaveEdit} disabled={isUpdating}>
+                  {isUpdating
+                    ? <ActivityIndicator size="small" color={Colors.accent} />
+                    : <Text style={styles.headerEditBtn}>Save</Text>
+                  }
+                </TouchableOpacity>
+              ) : undefined
+            }
+          />
+
+          {isLoadingDetail ? (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator size="large" color={Colors.accent} />
+            </View>
+          ) : selectedObject ? (
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+
+              {/* Summary line */}
+              <Text style={styles.noteSummaryLine}>
+                {buildCardSubtitle(selectedObject.objectType, selectedObject.domain)}
+                {' · '}
+                {formatFullDate(selectedObject.createdAt)}
+              </Text>
+
+              {/* Note content */}
+              {editMode ? (
+                <View style={styles.editSection}>
+                  <TextInput
+                    style={styles.editInput}
+                    value={editContent}
+                    onChangeText={setEditContent}
+                    multiline
+                    autoFocus
+                    placeholder="Edit your note..."
+                    placeholderTextColor={Colors.textFaint}
+                  />
+                  {updateError && <Text style={styles.updateError}>{updateError}</Text>}
+                </View>
+              ) : (
+                <Text style={styles.detailNoteContent}>{selectedObject.content}</Text>
+              )}
+
+              {!editMode && (
+                <>
+                  {/* Quick actions */}
+                  <View style={styles.quickActionsRow}>
+                    <QuickAction
+                      icon="checkmark-circle-outline"
+                      label="Mark Done"
+                      onPress={handleMarkDone}
+                      disabled={
+                        (selectedObject as any).state === 'resolved' ||
+                        (selectedObject as any).state === 'archived' ||
+                        updatingState
+                      }
+                      active={(selectedObject as any).state === 'resolved'}
+                    />
+                    <QuickAction
+                      icon="notifications-outline"
+                      label="Remind Me"
+                      onPress={() => Alert.alert('Coming soon', 'Reminders are coming in a future update.')}
+                    />
+                    <QuickAction
+                      icon="bookmark-outline"
+                      label="Pin"
+                      onPress={() => Alert.alert('Coming soon', 'Pinning notes is coming in a future update.')}
+                    />
+                    <QuickAction
+                      icon="pencil-outline"
+                      label="Edit"
+                      onPress={handleEditPress}
+                    />
+                  </View>
+
+                  <View style={styles.divider} />
+
+                  {/* Details */}
+                  <Text style={styles.sectionLabel}>Details</Text>
+                  <View style={styles.detailsCard}>
+                    {selectedObject.objectType && (
+                      <DetailRow
+                        label="Type"
+                        value={TYPE_LABELS[selectedObject.objectType] || selectedObject.objectType}
+                      />
+                    )}
+                    {selectedObject.domain && selectedObject.domain !== 'misc' && (
+                      <DetailRow
+                        label="Area"
+                        value={DOMAIN_LABELS[selectedObject.domain] || selectedObject.domain}
+                      />
+                    )}
+                    <DetailRow
+                      label="Priority"
+                      value={selectedObject.metadata.urgency}
+                      valueColor={URGENCY_COLORS[selectedObject.metadata.urgency]}
+                      capitalize
+                    />
+                    <DetailRow
+                      label="Status"
+                      customValue={
+                        <StatusPicker
+                          currentState={(selectedObject as any).state ?? 'open'}
+                          onChangeState={(s) => handleStatusChange(selectedObject.id, s)}
+                          updating={updatingState}
+                        />
+                      }
+                    />
+                    <DetailRow
+                      label="Captured"
+                      value={
+                        selectedObject.source.type === 'voice' ? 'Voice recording'
+                          : selectedObject.source.type === 'text' ? 'Typed'
+                          : 'Imported'
+                      }
+                    />
+                    <DetailRow
+                      label="Created"
+                      value={formatFullDate(selectedObject.createdAt)}
+                      isLast
+                    />
+                  </View>
+
+                  {/* Keywords */}
+                  {selectedObject.metadata.tags.length > 0 && (
+                    <>
+                      <Text style={[styles.sectionLabel, { marginTop: Spacing.xxl }]}>Keywords</Text>
+                      <View style={styles.keywordsWrap}>
+                        {selectedObject.metadata.tags.map((tag) => (
+                          <View key={tag} style={styles.keywordPill}>
+                            <Text style={styles.keywordText}>{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </>
+                  )}
+
+                  {/* Advanced details (collapsed) */}
+                  <TouchableOpacity
+                    style={styles.advancedToggle}
+                    onPress={() => setAiDetailsExpanded((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.advancedToggleText}>Advanced details</Text>
+                    <Ionicons
+                      name={aiDetailsExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={Colors.textFaint}
+                    />
+                  </TouchableOpacity>
+
+                  {aiDetailsExpanded && (
+                    <View style={styles.advancedCard}>
+                      <DetailRow
+                        label="AI confidence"
+                        value={`${Math.round(selectedObject.confidence * 100)}%`}
+                      />
+                      <DetailRow
+                        label="Sentiment"
+                        value={selectedObject.metadata.sentiment}
+                        capitalize
+                      />
+                      {selectedObject.metadata.entities.length > 0 && (
+                        <View style={styles.entitiesRow}>
+                          <Text style={styles.detailRowLabel}>Mentions</Text>
+                          <View style={styles.entitiesList}>
+                            {selectedObject.metadata.entities.map((entity, i) => (
+                              <Text key={i} style={styles.entityItem}>
+                                <Text style={styles.entityTypeLabel}>{entity.type}: </Text>
+                                {entity.value}
+                              </Text>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                      <DetailRow
+                        label="Source"
+                        value={selectedObject.source.type}
+                        capitalize
+                        isLast
+                      />
+                    </View>
+                  )}
+
+                  <View style={{ height: 48 }} />
+                </>
+              )}
+            </ScrollView>
+          ) : null}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+
+  // ─── Main render ──────────────────────────────────────────────────────────
 
   return (
     <AppScreen>
@@ -627,39 +947,32 @@ export function ObjectsScreen({ navigation }: Props) {
         }
       />
 
-      {/* Search Bar */}
       <View style={styles.searchContainer}>
         <AppSearchBar
           value={searchText}
           onChangeText={setSearchText}
-          placeholder="Search notes..."
+          placeholder="What did you want to remember?"
           onSubmit={handleSearch}
           loading={searchLoading && isSearchMode}
         />
       </View>
 
-      {/* Domain + Type Filter Chips */}
-      <View style={styles.chipsContainer}>
-        {renderFilterChips()}
-      </View>
-
-      {/* Geofence Context Banner (when navigated from notification) */}
+      {renderPrimaryFilters()}
       {renderGeofenceContext()}
-
-      {/* Dashboard summary card */}
       {renderDashboardCard()}
-
-      {/* Stale Actionables Banner */}
       {renderStaleBanner()}
 
-      {/* Objects / Search Results List */}
       {(isLoading || searchLoading) && (isSearchMode ? searchResults.length === 0 : objects.length === 0) ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.loadingText}>{isSearchMode ? 'Searching...' : 'Loading objects...'}</Text>
+          <ActivityIndicator size="large" color={Colors.accent} />
         </View>
       ) : !isSearchMode && error && objects.length === 0 ? (
-        renderError()
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={refresh}>
+            <Text style={styles.retryBtnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       ) : isSearchMode ? (
         <FlatList
           data={searchResults}
@@ -670,219 +983,36 @@ export function ObjectsScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
         />
       ) : (
-        <FlatList
-          data={objects}
+        <SectionList
+          sections={groupNotesByDate(objects)}
           keyExtractor={(item) => item.id}
-          renderItem={renderObjectCard}
+          renderItem={renderNoteCard}
+          renderSectionHeader={renderSectionHeader}
           contentContainerStyle={objects.length === 0 ? styles.listEmpty : styles.listContent}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
+          stickySectionHeadersEnabled={false}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={refresh}
-              tintColor="#3b82f6"
-              colors={['#3b82f6']}
+              tintColor={Colors.accent}
+              colors={[Colors.accent]}
             />
           }
+          showsVerticalScrollIndicator={false}
         />
       )}
 
-      {/* Object Detail Modal */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={handleCloseModal}
-      >
-        <SafeAreaView style={styles.modalContainer} edges={['top']}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.modalKeyboardView}
-          >
-            <AppHeader
-              title="Note"
-              left={
-                <TouchableOpacity onPress={handleCloseModal}>
-                  <Ionicons name="close" size={24} color={Colors.textSecondary} />
-                </TouchableOpacity>
-              }
-              right={
-                selectedObject && !editMode ? (
-                  <TouchableOpacity onPress={handleEditPress}>
-                    <Text style={styles.modalEditButton}>Edit</Text>
-                  </TouchableOpacity>
-                ) : editMode ? (
-                  <TouchableOpacity onPress={handleCancelEdit}>
-                    <Text style={styles.modalCancelButton}>Cancel</Text>
-                  </TouchableOpacity>
-                ) : undefined
-              }
-            />
-
-            {isLoadingDetail ? (
-              <View style={styles.modalLoading}>
-                <ActivityIndicator size="large" color="#3b82f6" />
-              </View>
-            ) : selectedObject ? (
-              <ScrollView style={styles.modalContent}>
-                {/* Type + Domain */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailLabel}>Classification</Text>
-                  <View style={styles.detailCategoryTags}>
-                    {selectedObject.objectType && (
-                      <View style={[styles.categoryTag, { backgroundColor: TYPE_COLORS[selectedObject.objectType] ?? '#6b7280' }]}>
-                        <Text style={styles.categoryTagText}>{selectedObject.objectType}</Text>
-                      </View>
-                    )}
-                    {selectedObject.domain && (
-                      <View style={[styles.categoryTag, { backgroundColor: DOMAIN_COLORS[selectedObject.domain] ?? '#6b7280', opacity: 0.8 }]}>
-                        <Text style={styles.categoryTagText}>{selectedObject.domain}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* State */}
-                {selectedObject && (
-                  <View style={styles.detailSection}>
-                    <Text style={styles.detailLabel}>State</Text>
-                    <View style={styles.stateRow}>
-                      <View style={[styles.stateBadge, { backgroundColor: STATE_COLORS[(selectedObject as any).state ?? 'open'] ?? '#6b7280' }]}>
-                        <Text style={styles.stateBadgeText}>{(selectedObject as any).state ?? 'open'}</Text>
-                      </View>
-                      {!editMode && (
-                        <TouchableOpacity
-                          style={styles.stateChangeBtn}
-                          onPress={() => handleStateChange(selectedObject.id, (selectedObject as any).state ?? 'open')}
-                          disabled={updatingState}
-                        >
-                          <Text style={styles.stateChangeBtnText}>{updatingState ? '...' : 'Change'}</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                {/* Content */}
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailLabel}>Content</Text>
-                  {editMode ? (
-                    <TextInput
-                      style={styles.editInput}
-                      value={editContent}
-                      onChangeText={setEditContent}
-                      multiline
-                      autoFocus
-                    />
-                  ) : (
-                    <Text style={styles.contentText}>{selectedObject.content}</Text>
-                  )}
-                </View>
-
-                {editMode && (
-                  <View style={styles.editActions}>
-                    {updateError && <Text style={styles.updateError}>{updateError}</Text>}
-                    <TouchableOpacity
-                      style={[styles.saveButton, isUpdating && styles.saveButtonDisabled]}
-                      onPress={handleSaveEdit}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <Text style={styles.saveButtonText}>Save Changes</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {!editMode && (
-                  <>
-                    {/* Metadata */}
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailLabel}>Metadata</Text>
-                      <View style={styles.metadataRow}>
-                        <Text style={styles.metadataLabel}>Urgency:</Text>
-                        <View style={styles.urgencyBadge}>
-                          <View
-                            style={[
-                              styles.urgencyDot,
-                              { backgroundColor: getUrgencyColor(selectedObject.metadata.urgency) },
-                            ]}
-                          />
-                          <Text style={styles.metadataValue}>
-                            {selectedObject.metadata.urgency}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.metadataRow}>
-                        <Text style={styles.metadataLabel}>Sentiment:</Text>
-                        <Text style={styles.metadataValue}>
-                          {selectedObject.metadata.sentiment}
-                        </Text>
-                      </View>
-                      <View style={styles.metadataRow}>
-                        <Text style={styles.metadataLabel}>Confidence:</Text>
-                        <Text style={styles.metadataValue}>
-                          {Math.round(selectedObject.confidence * 100)}%
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Tags */}
-                    {selectedObject.metadata.tags.length > 0 && (
-                      <View style={styles.detailSection}>
-                        <Text style={styles.detailLabel}>Tags</Text>
-                        <View style={styles.tagsRow}>
-                          {selectedObject.metadata.tags.map((tag) => (
-                            <View key={tag} style={styles.detailTag}>
-                              <Text style={styles.detailTagText}>#{tag}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Entities */}
-                    {selectedObject.metadata.entities.length > 0 && (
-                      <View style={styles.detailSection}>
-                        <Text style={styles.detailLabel}>Entities</Text>
-                        {selectedObject.metadata.entities.map((entity, index) => (
-                          <View key={index} style={styles.entityRow}>
-                            <Text style={styles.entityType}>{entity.type}</Text>
-                            <Text style={styles.entityValue}>{entity.value}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    {/* Source */}
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailLabel}>Source</Text>
-                      <View style={styles.metadataRow}>
-                        <Text style={styles.metadataLabel}>Type:</Text>
-                        <Text style={styles.metadataValue}>{selectedObject.source.type}</Text>
-                      </View>
-                      <View style={styles.metadataRow}>
-                        <Text style={styles.metadataLabel}>Created:</Text>
-                        <Text style={styles.metadataValue}>
-                          {formatDate(selectedObject.createdAt)}
-                        </Text>
-                      </View>
-                    </View>
-                  </>
-                )}
-              </ScrollView>
-            ) : null}
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
+      {renderDetailModal()}
+      {renderFilterSheet()}
     </AppScreen>
   );
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function DashStat({ label, value }: { label: string; value: number }) {
   return (
@@ -893,143 +1023,403 @@ function DashStat({ label, value }: { label: string; value: number }) {
   );
 }
 
+interface QuickActionProps {
+  icon: string;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}
+
+function QuickAction({ icon, label, onPress, disabled, active }: QuickActionProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.quickAction, disabled && styles.quickActionDisabled]}
+      onPress={disabled ? undefined : onPress}
+      activeOpacity={disabled ? 1 : 0.7}
+    >
+      <Ionicons
+        name={icon as any}
+        size={20}
+        color={active ? Colors.success : disabled ? Colors.textFaint : Colors.textSecondary}
+      />
+      <Text style={[
+        styles.quickActionLabel,
+        active && styles.quickActionLabelActive,
+        disabled && styles.quickActionLabelDisabled,
+      ]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+interface DetailRowProps {
+  label: string;
+  value?: string;
+  valueColor?: string;
+  capitalize?: boolean;
+  isLast?: boolean;
+  customValue?: React.ReactNode;
+}
+
+function DetailRow({ label, value, valueColor, capitalize, isLast, customValue }: DetailRowProps) {
+  return (
+    <View style={[styles.detailRow, !isLast && styles.detailRowDivider]}>
+      <Text style={styles.detailRowLabel}>{label}</Text>
+      {customValue ?? (
+        <Text style={[
+          styles.detailRowValue,
+          valueColor ? { color: valueColor } : {},
+          capitalize ? styles.capitalizeText : {},
+        ]}>
+          {value}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+interface StatusPickerProps {
+  currentState: string;
+  onChangeState: (state: NoteStatus) => void;
+  updating: boolean;
+}
+
+function StatusPicker({ currentState, onChangeState, updating }: StatusPickerProps) {
+  const statuses: NoteStatus[] = ['open', 'resolved', 'archived'];
+  if (updating) {
+    return <ActivityIndicator size="small" color={Colors.accent} />;
+  }
+  return (
+    <View style={styles.statusPicker}>
+      {statuses.map((s) => {
+        const isActive = currentState === s;
+        return (
+          <TouchableOpacity
+            key={s}
+            style={[styles.statusPill, isActive && { backgroundColor: STATUS_COLORS[s], borderColor: STATUS_COLORS[s] }]}
+            onPress={() => !isActive && onChangeState(s)}
+          >
+            <Text style={[styles.statusPillText, isActive && styles.statusPillTextActive]}>
+              {STATUS_LABELS[s]}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   // Search
   searchContainer: {
     paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+    backgroundColor: Colors.bg,
+  },
+
+  // Primary filter bar
+  primaryFilterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
     backgroundColor: Colors.bg,
   },
-  headerRight: { width: 50 },
-  // Filter chips
-  chipsContainer: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  chipRow: { height: 44 },
-  chipRowContent: {
+  primaryFilterContent: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.sm,
   },
-  chip: {
-    backgroundColor: Colors.bgMuted,
+  primaryPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
+    backgroundColor: Colors.bgMuted,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
   },
-  chipText: {
+  primaryPillActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  primaryPillText: {
     color: Colors.textMuted,
-    fontSize: 12,
-    textTransform: 'capitalize',
+    fontSize: 13,
+    fontWeight: '500',
   },
-  chipTextSelected: { color: '#FFFFFF' },
-  scoreText: { color: Colors.accent, fontSize: 12, fontWeight: '600' },
-  searchResultTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 4,
+  primaryPillTextActive: {
+    color: '#FFFFFF',
   },
-  // Loading
+  filterIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.bgMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  filterIconBtnActive: {
+    backgroundColor: Colors.accentLight,
+    borderColor: Colors.accentBorder,
+  },
+
+  // Loading / Error
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: Colors.textMuted, fontSize: 14 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
+  errorText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 16 },
+  retryBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: Colors.bgMuted,
+    borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  retryBtnText: { color: Colors.textSecondary, fontWeight: '500' },
+
   // List
-  listContent: { padding: Spacing.lg },
+  listContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xxl,
+  },
   listEmpty: { flex: 1 },
-  // Object Card
-  objectCard: {
-    backgroundColor: Colors.bgSurface,
+  loadingFooter: { paddingVertical: 16, alignItems: 'center' },
+  listSectionHeader: {
+    backgroundColor: Colors.bg,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xs,
+  },
+  listSectionHeaderText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // Note row (card)
+  noteRow: {
+    backgroundColor: Colors.bg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 14,
     borderRadius: Radius.md,
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
     elevation: 1,
   },
-  cardHeader: {
+  noteRowDone: { opacity: 0.5 },
+  noteTitle: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.text,
+    lineHeight: 22,
+    marginBottom: 5,
+  },
+  noteTitleDone: {
+    textDecorationLine: 'line-through',
+    color: Colors.textMuted,
+  },
+  noteBody: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: 5,
+  },
+  noteMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  noteSubtitle: { fontSize: 12, color: Colors.textMuted },
+  noteDot: { fontSize: 12, color: Colors.textFaint },
+  noteDate: { fontSize: 12, color: Colors.textFaint },
+  urgencyDot: { width: 6, height: 6, borderRadius: 3, marginRight: 3 },
+  noteUrgency: { fontSize: 11, fontWeight: '500' },
+  noteNextAction: { fontSize: 12, color: Colors.accent, marginTop: 5 },
+  matchScore: { fontSize: 12, color: Colors.accent, fontWeight: '500' },
+
+  // Empty State
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
+  emptyStateIcon: { fontSize: 52, marginBottom: 16 },
+  emptyStateTitle: { fontSize: 18, fontWeight: '600', color: Colors.text, marginBottom: 8 },
+  emptyStateText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  clearFiltersBtn: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: Colors.bgMuted,
+    borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  clearFiltersBtnText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '500' },
+
+  // Context banners (geofence + stale)
+  geofenceBanner: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+    backgroundColor: '#EFF6FF',
+    paddingBottom: 12,
+  },
+  geofenceBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  geofenceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' },
+  geofenceBannerTitle: { color: '#1d4ed8', fontSize: 13, fontWeight: '600' },
+  geofenceCard: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
+  geofenceCardLabel: { color: '#3b82f6', fontSize: 10, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
+
+  staleBanner: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.warningBg,
+  },
+  staleBannerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryTags: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  categoryTag: {
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-  },
-  categoryTagText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  moreCategoriesText: { color: Colors.textFaint, fontSize: 10 },
-  urgencyBadge: { flexDirection: 'row', alignItems: 'center' },
-  urgencyDot: { width: 6, height: 6, borderRadius: 3, marginRight: 4 },
-  urgencyText: { color: Colors.textMuted, fontSize: 10, textTransform: 'capitalize' },
-  contentPreview: { fontSize: 14, color: Colors.text, lineHeight: 20, marginBottom: 8 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dateText: { fontSize: 12, color: Colors.textFaint },
-  tagsContainer: { flexDirection: 'row', gap: 8 },
-  tagText: { fontSize: 10, color: Colors.accent },
-  // Empty State
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
-  emptyStateIcon: { fontSize: 64, marginBottom: 16 },
-  emptyStateTitle: { fontSize: 20, fontWeight: '600', color: Colors.text, marginBottom: 8 },
-  emptyStateText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center' },
-  clearFiltersButton: {
-    marginTop: 16,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: Colors.accentLight,
-    borderRadius: Radius.sm,
+    paddingVertical: 10,
+  },
+  staleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  staleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b' },
+  staleBannerTitle: { color: Colors.warning, fontSize: 13, fontWeight: '600' },
+  staleCardAge: { color: Colors.warning, fontSize: 10, fontWeight: '700', marginBottom: 4 },
+
+  contextCardsRow: { paddingHorizontal: 16, paddingBottom: 12, gap: 10, flexDirection: 'row' },
+  contextCard: {
+    width: 148,
+    backgroundColor: Colors.bg,
+    borderRadius: 10,
+    padding: 12,
     borderWidth: 1,
-    borderColor: Colors.accentBorder,
+    borderColor: Colors.warningBorder,
   },
-  clearFiltersText: { color: Colors.accent, fontSize: 14, fontWeight: '600' },
-  loadingFooter: { paddingVertical: 16, alignItems: 'center' },
-  // Error
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
-  errorIcon: { fontSize: 48, marginBottom: 16, color: Colors.error },
-  errorText: { fontSize: 14, color: Colors.error, textAlign: 'center', marginBottom: 16 },
-  retryButton: {
-    backgroundColor: Colors.accent,
-    paddingHorizontal: 24,
+  contextCardContent: { color: Colors.text, fontSize: 12, lineHeight: 16, marginBottom: 4 },
+  contextCardAction: { color: Colors.textMuted, fontSize: 11, fontStyle: 'italic' },
+
+  // Dashboard
+  dashboardCard: {
+    backgroundColor: Colors.bgSurface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  dashboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: Radius.sm,
   },
-  retryButtonText: { color: '#fff', fontWeight: '600' },
-  // Modal
-  modalContainer: { flex: 1, backgroundColor: Colors.bg },
-  modalKeyboardView: { flex: 1 },
-  modalEditButton: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
-  modalCancelButton: { color: Colors.error, fontSize: 15, fontWeight: '600' },
-  modalLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  modalContent: { flex: 1, padding: Spacing.xxl },
-  // Detail Sections
-  detailSection: { marginBottom: Spacing.xxl },
-  detailLabel: {
+  dashboardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dashboardDot: { width: 8, height: 8, borderRadius: 4 },
+  dashboardTitle: { color: Colors.text, fontSize: 13, fontWeight: '500' },
+  dashboardBody: { paddingHorizontal: 16, paddingBottom: 12 },
+  dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  dashStat: {
+    backgroundColor: Colors.bgMuted,
+    borderRadius: Radius.sm,
+    padding: 10,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  dashStatValue: { color: Colors.text, fontSize: 18, fontWeight: '700' },
+  dashStatLabel: { color: Colors.textMuted, fontSize: 10, marginTop: 2 },
+  dashboardMeta: { color: Colors.textMuted, fontSize: 12 },
+
+  // Filter sheet
+  sheetContainer: { flex: 1, backgroundColor: Colors.bg },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xxl,
+    paddingVertical: Spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  sheetCancel: { color: Colors.textMuted, fontSize: 15 },
+  sheetReset: { color: Colors.accent, fontSize: 15 },
+  sheetBody: { flex: 1, padding: Spacing.xxl },
+  sheetSectionLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: Colors.textMuted,
-    marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: Spacing.md,
   },
-  detailCategoryTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  contentText: { fontSize: 16, color: Colors.text, lineHeight: 24 },
+  sheetChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  sheetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgMuted,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sheetChipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  sheetChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  sheetChipTextSelected: { color: '#FFFFFF' },
+  sheetFooter: {
+    padding: Spacing.xxl,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  applyBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  applyBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+
+  // Detail modal
+  modalContainer: { flex: 1, backgroundColor: Colors.bg },
+  modalKeyboardView: { flex: 1 },
+  modalLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  modalScroll: { flex: 1, paddingHorizontal: Spacing.xxl },
+  headerCloseBtn: { color: Colors.textMuted, fontSize: 15 },
+  headerCancelBtn: { color: Colors.textMuted, fontSize: 15 },
+  headerEditBtn: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
+
+  noteSummaryLine: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    textTransform: 'capitalize',
+  },
+  detailNoteContent: {
+    fontSize: 17,
+    color: Colors.text,
+    lineHeight: 27,
+    marginBottom: Spacing.xxl,
+  },
+
+  editSection: { marginBottom: Spacing.xxl },
   editInput: {
     backgroundColor: Colors.bgMuted,
     borderRadius: Radius.sm,
@@ -1037,106 +1427,126 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 16,
     lineHeight: 24,
-    minHeight: 120,
+    minHeight: 140,
     textAlignVertical: 'top',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
   },
-  editActions: { marginBottom: Spacing.xxl },
-  updateError: { color: Colors.error, fontSize: 14, marginBottom: 12 },
-  saveButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.sm,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: { opacity: 0.6 },
-  saveButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  metadataRow: {
+  updateError: { color: Colors.error, fontSize: 13, marginTop: 8 },
+
+  // Quick actions
+  quickActionsRow: {
     flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.xxl,
+  },
+  quickAction: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  metadataLabel: { color: Colors.textMuted, fontSize: 14, width: 100 },
-  metadataValue: { color: Colors.text, fontSize: 14, flex: 1 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  detailTag: {
-    backgroundColor: Colors.accentLight,
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: Colors.accentBorder,
-  },
-  detailTagText: { color: Colors.accent, fontSize: 12, fontWeight: '500' },
-  entityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  entityType: { color: Colors.textMuted, fontSize: 12, width: 100, textTransform: 'capitalize' },
-  entityValue: { color: Colors.text, fontSize: 14, flex: 1 },
-  // Geofence context banner
-  geofenceBanner: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: '#EFF6FF',
-    paddingBottom: 12,
-  },
-  geofenceBannerHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
-  geofenceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' },
-  geofenceBannerTitle: { color: '#1d4ed8', fontSize: 13, fontWeight: '600' },
-  geofenceCard: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
-  geofenceCardLabel: { color: '#3b82f6', fontSize: 10, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
-  // Stale actionables
-  staleBanner: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.warningBg,
-  },
-  staleBannerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
-  staleBannerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  staleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b' },
-  staleBannerTitle: { color: Colors.warning, fontSize: 13, fontWeight: '600' },
-  staleBannerChevron: { color: Colors.textFaint, fontSize: 10 },
-  staleCardsRow: { paddingHorizontal: 16, paddingBottom: 12, gap: 10, flexDirection: 'row' },
-  staleCard: {
-    width: 160,
-    backgroundColor: Colors.bg,
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.warningBorder,
-  },
-  staleCardAge: { color: Colors.warning, fontSize: 10, fontWeight: '700', marginBottom: 4 },
-  staleCardContent: { color: Colors.text, fontSize: 12, lineHeight: 16, marginBottom: 4 },
-  staleCardAction: { color: Colors.textMuted, fontSize: 11, fontStyle: 'italic' },
-  // Dashboard card
-  dashboardCard: {
+    paddingVertical: Spacing.md,
     backgroundColor: Colors.bgSurface,
-    marginHorizontal: 0,
+    borderRadius: Radius.md,
+    gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  quickActionDisabled: { opacity: 0.35 },
+  quickActionLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '500' },
+  quickActionLabelActive: { color: Colors.success },
+  quickActionLabelDisabled: { color: Colors.textFaint },
+
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.border,
+    marginBottom: Spacing.xxl,
+  },
+
+  // Details section
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.md,
+  },
+  detailsCard: {
+    backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 12,
+  },
+  detailRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
-  dashboardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
-  dashboardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  dashboardLoadDot: { width: 8, height: 8, borderRadius: 4 },
-  dashboardTitle: { color: Colors.text, fontSize: 13, fontWeight: '600' },
-  dashboardChevron: { color: Colors.textFaint, fontSize: 11 },
-  dashboardBody: { paddingHorizontal: 16, paddingBottom: 12 },
-  dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
-  dashStat: { backgroundColor: Colors.bgMuted, borderRadius: Radius.sm, padding: 10, minWidth: 80, alignItems: 'center' },
-  dashStatValue: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-  dashStatLabel: { color: Colors.textMuted, fontSize: 10, marginTop: 2 },
-  dashboardTopDomain: { color: Colors.textMuted, fontSize: 12 },
-  // State badge
-  stateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  stateBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  stateBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  stateChangeBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: Colors.border },
-  stateChangeBtnText: { color: Colors.textSecondary, fontSize: 12 },
+  detailRowLabel: { fontSize: 14, color: Colors.textMuted },
+  detailRowValue: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'right',
+  },
+  capitalizeText: { textTransform: 'capitalize' },
+
+  // Status picker
+  statusPicker: { flexDirection: 'row', gap: 6 },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgMuted,
+  },
+  statusPillText: { fontSize: 12, color: Colors.textMuted },
+  statusPillTextActive: { color: '#fff', fontWeight: '600' },
+
+  // Keywords
+  keywordsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  keywordPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: Colors.bgMuted,
+    borderRadius: Radius.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  keywordText: { fontSize: 12, color: Colors.textSecondary },
+
+  // Advanced details
+  advancedToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.lg,
+    marginTop: Spacing.lg,
+  },
+  advancedToggleText: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
+  advancedCard: {
+    backgroundColor: Colors.bgSurface,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    overflow: 'hidden',
+    marginBottom: Spacing.lg,
+  },
+  entitiesRow: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  entitiesList: { marginTop: 6 },
+  entityItem: { fontSize: 13, color: Colors.text, lineHeight: 20 },
+  entityTypeLabel: { color: Colors.textMuted, textTransform: 'capitalize' },
 });
