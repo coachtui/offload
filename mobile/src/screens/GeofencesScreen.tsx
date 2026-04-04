@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useGeofences } from '../hooks/useGeofences';
 import { geofenceMonitoringService } from '../services/geofenceMonitoringService';
 import { locationService } from '../services/locationService';
+import { apiService } from '../services/api';
 
 interface GeofencesScreenProps {
   navigation: any;
@@ -183,6 +184,23 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
           </TouchableOpacity>
 
           <TouchableOpacity
+            style={[styles.actionButton, styles.editButton]}
+            onPress={() => navigation.navigate('EditGeofence', {
+              geofenceId: item.id,
+              geofenceName: item.name,
+              type: item.type,
+              radius: item.radius,
+              notifyOnEnter: item.notifyOnEnter,
+              notifyOnExit: item.notifyOnExit,
+              quietHoursStart: item.quietHoursStart,
+              quietHoursEnd: item.quietHoursEnd,
+              location: item.location,
+            })}
+          >
+            <Text style={[styles.actionButtonText, styles.editButtonText]}>Edit</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={[styles.actionButton, styles.deleteButton]}
             onPress={() => handleDelete(item.id, item.name)}
           >
@@ -247,9 +265,10 @@ export default function GeofencesScreen({ navigation }: GeofencesScreenProps) {
                   style: 'destructive',
                   onPress: async () => {
                     await geofenceMonitoringService.stopAllMonitoring();
-                    // TODO: Delete all geofences from server
-                    Alert.alert('Deleted', 'All location data removed');
+                    await Promise.all(geofences.map(gf => apiService.deleteGeofence(gf.id)));
                     setShowPrivacyDashboard(false);
+                    await fetchGeofences();
+                    Alert.alert('Deleted', 'All location data removed');
                   },
                 },
               ]
@@ -461,6 +480,12 @@ const styles = StyleSheet.create({
   },
   notesButtonText: {
     color: '#4338CA',
+  },
+  editButton: {
+    backgroundColor: '#F0FDF4',
+  },
+  editButtonText: {
+    color: '#166534',
   },
   deleteButton: {
     backgroundColor: '#FEE2E2',

@@ -7,6 +7,17 @@ export type RootStackParamList = {
   Reminders: undefined;
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
+  EditGeofence: {
+    geofenceId: string;
+    geofenceName: string;
+    type: 'home' | 'work' | 'gym' | 'store' | 'custom';
+    radius: number;
+    notifyOnEnter: boolean;
+    notifyOnExit: boolean;
+    quietHoursStart?: string;
+    quietHoursEnd?: string;
+    location: { latitude: number; longitude: number };
+  };
   Search: undefined;
   AskOffload: { initialQuery?: string } | undefined;
   Insights: undefined;

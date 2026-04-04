@@ -1,11 +1,11 @@
-# Current Phase: Phase 5 & 6 Completion + Production Deployment
+# Current Phase: Phase 7 — Cross-Domain Synthesis
 
 ## Phase Overview
-**Phase**: 5 & 6 (Semantic Intelligence + Geofencing)
-**Status**: 🎉 100% COMPLETE - Fully Operational
-**Previous Phase**: Phase 4 (User Interface) - ✅ Complete
-**Current Date**: 2026-01-26
-**Last Updated**: 2026-01-26 16:30 PST
+**Phase**: 7 (Cross-Domain Synthesis & AI Insights)
+**Status**: 🔄 Up Next
+**Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
+**Current Date**: 2026-04-04
+**Last Updated**: 2026-04-04
 
 ## Executive Summary
 
@@ -374,12 +374,13 @@ WEAVIATE_API_KEY=<configured>
 
 **Testing Status**:
 - ✅ Backend API tested and working
-- ✅ Mobile UI tested in Expo Go
-- ⏳ Needs real device testing for OS-level geofence triggers
+- ✅ Mobile UI tested on real device
+- ✅ OS-level geofence triggers verified on device
 
-**Known Limitation**:
-- ⚠️ Linking geofences to relevant objects (marked as TODO for Phase 7)
-  - `geofenceService.ts:81` - "TODO: Return relevant atomic objects"
+**Phase 6 Polish (completed 2026-04-04)**:
+- ✅ Edit Geofence screen (`EditGeofenceScreen.tsx`) — edit name, type, radius, notifications
+- ✅ Quiet hours UI on both Create and Edit screens — preset time chips, wires to backend
+- ✅ "Delete All Location Data" now deletes from server (was TODO/broken)
 
 **Documentation**:
 - ✅ [PHASE_6_QUICKSTART.md](PHASE_6_QUICKSTART.md) - Setup guide
@@ -447,8 +448,15 @@ WEAVIATE_API_KEY=<configured>
 - ✅ **Local Development**: Docker MinIO support maintained
 - ✅ **Automatic Deployment**: GitHub → Railway integration active
 
+**Weaviate Vector Database**:
+- ✅ Self-hosted on Railway as Docker service (`semitechnologies/weaviate:1.24.0`)
+- ✅ Internal networking via `http://weaviate.railway.internal:8080`
+- ✅ Anonymous access (no API key needed — internal only)
+- ✅ Persistent volume mounted at `/var/lib/weaviate`
+- ✅ Semantic search fully operational in production
+- No expiry (replaces 14-day Weaviate Cloud sandbox)
+
 **Known Limitations in Production**:
-- ⏳ Weaviate not configured yet (blocking semantic search - 15 min setup)
 - ⚠️ Real-time transcription optional (Whisper requires audio processing)
 
 ---
@@ -532,62 +540,23 @@ curl -X POST https://brain-dump-production-895b.up.railway.app/api/v1/ai/query \
 8. Verify AI response with sources
 9. Tap a source to view original object
 
-### ⏳ Infrastructure Testing (After Weaviate Setup)
-- [ ] Weaviate connection successful
-- [ ] Schema auto-initialized
-- [ ] Embeddings generation script runs
-- [ ] All objects have embeddings in Weaviate
-- [ ] Semantic search returns results
+### ✅ Infrastructure (Complete)
+- ✅ Weaviate self-hosted on Railway (no expiry)
+- ✅ Semantic search operational in production
+- ✅ New recordings auto-embed on save
 
 ---
 
-## Next Steps: Final 5% Completion
+## Next Steps: Phase 7 — Cross-Domain Synthesis
 
-### Immediate Actions (Today - 30 minutes)
+### What Phase 7 Builds
+Weekly agentic workflow that finds patterns across domains (business, personal, fitness, health) and surfaces insights the user wouldn't notice manually.
 
-#### Step 1: Set Up Weaviate Cloud (15 min)
-```bash
-# 1. Go to https://console.weaviate.cloud
-# 2. Create account and free Sandbox cluster
-# 3. Copy cluster URL and API key
-# 4. Add to local .env:
-cd backend/api
-echo "WEAVIATE_URL=https://your-cluster.weaviate.network" >> .env
-echo "WEAVIATE_API_KEY=your-api-key-here" >> .env
-
-# 5. Add to Railway dashboard:
-#    - Go to brain-dump service
-#    - Variables tab
-#    - Add WEAVIATE_URL and WEAVIATE_API_KEY
-#    - Click Deploy
-```
-
-#### Step 2: Generate Embeddings (10-30 min one-time)
-```bash
-# Local testing
-cd backend/api
-npm run generate-embeddings
-
-# Or on Railway (via CLI)
-railway link  # Select brain-dump service
-railway run npm run generate-embeddings
-```
-
-#### Step 3: Test Semantic Search (5 min)
-```bash
-# Test locally or on Railway
-curl -X POST http://localhost:3000/api/v1/search/semantic \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "test search", "limit": 5}'
-```
-
-#### Step 4: Test Mobile UI (10 min)
-1. Open mobile app
-2. Navigate to SearchScreen
-3. Perform searches and verify results
-4. Navigate to AIQueryScreen
-5. Ask questions and verify AI responses
+### Deliverables
+1. **Pattern Analysis Agent** — weekly cron job, cross-domain semantic similarity search
+2. **Insight Generation** — LLM finds "semantic bridges" between domains, generates actionable digest
+3. **Constraint Checking** — detects contradictions (e.g. new gym plan vs injury history)
+4. **Insight Storage & Delivery** — insights stored as special atomic objects, push notification digest
 
 ---
 
@@ -598,9 +567,8 @@ curl -X POST http://localhost:3000/api/v1/search/semantic \
   - API service: ~$5-10
   - ML service: ~$5-10
   - PostgreSQL: Included in plan
-- **Weaviate Cloud**: $0/month
-  - Free Sandbox tier (renewable)
-  - Upgrade to $25/month when scaling
+- **Weaviate**: $0/month
+  - Self-hosted on Railway (Docker service, no expiry)
 - **OpenAI API**: ~$3-5/month
   - Embeddings: ~$2/month (1000 objects)
   - GPT-4 for RAG: ~$1.50/month (100 queries)
@@ -611,7 +579,7 @@ curl -X POST http://localhost:3000/api/v1/search/semantic \
 
 ## Phase Completion Criteria
 
-### Phase 5: Semantic Intelligence ✅ 95% Complete
+### Phase 5: Semantic Intelligence ✅ 100% Complete
 
 **Functional Requirements**:
 - ✅ Transcripts automatically parsed into atomic objects
@@ -619,7 +587,7 @@ curl -X POST http://localhost:3000/api/v1/search/semantic \
 - ✅ Semantic search returns relevant results
 - ✅ RAG provides helpful answers with sources
 - ✅ System detects relationships via vector similarity
-- ⏳ Weaviate configured and operational (15 min task)
+- ✅ Weaviate self-hosted on Railway, operational in production
 
 **Performance Requirements**:
 - ✅ Parsing latency: ~2-3s (target: <5s)
@@ -644,9 +612,10 @@ curl -X POST http://localhost:3000/api/v1/search/semantic \
 
 **User Experience**:
 - ✅ Geofence management UI
-- ✅ Privacy dashboard
-- ✅ Clear permission flows
-- ⏳ Real device testing needed
+- ✅ Edit geofence screen (name, type, radius, notifications)
+- ✅ Quiet hours UI (preset time chips, both create and edit)
+- ✅ Privacy dashboard + Delete All (fully deletes from server)
+- ✅ Real device testing complete
 
 ---
 
@@ -659,10 +628,8 @@ curl -X POST http://localhost:3000/api/v1/search/semantic \
    - Location: `backend/api/package.json`
 
 ### Medium Priority
-2. ⚠️ **Geofence-Object Linking Not Implemented**
-   - TODO in `geofenceService.ts:81`
-   - Feature: Show relevant objects when entering geofence
-   - Planned for Phase 7
+2. ⚠️ **TypeScript Strict Mode Disabled**
+   - Build command has `|| true` to bypass type errors
 
 3. ⚠️ **Full-Text Search Filter Not Implemented**
    - TODO in `search.ts:159`

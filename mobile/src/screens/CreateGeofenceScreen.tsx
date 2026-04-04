@@ -38,6 +38,9 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   const [radius, setRadius] = useState(200); // Default 200m
   const [notifyOnEnter, setNotifyOnEnter] = useState(true);
   const [notifyOnExit, setNotifyOnExit] = useState(false);
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+  const [quietHoursStart, setQuietHoursStart] = useState('22:00');
+  const [quietHoursEnd, setQuietHoursEnd] = useState('08:00');
 
   // Linked notes state
   const [linkedObjectIds, setLinkedObjectIds] = useState<string[]>([]);
@@ -200,6 +203,8 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
         radius,
         notifyOnEnter,
         notifyOnExit,
+        quietHoursStart: quietHoursEnabled ? quietHoursStart : undefined,
+        quietHoursEnd: quietHoursEnabled ? quietHoursEnd : undefined,
       });
 
       if (!geofence) {
@@ -419,6 +424,45 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
             <Text style={styles.permissionNote}>
               📱 Background location permission will be requested to enable notifications
             </Text>
+          )}
+        </View>
+
+        {/* Quiet Hours */}
+        <View style={styles.formGroup}>
+          <View style={styles.switchRow}>
+            <View style={styles.switchLabel}>
+              <Text style={styles.switchText}>Do not disturb</Text>
+              <Text style={styles.switchSubtext}>Suppress notifications during set hours</Text>
+            </View>
+            <Switch value={quietHoursEnabled} onValueChange={setQuietHoursEnabled} />
+          </View>
+          {quietHoursEnabled && (
+            <>
+              <Text style={styles.quietLabel}>Don't notify from</Text>
+              <View style={styles.radiusButtons}>
+                {[['8 PM','20:00'],['9 PM','21:00'],['10 PM','22:00'],['11 PM','23:00'],['12 AM','00:00']].map(([label, val]) => (
+                  <TouchableOpacity
+                    key={val}
+                    style={[styles.radiusButton, quietHoursStart === val && styles.radiusButtonActive]}
+                    onPress={() => setQuietHoursStart(val)}
+                  >
+                    <Text style={[styles.radiusButtonText, quietHoursStart === val && styles.radiusButtonTextActive]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.quietLabel, { marginTop: 10 }]}>Until</Text>
+              <View style={styles.radiusButtons}>
+                {[['5 AM','05:00'],['6 AM','06:00'],['7 AM','07:00'],['8 AM','08:00'],['9 AM','09:00']].map(([label, val]) => (
+                  <TouchableOpacity
+                    key={val}
+                    style={[styles.radiusButton, quietHoursEnd === val && styles.radiusButtonActive]}
+                    onPress={() => setQuietHoursEnd(val)}
+                  >
+                    <Text style={[styles.radiusButtonText, quietHoursEnd === val && styles.radiusButtonTextActive]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
           )}
         </View>
 
@@ -733,6 +777,15 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 10,
     lineHeight: 18,
+  },
+  quietLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 12,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   // Linked Notes section
   linkedNotesHeader: {
