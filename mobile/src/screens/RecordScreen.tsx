@@ -49,9 +49,14 @@ export function RecordScreen({ navigation }: Props) {
   // After saving a note with location-triggered reminders, re-fetch geofences after a
   // short delay. This allows the server's async place resolution + geofence creation to
   // complete before the client syncs with the OS, ensuring the new geofence gets registered.
+  //
+  // NOTE: The timeout is intentionally NOT cancelled on unmount. If the user navigates
+  // away before the 6s window closes, the sync still needs to run so the new inferred
+  // geofence gets registered with the OS. The only downside is a harmless React warning
+  // about state updates on an unmounted component — the OS registration is what matters.
   useEffect(() => {
     if (hasGeofenceCandidates && status === 'done') {
-      console.log('[RecordScreen] Geofence candidates detected — scheduling re-sync in 6s');
+      console.log('[RecordScreen] Geofence candidates detected — scheduling re-sync in 6s (persists through navigation)');
       if (geofenceSyncTimeoutRef.current) {
         clearTimeout(geofenceSyncTimeoutRef.current);
       }
@@ -60,11 +65,6 @@ export function RecordScreen({ navigation }: Props) {
         fetchGeofences();
       }, 6000);
     }
-    return () => {
-      if (geofenceSyncTimeoutRef.current) {
-        clearTimeout(geofenceSyncTimeoutRef.current);
-      }
-    };
   }, [hasGeofenceCandidates, status, fetchGeofences]);
 
   const isRecording = status === 'recording';

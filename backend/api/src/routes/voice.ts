@@ -30,6 +30,19 @@ function textHasArrivalTrigger(text: string): boolean {
   return ARRIVAL_PATTERNS.some(p => p.test(text));
 }
 
+/**
+ * Extract store/place names from text using the deterministic store pattern.
+ * Used only in the ML-fallback path where the LLM isn't available to extract places.
+ */
+function extractPlacesFromText(text: string): string[] {
+  const storePattern = /at\s+(?:the\s+)?(?:costco|walmart|target|longs(?:\s+drugs)?|safeway|home\s+depot|lowes|cvs|walgreens|sam['']?s(?:\s+club)?|whole\s+foods|trader\s+joe['']?s|aldi|ross|tj\s+maxx|marshalls|kohl['']?s?)\b/gi;
+  const matches = Array.from(text.matchAll(storePattern));
+  const places = matches
+    .map(m => m[0].replace(/^at\s+(?:the\s+)?/i, '').trim())
+    .filter(Boolean);
+  return [...new Set(places)]; // dedupe
+}
+
 // Validation schemas
 const saveTranscriptSchema = z.object({
   transcript: z.string().min(1, 'Transcript is required'),
@@ -214,6 +227,23 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             },
           });
           objectIds.push(object.id);
+
+          // Still attempt place extraction via deterministic patterns even without ML.
+          // ML provides richer place extraction, but the store-name patterns are reliable
+          // enough to handle the most common cases when ML is down.
+          const hasTrigger = textHasArrivalTrigger(transcript);
+          if (hasTrigger) {
+            const places = extractPlacesFromText(transcript);
+            if (places.length > 0) {
+              hasGeofenceCandidates = true;
+              console.log(`[Voice] ML-fallback deterministic trigger — places detected: ${places.join(', ')}`);
+              resolveObjectPlaces(userId, object.id, places, geoLocation).catch(err =>
+                console.warn('[Voice] Place resolution failed silently (ML fallback) for object', object.id, ':', err)
+              );
+            } else {
+              console.log('[Voice] ML-fallback: arrival trigger matched but no extractable store name — skipping place resolution');
+            }
+          }
         }
       }
 
@@ -247,6 +277,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
     // hasGeofenceCandidates signals to the client that place resolution is running
     // asynchronously server-side and geofences may be created shortly. The client
     // should re-fetch geofences after a brief delay to pick up new OS registrations.
+    console.log(`[Voice] Responding — objectCount=${objectIds.length}, hasGeofenceCandidates=${hasGeofenceCandidates}`);
     res.json({
       sessionId: session.id,
       objectIds,

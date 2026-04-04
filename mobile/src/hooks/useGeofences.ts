@@ -287,6 +287,7 @@ export function useGeofences(): UseGeofencesResult {
       notifyOnExit: geofence.notifyOnExit,
       quietHoursStart: geofence.quietHoursStart,
       quietHoursEnd: geofence.quietHoursEnd,
+      placeId: geofence.placeId,
     };
 
     const success = await geofenceMonitoringService.startMonitoringRegion(region);

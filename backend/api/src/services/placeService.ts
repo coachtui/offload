@@ -59,7 +59,8 @@ export async function resolveObjectPlaces(
   placeNames: string[],
   userLocation?: { latitude: number; longitude: number }
 ): Promise<void> {
-  logLifecycle('REMINDER_CANDIDATE_DETECTED', { objectId, placeNames });
+  logLifecycle('REMINDER_CANDIDATE_DETECTED', { objectId, placeNames, hasUserLocation: !!userLocation });
+  console.log(`[placeService] resolveObjectPlaces: ${placeNames.length} place(s) for object ${objectId}${userLocation ? ` (user at ${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})` : ' (no user location)'}`);
   for (const rawName of placeNames) {
     try {
       await resolveAndLinkPlace(userId, objectId, rawName, userLocation);
@@ -67,6 +68,7 @@ export async function resolveObjectPlaces(
       console.warn(`[placeService] Failed to resolve place "${rawName}" for object ${objectId}:`, err);
     }
   }
+  console.log(`[placeService] resolveObjectPlaces: complete for object ${objectId} — client must re-sync geofences`);
 }
 
 async function resolveAndLinkPlace(
