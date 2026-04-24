@@ -1,10 +1,10 @@
-# The Hub - Proactive Cognitive Inbox
+# Offload - Proactive Cognitive Inbox
 
 > A Zero-Friction offload application that transforms passive note-taking into an active, context-aware second brain.
 
 ## 🎯 Vision
 
-"The Hub" automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior). It's not just a note-taking app—it's a **Proactive Second Brain**.
+"Offload" automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior). It's not just a note-taking app—it's a **Proactive Second Brain**.
 
 ## ✨ Core Features
 
