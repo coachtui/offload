@@ -276,7 +276,7 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
      LEFT JOIN hub.atomic_objects ao ON ao.id = go.object_id
      WHERE g.user_id = $1 AND g.created_by = 'manual'
      GROUP BY g.id, g.name
-     ORDER BY g.created_at DESC`,
+     ORDER BY open_count DESC, g.created_at DESC`,
     [userId]
   );
 

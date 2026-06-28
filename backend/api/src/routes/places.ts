@@ -52,6 +52,7 @@ router.get('/overview', async (req: Request, res: Response) => {
     const places = await getPlacesOverview(userId);
     res.json({ places });
   } catch (error: any) {
+    console.error('[places] GET /overview error:', error);
     res.status(error.status ?? 500).json({ error: error.message || 'Failed to load places overview' });
   }
 });
