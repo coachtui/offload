@@ -24,8 +24,8 @@ const GEOFENCE_CONFIDENCE_THRESHOLD = 0.45;
 // Fixed radius for all inferred geofences (metres)
 const INFERRED_RADIUS_METERS = 100;
 
-// Cooldown duration in milliseconds (2 hours)
-const COOLDOWN_MS = 2 * 60 * 60 * 1000;
+// Anti-spam window: one ping per visit, but a genuine later return re-fires (1 hour)
+const COOLDOWN_MS = 60 * 60 * 1000;
 
 // ─── Place resolution pipeline ───────────────────────────────────────────────
 
