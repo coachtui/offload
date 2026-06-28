@@ -92,6 +92,16 @@ async function resolveAndLinkPlace(
     return;
   }
 
+  // ─── 1b. Match a manually-labeled geofence by exact name ───────────────────
+  const geofenceMatches = await GeofenceModel.findByUserAndName(userId, normalizedQuery);
+  if (geofenceMatches.length > 0) {
+    const geofence = geofenceMatches[0];
+    console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) — linking object ${objectId}`);
+    logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: 'manual_geofence_name_match' });
+    await GeofenceModel.addLinkedObject(geofence.id, objectId);
+    return; // labeled place is authoritative — do not geocode or create an inferred place
+  }
+
   // ─── 2. Geocode via OSM Nominatim (up to 3 candidates) ───────────────────
   const userLatLng = userLocation
     ? { lat: userLocation.latitude, lng: userLocation.longitude }
@@ -171,6 +181,13 @@ async function maybeCreateInferredGeofence(
   userId: string,
   place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null }
 ): Promise<void> {
+  // Never shadow a user's labeled place with an inferred duplicate.
+  const manualMatch = await GeofenceModel.findByUserAndName(userId, place.normalizedName);
+  if (manualMatch.length > 0) {
+    console.log(`[placeService] Manual geofence "${place.normalizedName}" exists — skipping inferred duplicate`);
+    return;
+  }
+
   const currentCount = await PlaceModel.countInferredGeofences(userId);
   if (currentCount >= MAX_INFERRED_GEOFENCES) {
     logLifecycle('GEOFENCE_LIMIT_REACHED', {
