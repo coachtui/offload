@@ -16,6 +16,12 @@ interface TranscriptionState {
   // True when the saved note had location-triggered reminders — signals the UI to
   // re-fetch geofences after a brief delay so new server-side geofences are registered with the OS.
   hasGeofenceCandidates: boolean;
+  // True while the gpt-4o-transcribe pass is in flight (the displayed Deepgram
+  // text is about to be replaced with a higher-accuracy version).
+  isEnhancing: boolean;
+  // Which transcription produced the current finalTranscript. 'gpt-4o' once the
+  // higher-accuracy result has been swapped in; 'deepgram' otherwise.
+  transcriptionMethod: 'deepgram' | 'gpt-4o' | null;
 }
 
 interface UseDeepgramTranscriptionReturn extends TranscriptionState {
@@ -47,6 +53,8 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     relatedNotes: [],
     contradictions: [],
     hasGeofenceCandidates: false,
+    isEnhancing: false,
+    transcriptionMethod: null,
   });
 
   // Incremented on each new recording session so stale background calls don't update state
@@ -59,6 +67,10 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
   const finalTranscriptRef = useRef<string>('');
   const partialTranscriptRef = useRef<string>('');
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Accumulated base64 raw-PCM chunks for the final gpt-4o-transcribe pass.
+  // Deepgram gets these in real time for the live preview; we also keep them
+  // here so the saved transcript can use higher-accuracy transcription.
+  const audioChunksRef = useRef<string[]>([]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -82,6 +94,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       locationRef.current = location;
       finalTranscriptRef.current = '';
       partialTranscriptRef.current = '';
+      audioChunksRef.current = [];
 
       // ── 1. Auth check ──────────────────────────────────────────────────
       const storedToken = await apiService.getStoredToken();
@@ -196,12 +209,14 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         interval: 250,
         enableProcessing: false,
         onAudioStream: async (event) => {
+          const data = typeof event.data === 'string' ? event.data : '';
+          if (!data) return;
+          // Keep the raw PCM for the final gpt-4o-transcribe pass, regardless of
+          // Deepgram socket state, so we never lose audio from the saved transcript.
+          audioChunksRef.current.push(data);
           if (wsRef.current?.readyState === WebSocket.OPEN) {
-            const data = typeof event.data === 'string' ? event.data : '';
-            if (data) {
-              const arrayBuffer = base64ToArrayBuffer(data);
-              wsRef.current.send(arrayBuffer);
-            }
+            const arrayBuffer = base64ToArrayBuffer(data);
+            wsRef.current.send(arrayBuffer);
           }
         },
       });
@@ -285,22 +300,62 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       : partial;
     console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
 
+    // Enhancement runs whenever we captured audio for the gpt-4o pass.
+    const willEnhance = audioChunksRef.current.length > 0;
     setState(prev => ({
       ...prev,
       status: 'processing',
       duration: finalDuration,
       finalTranscript: transcript,
       partialTranscript: '',
+      isEnhancing: willEnhance,
+      transcriptionMethod: 'deepgram',
     }));
 
-    // ── 6. Save transcript to backend ─────────────────────────────────
-    if (transcript.trim()) {
+    // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
+    // Deepgram's result is shown as the preview above. Now send the captured
+    // raw audio for a more accurate transcript and swap it in when it returns.
+    // Any failure (network, empty audio, API error) keeps the Deepgram text.
+    let transcriptToSave = transcript;
+    let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
+    if (willEnhance) {
+      try {
+        console.log('[Recording] requesting gpt-4o transcription —',
+          audioChunksRef.current.length, 'chunks');
+        const { transcript: gpt4oTranscript } = await apiService.transcribeAudio(
+          audioChunksRef.current,
+          { sampleRate: 16000, channels: 1 }
+        );
+        if (gpt4oTranscript && gpt4oTranscript.trim()) {
+          transcriptToSave = gpt4oTranscript.trim();
+          transcriptionMethod = 'gpt-4o';
+          console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
+            '— swapping in for saved note');
+          setState(prev => ({
+            ...prev,
+            finalTranscript: transcriptToSave,
+            transcriptionMethod: 'gpt-4o',
+          }));
+        } else {
+          console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
+        }
+      } catch (error) {
+        console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
+          error instanceof Error ? error.message : error);
+      } finally {
+        setState(prev => ({ ...prev, isEnhancing: false }));
+      }
+    }
+
+    // ── 6b. Save transcript to backend ─────────────────────────────────
+    if (transcriptToSave.trim()) {
       try {
         console.log('[Recording] saving transcript to backend...');
         const result = await apiService.saveTranscript({
-          transcript,
+          transcript: transcriptToSave,
           duration: finalDuration,
           location: locationRef.current,
+          metadata: { transcriptionMethod },
         });
 
         console.log('[Recording] transcript saved — sessionId:', result.sessionId,
@@ -318,10 +373,10 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         }));
 
         // ── Background: related notes ──────────────────────────────────
-        if (transcript.trim().length > 50) {
+        if (transcriptToSave.trim().length > 50) {
           void (async () => {
             try {
-              const searchResp = await apiService.ragSearch(transcript, { topK: 5 });
+              const searchResp = await apiService.ragSearch(transcriptToSave, { topK: 5 });
               const related = (searchResp.results ?? [])
                 .filter((r) => !result.objectIds.includes(r.objectId))
                 .slice(0, 3);
@@ -336,7 +391,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           // ── Background: contradiction check ────────────────────────
           void (async () => {
             try {
-              const contr = await apiService.ragCheckContradictions(transcript, result.objectIds);
+              const contr = await apiService.ragCheckContradictions(transcriptToSave, result.objectIds);
               if (sessionIdRef.current === sessionId && contr.hasConflict) {
                 setState((prev) => ({ ...prev, contradictions: contr.conflicts }));
               }
@@ -376,9 +431,12 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       relatedNotes: [],
       contradictions: [],
       hasGeofenceCandidates: false,
+      isEnhancing: false,
+      transcriptionMethod: null,
     });
     finalTranscriptRef.current = '';
     partialTranscriptRef.current = '';
+    audioChunksRef.current = [];
   }, []);
 
   return {
