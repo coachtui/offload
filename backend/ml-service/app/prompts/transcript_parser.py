@@ -15,6 +15,16 @@ SEGMENTATION RULES:
 - Do NOT split one coherent task into fragments just because it has multiple sub-clauses
 - Do NOT merge unrelated thoughts just because they are adjacent
 
+SIGNIFICANCE GATE — what deserves to be a note:
+- Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
+  observation, question, decision, reference, or a genuine personal reflection.
+- DROP entirely (produce NO object for): filler and conversational glue ("um",
+  "okay so", "anyway", "yeah"), false starts, thinking-out-loud ("let me think"),
+  and sign-offs ("that's about it", "I guess that's everything").
+- The test is MEANING, not length. "Call the supplier" is 3 words and is a real
+  task — keep it. "Anyway, where was I" is filler — drop it.
+- If a recording is entirely filler, return {"atomic_objects": []}.
+
 OBJECT TYPES (pick the best fit):
 - task: something to do, has action verb, assignable ("call supplier", "update report")
 - reminder: time-sensitive or explicitly "remember to..." ("pick up Marcus at 3pm Thursday")
@@ -354,6 +364,42 @@ EXAMPLE_3_OUTPUT = """{
 }"""
 
 
+# ---------------------------------------------------------------------------
+# Few-shot example 5 — Significance gate (drop filler, keep the one real item)
+# ---------------------------------------------------------------------------
+
+EXAMPLE_5_INPUT = """Um, okay. Let me think. Yeah so. Where was I. Oh — remind me to email the inspector about the Sand Island permit. Yeah. That's about it I guess."""
+
+EXAMPLE_5_OUTPUT = """{
+  "atomic_objects": [
+    {
+      "raw_text": "remind me to email the inspector about the Sand Island permit",
+      "cleaned_text": "Email the inspector about the Sand Island permit",
+      "title": "Email inspector re: Sand Island permit",
+      "type": "reminder",
+      "domain": "work",
+      "tags": ["email", "inspector", "permit", "Sand Island"],
+      "entities": ["Sand Island"],
+      "confidence": 0.95,
+      "temporal_hints": {
+        "has_date": false,
+        "date_text": null,
+        "urgency": "medium"
+      },
+      "location_hints": {
+        "places": ["Sand Island"],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Email the inspector about the Sand Island permit"
+      },
+      "context_inherited_from": null
+    }
+  ]
+}"""
+
+
 def create_user_prompt(transcript: str, context: dict = None) -> str:
     """Create user prompt with transcript and optional context"""
     prompt = f"Parse this transcript:\n\n{transcript}\n\n"
@@ -405,5 +451,13 @@ def create_few_shot_examples() -> List[dict]:
         {
             "role": "assistant",
             "content": EXAMPLE_3_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_5_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_5_OUTPUT
         },
     ]

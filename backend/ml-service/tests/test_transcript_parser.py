@@ -51,3 +51,26 @@ def test_every_example_output_validates():
     # _load raises pydantic ValidationError if any example is malformed
     objs = list(iter_example_objects())
     assert len(objs) >= 3
+
+
+# Filler tokens that must never appear verbatim as a saved note.
+_FILLER = {"anyway", "um", "uh", "let me think", "that's about it",
+           "yeah", "so", "okay", "i guess"}
+
+
+def test_junk_example_drops_filler():
+    objs = _load(tp.EXAMPLE_5_OUTPUT)
+    # Exactly one real item survives in the junk example.
+    assert len(objs) == 1, f"expected 1 surviving note, got {len(objs)}"
+    surviving = objs[0]
+    # The surviving note is the real reminder, not a filler fragment.
+    text = (surviving.cleaned_text or "").strip().lower()
+    assert text not in _FILLER
+    assert surviving.title and surviving.title.strip()
+
+
+def test_few_shot_examples_include_junk_and_consolidation():
+    # create_few_shot_examples() must wire in the new examples (5 pairs total
+    # after Task 3: examples 1,2,3,4,5 -> 5 user + 5 assistant messages).
+    msgs = tp.create_few_shot_examples()
+    assert len(msgs) >= 8  # at least 4 examples wired (8 messages); 10 after Task 3
