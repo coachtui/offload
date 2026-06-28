@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { View, Text, SectionList, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
@@ -38,16 +39,30 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
         : { placeId: item.id, placeName: item.name });
   };
 
+  const header = (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={24} color="#111827" />
+      </TouchableOpacity>
+      <View style={styles.headerTitleContainer}>
+        <Text style={styles.headerTitle}>Places</Text>
+      </View>
+      <View style={{ width: 24 }} />
+    </View>
+  );
+
   if (loading && items.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {header}
         <ActivityIndicator style={{ marginTop: 40 }} color="#4F46E5" />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {header}
       <SectionList
         sections={sections}
         keyExtractor={(item) => `${item.kind}:${item.id}`}
@@ -75,6 +90,26 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerTitleContainer: {
+    flex: 1,
+    marginLeft: 16,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
   sectionHeader: { color: '#6B7280', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
   card: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   name: { color: '#111827', fontSize: 16, fontWeight: '600' },
