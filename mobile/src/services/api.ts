@@ -143,6 +143,14 @@ export interface ContradictionResult {
   explanation: string | null;
 }
 
+export interface PlaceOverviewItem {
+  kind: 'geofence' | 'place';
+  id: string;
+  name: string;
+  openCount: number;
+  labeled: boolean;
+}
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 /**
@@ -473,8 +481,9 @@ class ApiService {
     return { geofences: res.geofences.map((g) => this.toMobileGeofence(g)) };
   }
 
-  async getGeofenceObjects(geofenceId: string): Promise<{ objects: AtomicObject[] }> {
-    return this.request<{ objects: AtomicObject[] }>(`/api/v1/geofences/${geofenceId}/objects`);
+  async getGeofenceObjects(geofenceId: string, openOnly = false): Promise<{ objects: AtomicObject[] }> {
+    const qs = openOnly ? '?openOnly=true' : '';
+    return this.request<{ objects: AtomicObject[] }>(`/api/v1/geofences/${geofenceId}/objects${qs}`);
   }
 
   async createGeofence(data: any): Promise<{ geofence: any }> {
@@ -629,6 +638,10 @@ class ApiService {
 
   async getPlaces(): Promise<{ places: Place[] }> {
     return this.request('/api/v1/places');
+  }
+
+  async getPlacesOverview(): Promise<{ places: PlaceOverviewItem[] }> {
+    return this.request<{ places: PlaceOverviewItem[] }>('/api/v1/places/overview');
   }
 
   async getPlaceObjects(placeId: string): Promise<{ objects: AtomicObject[] }> {
