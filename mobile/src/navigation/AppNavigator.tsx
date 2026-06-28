@@ -18,6 +18,7 @@ import SynthesisScreen from '../screens/SynthesisScreen';
 import ManageGeofenceObjectsScreen from '../screens/ManageGeofenceObjectsScreen';
 import EditGeofenceScreen from '../screens/EditGeofenceScreen';
 import PlaceSummaryScreen from '../screens/PlaceSummaryScreen';
+import PlacesScreen from '../screens/PlacesScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -50,6 +51,7 @@ function MainStack() {
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="Objects" component={ObjectsScreen} />
       <Stack.Screen name="Reminders" component={GeofencesScreen} />
+      <Stack.Screen name="Places" component={PlacesScreen} />
       <Stack.Screen
         name="CreateGeofence"
         component={CreateGeofenceScreen}

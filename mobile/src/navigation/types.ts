@@ -5,6 +5,7 @@ export type RootStackParamList = {
   Record: undefined;
   Objects: { geofenceId?: string; objectId?: string } | undefined;
   Reminders: undefined;
+  Places: undefined;
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
   EditGeofence: {

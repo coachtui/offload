@@ -50,6 +50,14 @@ const NAV_ITEMS = [
     iconBg: '#D1FAE5',
   },
   {
+    icon: 'location-outline' as const,
+    label: 'Places',
+    description: 'Your notes grouped by location',
+    route: 'Places' as const,
+    iconColor: '#7C3AED',
+    iconBg: '#F3E8FF',
+  },
+  {
     icon: 'albums-outline' as const,
     label: 'Notes',
     description: 'Browse all your captures',
