@@ -411,11 +411,14 @@ class GeofenceMonitoringService {
       const placeName: string = data.placeName || fallbackPlaceName;
       const count = objects.length;
 
+      if (count === 0) {
+        console.log(`[GeofenceMonitoring] Place ${placeId} has no open notes — suppressing notification`);
+        return;
+      }
+
       const title = `📍 You're at ${placeName}`;
       let body: string;
-      if (count === 0) {
-        body = 'Tap to view your notes';
-      } else if (count === 1) {
+      if (count === 1) {
         const raw: string = objects[0].title || objects[0].content || '';
         body = raw.length > 60 ? raw.slice(0, 58) + '…' : raw;
       } else {
@@ -518,10 +521,13 @@ class GeofenceMonitoringService {
       ? `📍 Arrived at ${event.region.name}`
       : `👋 Left ${event.region.name}`;
 
-    let body: string;
     if (count === 0) {
-      body = 'Tap to view your notes';
-    } else if (count <= 3) {
+      console.log(`[GeofenceMonitoring] Geofence ${event.region.identifier} has no open notes — suppressing notification`);
+      return;
+    }
+
+    let body: string;
+    if (count <= 3) {
       body = titles.join(', ');
     } else {
       body = `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
@@ -564,7 +570,7 @@ class GeofenceMonitoringService {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects`,
+        `${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects?openOnly=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
