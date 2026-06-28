@@ -41,7 +41,7 @@ export async function createGeofence(
   createGeofenceSchema.parse(input);
 
   // 'store' is a mobile-only type; DB constraint allows home/work/gym/custom only
-  const dbInput = { ...input, type: input.type === 'store' ? 'custom' : input.type } as typeof input;
+  const dbInput = { ...input, type: (input.type as string) === 'store' ? 'custom' : input.type } as typeof input;
   const geofence = await GeofenceModel.create(userId, dbInput);
   return geofence.toGeofence();
 }
@@ -115,7 +115,8 @@ export async function checkLocation(
  */
 export async function getGeofenceObjects(
   userId: string,
-  geofenceId: string
+  geofenceId: string,
+  openOnly = false
 ): Promise<AtomicObject[]> {
   const geofence = await GeofenceModel.findById(geofenceId);
   if (!geofence) throw new Error('Geofence not found');
@@ -126,7 +127,9 @@ export async function getGeofenceObjects(
     return [];
   }
 
-  const linkedIds = await GeofenceModel.getOpenLinkedObjectIds(geofenceId);
+  const linkedIds = openOnly
+    ? await GeofenceModel.getOpenLinkedObjectIds(geofenceId)
+    : await GeofenceModel.getLinkedObjectIds(geofenceId);
   console.log(`[geofenceService] getGeofenceObjects: geofence ${geofenceId} has ${linkedIds.length} linked object(s)`);
 
   if (linkedIds.length === 0) return [];

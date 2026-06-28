@@ -328,7 +328,7 @@ export class GeofenceModel {
 
   /**
    * IDs of linked objects that are still OPEN (state open/active, not deleted),
-   * newest-first. Used for arrival notifications and the browse-by-place view.
+   * newest-first. Used for the geofence arrival/browse path when open-only notes are requested.
    */
   static async getOpenLinkedObjectIds(geofenceId: string): Promise<string[]> {
     const rows = await queryMany<{ object_id: string }>(

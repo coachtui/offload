@@ -58,7 +58,8 @@ router.get('/:id/objects', async (req: Request, res: Response) => {
       return;
     }
 
-    const objects = await getGeofenceObjects(req.user.id, req.params.id);
+    const openOnly = req.query.openOnly === 'true';
+    const objects = await getGeofenceObjects(req.user.id, req.params.id, openOnly);
     res.json({ objects });
   } catch (error) {
     if (error instanceof Error) {
