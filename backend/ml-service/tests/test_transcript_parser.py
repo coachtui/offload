@@ -108,6 +108,18 @@ def test_place_names_preserved_in_cleaned_text():
         assert place in joined, f"place name '{place}' was lost from cleaned_text"
 
 
+def test_location_reminder_example_is_geofence_reminder():
+    # Binding constraint: location reminders ("...when I get to X") must stay a
+    # reminder with a geofence trigger. EXAMPLE_3 is the Costco location reminder;
+    # pin its first object so a prompt/example regression on the place-reminders
+    # feature fails deterministically (the live integration check skips without a key).
+    objs = _load(tp.EXAMPLE_3_OUTPUT)
+    reminder = objs[0]
+    assert reminder.type == "reminder", reminder.type
+    assert reminder.location_hints.geofence_candidate is True
+    assert "Costco" in reminder.location_hints.places
+
+
 def test_full_few_shot_set_has_five_examples():
     msgs = tp.create_few_shot_examples()
     assert len(msgs) == 10, f"expected 5 example pairs (10 messages), got {len(msgs)}"
