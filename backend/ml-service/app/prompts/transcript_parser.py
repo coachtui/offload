@@ -8,12 +8,31 @@ SYSTEM_PROMPT = """You are an expert at parsing voice transcripts into structure
 
 Your task: split the transcript into discrete meaning units. Each unit represents ONE distinct idea, task, reminder, observation, question, decision, or journal entry.
 
-SEGMENTATION RULES:
-- Split when the topic OR intent changes
-- "I need to call Dave AND book the hotel" → 2 objects (different tasks, different contexts)
-- A single coherent sentence/thought that covers one topic is ONE object
-- Do NOT split one coherent task into fragments just because it has multiple sub-clauses
-- Do NOT merge unrelated thoughts just because they are adjacent
+SEGMENTATION RULES — one thread = one note (prefer fewer, richer notes):
+- A "thread" is everything tied to the same CONTEXT — the same place, job, trip, or
+  topic — even when it involves several related actions. Keep a thread together as ONE
+  note and capture its sub-actions inside that note; do NOT split related actions out.
+  "Clear the drains on Middle Street and set up traffic control out there" → ONE note
+  (same site, same job) covering both actions.
+- Start a NEW note only when the speaker moves to a genuinely DIFFERENT context — a
+  different place, job, or topic. "Call Dave about the quote, and separately, book the
+  hotel" → 2 notes (unrelated). After Middle Street drainage work, "check the vac truck
+  at Sand Island" → a new note (different site and task).
+- Trailing fragments with NO standalone meaning ("...and that as well", "...the usual",
+  "...you know the drill") fold into the thread they extend.
+- When unsure whether two things are one thread or two, prefer ONE consolidated note.
+
+SIGNIFICANCE GATE — what deserves to be a note:
+- Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
+  observation, question, decision, reference, or a genuine journal reflection (feelings, mood).
+- DROP entirely (produce NO object for): filler and conversational glue ("um",
+  "okay so", "anyway", "yeah"), false starts, thinking-out-loud ("let me think"),
+  and sign-offs ("that's about it", "I guess that's everything").
+- Drop a segment ONLY when it is entirely filler. If filler precedes real content
+  ("Yeah, remind me to..."), strip the filler and KEEP the content as a note.
+- The test is MEANING, not length. "Call the supplier" is 3 words and is a real
+  task — keep it. "Anyway, where was I" is filler — drop it.
+- If a recording is entirely filler, return {"atomic_objects": []}.
 
 OBJECT TYPES (pick the best fit):
 - task: something to do, has action verb, assignable ("call supplier", "update report")
@@ -57,8 +76,8 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
   "atomic_objects": [
     {
       "raw_text": "verbatim or near-verbatim excerpt from transcript",
-      "cleaned_text": "filler/false-starts removed only — do NOT rephrase or expand",
-      "title": "Short title max 8 words — or null if cleaned_text is already short",
+      "cleaned_text": "clean, readable rewrite of the thread — place names + field shorthand preserved verbatim",
+      "title": "Short, specific title — max 8 words — ALWAYS set, never null",
       "type": "task",
       "domain": "work",
       "tags": ["tag1", "tag2"],
@@ -89,8 +108,17 @@ LOCATION REMINDER RULES — CRITICAL:
 
 FIELD RULES:
 - raw_text: take the actual words from the transcript; minimal editing
-- cleaned_text: STRICT RULES — (1) ONLY remove filler words ("um", "uh", "like", "you know"), false starts, and repetitions. (2) Do NOT rephrase, expand, infer, or add words not in the original. (3) Do NOT normalize field shorthand into full sentences — preserve the speaker's vocabulary exactly. (4) Preserve all local place names verbatim. If you cannot clean without rewriting, copy raw_text as-is.
-- title: only set if cleaned_text is longer than ~15 words; otherwise null
+- cleaned_text: rewrite the thread into ONE clear, readable line a person would want
+  to see in a notes list. Fix grammar, drop false starts/repetition/filler, and
+  merge the thread's fragments into a coherent sentence. BUT: (1) preserve every
+  local place name verbatim (Puʻuhale, Middle Street, Sand Island, Kapālama, etc.);
+  (2) preserve the speaker's field/construction shorthand EXACTLY — never normalize it
+  into longhand (e.g. drainage inlet, vac truck, Godwin pump, dewatering, punch list,
+  bore log, submittal, RFI, change order, and any other jobsite term the speaker uses); (3) do NOT invent facts,
+  numbers, names, or commitments the speaker did not say. If the thread is ALREADY a
+  clean, readable line, keep it essentially as-is — do not pad or embellish it. The
+  verbatim words live in raw_text; readability lives here.
+- title: ALWAYS set a short, meaningful title (max 8 words) for every object — never null. It is the headline shown in the notes list. Make it specific: "Call pump supplier about pricing", not "Phone call". Title the thought, not the words.
 - entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
 - temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
 - location_hints.places: list ALL mentioned places, including streets, jobsites, neighborhoods
@@ -161,7 +189,7 @@ EXAMPLE_1_OUTPUT = """{
     {
       "raw_text": "I should remember to pick up Marcus from school at 3pm Thursday",
       "cleaned_text": "Pick up Marcus from school at 3pm Thursday",
-      "title": null,
+      "title": "Pick up Marcus from school Thursday",
       "type": "reminder",
       "domain": "family",
       "tags": ["pickup", "school", "Marcus", "Thursday"],
@@ -195,14 +223,14 @@ EXAMPLE_2_INPUT = """Set up crew to clear drainage inlets from Middle Street to 
 EXAMPLE_2_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
-      "cleaned_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
-      "title": "Clear drainage inlets: Middle Street to Puʻuhale",
+      "raw_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today. Need traffic control out there too",
+      "cleaned_text": "Clear drainage inlets from Middle Street to Puʻuhale today, and set up traffic control out there",
+      "title": "Drains + traffic control: Middle St to Puʻuhale",
       "type": "task",
       "domain": "work",
-      "tags": ["drainage", "crew", "Middle Street", "Puuhale", "today"],
+      "tags": ["drainage", "traffic control", "crew", "Middle Street", "Puuhale", "today"],
       "entities": ["Middle Street", "Puʻuhale"],
-      "confidence": 0.97,
+      "confidence": 0.95,
       "temporal_hints": {
         "has_date": true,
         "date_text": "today",
@@ -214,33 +242,9 @@ EXAMPLE_2_OUTPUT = """{
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Deploy crew to clear drainage inlets from Middle Street to Puʻuhale"
+        "next_action": "Deploy crew to clear drainage inlets and set up traffic control from Middle Street to Puʻuhale"
       },
       "context_inherited_from": null
-    },
-    {
-      "raw_text": "Need traffic control out there too",
-      "cleaned_text": "Need traffic control out there too",
-      "title": null,
-      "type": "task",
-      "domain": "work",
-      "tags": ["traffic control", "safety", "Middle Street"],
-      "entities": ["Middle Street", "Puʻuhale"],
-      "confidence": 0.90,
-      "temporal_hints": {
-        "has_date": true,
-        "date_text": "today",
-        "urgency": "high"
-      },
-      "location_hints": {
-        "places": ["Middle Street", "Puʻuhale"],
-        "geofence_candidate": true
-      },
-      "actionability": {
-        "is_actionable": true,
-        "next_action": "Arrange traffic control for work zone on Middle Street"
-      },
-      "context_inherited_from": 0
     },
     {
       "raw_text": "check on the vac truck at Sand Island, make sure it's ready for dewatering tomorrow morning",
@@ -269,7 +273,7 @@ EXAMPLE_2_OUTPUT = """{
     {
       "raw_text": "Reminder for the punch list walk at Kapālama, that's Friday",
       "cleaned_text": "Punch list walk at Kapālama on Friday",
-      "title": null,
+      "title": "Punch list walk at Kapālama Friday",
       "type": "reminder",
       "domain": "work",
       "tags": ["punch list", "walk", "Kapalama", "Friday"],
@@ -303,14 +307,14 @@ EXAMPLE_3_INPUT = """Remind me to get paper towels when I get to Costco. Also ne
 EXAMPLE_3_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "Remind me to get paper towels when I get to Costco",
-      "cleaned_text": "Get paper towels when I get to Costco",
-      "title": null,
+      "raw_text": "Remind me to get paper towels when I get to Costco. Also need to pick up a case of water",
+      "cleaned_text": "Get paper towels and a case of water when I get to Costco",
+      "title": "Buy paper towels and water at Costco",
       "type": "reminder",
       "domain": "personal",
-      "tags": ["shopping", "Costco", "paper towels", "errand"],
+      "tags": ["shopping", "Costco", "paper towels", "water", "errand"],
       "entities": ["Costco"],
-      "confidence": 0.97,
+      "confidence": 0.95,
       "temporal_hints": {
         "has_date": false,
         "date_text": null,
@@ -322,33 +326,81 @@ EXAMPLE_3_OUTPUT = """{
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Buy paper towels at Costco"
+        "next_action": "Buy paper towels and a case of water at Costco"
       },
       "context_inherited_from": null
-    },
+    }
+  ]
+}"""
+
+
+# ---------------------------------------------------------------------------
+# Few-shot example 4 — Consolidation (rambly fragments about ONE topic → 1 note)
+# ---------------------------------------------------------------------------
+
+EXAMPLE_4_INPUT = """So the, the client invoice, yeah I keep forgetting it, I gotta send the client invoice for the Kapālama job before end of month or we don't get paid this cycle."""
+
+EXAMPLE_4_OUTPUT = """{
+  "atomic_objects": [
     {
-      "raw_text": "Also need to pick up a case of water",
-      "cleaned_text": "Also need to pick up a case of water",
-      "title": null,
+      "raw_text": "So the, the client invoice, yeah I keep forgetting it, I gotta send the client invoice for the Kapālama job before end of month or we don't get paid this cycle",
+      "cleaned_text": "Send the client invoice for the Kapālama job before end of month — or we miss this pay cycle",
+      "title": "Send Kapālama client invoice before month-end",
       "type": "task",
-      "domain": "personal",
-      "tags": ["shopping", "Costco", "water", "errand"],
-      "entities": ["Costco"],
-      "confidence": 0.88,
+      "domain": "finance",
+      "tags": ["invoice", "client", "Kapālama", "payment"],
+      "entities": ["Kapālama"],
+      "confidence": 0.92,
       "temporal_hints": {
-        "has_date": false,
-        "date_text": null,
-        "urgency": "low"
+        "has_date": true,
+        "date_text": "before end of month",
+        "urgency": "high"
       },
       "location_hints": {
-        "places": ["Costco"],
-        "geofence_candidate": true
+        "places": ["Kapālama"],
+        "geofence_candidate": false
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Buy a case of water at Costco"
+        "next_action": "Send the client invoice for the Kapālama job before end of month"
       },
-      "context_inherited_from": 0
+      "context_inherited_from": null
+    }
+  ]
+}"""
+
+
+# ---------------------------------------------------------------------------
+# Few-shot example 5 — Significance gate (drop filler, keep the one real item)
+# ---------------------------------------------------------------------------
+
+EXAMPLE_5_INPUT = """Um, okay. Let me think. Yeah so. Where was I. Oh — remind me to email the inspector about the Sand Island permit. Yeah. That's about it I guess."""
+
+EXAMPLE_5_OUTPUT = """{
+  "atomic_objects": [
+    {
+      "raw_text": "Oh — remind me to email the inspector about the Sand Island permit",
+      "cleaned_text": "Email the inspector about the Sand Island permit",
+      "title": "Email inspector re: Sand Island permit",
+      "type": "reminder",
+      "domain": "work",
+      "tags": ["email", "inspector", "permit", "Sand Island"],
+      "entities": ["Sand Island"],
+      "confidence": 0.95,
+      "temporal_hints": {
+        "has_date": false,
+        "date_text": null,
+        "urgency": "medium"
+      },
+      "location_hints": {
+        "places": ["Sand Island"],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Email the inspector about the Sand Island permit"
+      },
+      "context_inherited_from": null
     }
   ]
 }"""
@@ -405,5 +457,21 @@ def create_few_shot_examples() -> List[dict]:
         {
             "role": "assistant",
             "content": EXAMPLE_3_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_4_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_4_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_5_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_5_OUTPUT
         },
     ]
