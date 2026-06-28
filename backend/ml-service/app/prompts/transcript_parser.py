@@ -13,8 +13,10 @@ SEGMENTATION RULES — one meaningful thread = one note:
   reason, place, and timing) into ONE object. Do NOT shatter one thread into pieces.
 - Start a NEW object only when the speaker genuinely moves to an UNRELATED thread.
   "Call Dave about the quote, and separately, book the hotel for the trip" → 2 objects.
-- Trailing fragments ("...out there too", "...and that thing as well") belong to the
-  thread they extend — fold them in; never make them their own note.
+- Trailing fragments with NO standalone meaning ("...and that as well", "...the usual",
+  "...you know the drill") belong to the thread they extend — fold them in; never make
+  them their own note. (A clause that names a real, distinct action is NOT a mere
+  fragment — keep it as its own note.)
 - When unsure whether two adjacent thoughts are one thread or two, prefer ONE
   consolidated note over two fragments.
 
@@ -72,7 +74,7 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
   "atomic_objects": [
     {
       "raw_text": "verbatim or near-verbatim excerpt from transcript",
-      "cleaned_text": "filler/false-starts removed only — do NOT rephrase or expand",
+      "cleaned_text": "clean, readable rewrite of the thread — place names + field shorthand preserved verbatim",
       "title": "Short, specific title — max 8 words — ALWAYS set, never null",
       "type": "task",
       "domain": "work",
@@ -108,10 +110,12 @@ FIELD RULES:
   to see in a notes list. Fix grammar, drop false starts/repetition/filler, and
   merge the thread's fragments into a coherent sentence. BUT: (1) preserve every
   local place name verbatim (Puʻuhale, Middle Street, Sand Island, Kapālama, etc.);
-  (2) preserve field/construction shorthand exactly (drainage inlet, vac truck,
-  Godwin pump, dewatering, punch list, RFI, change order); (3) do NOT invent facts,
-  numbers, names, or commitments the speaker did not say. The verbatim words live in
-  raw_text; readability lives here.
+  (2) preserve the speaker's field/construction shorthand EXACTLY — never normalize it
+  into longhand (e.g. drainage inlet, vac truck, Godwin pump, dewatering, punch list,
+  bore log, submittal, RFI, change order, and any other jobsite term the speaker uses); (3) do NOT invent facts,
+  numbers, names, or commitments the speaker did not say. If the thread is ALREADY a
+  clean, readable line, keep it essentially as-is — do not pad or embellish it. The
+  verbatim words live in raw_text; readability lives here.
 - title: ALWAYS set a short, meaningful title (max 8 words) for every object — never null. It is the headline shown in the notes list. Make it specific: "Call pump supplier about pricing", not "Phone call". Title the thought, not the words.
 - entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
 - temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
@@ -385,7 +389,7 @@ EXAMPLE_4_INPUT = """Okay so the pump, the pump quote, yeah it came in like way 
 EXAMPLE_4_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "the pump quote came in way over, way too high, and I need to call the supplier about that tomorrow and get it sorted out",
+      "raw_text": "Okay so the pump, the pump quote, yeah it came in like way over, way too high, and I gotta, I need to call the supplier about that tomorrow and get it sorted out",
       "cleaned_text": "Call the supplier tomorrow about the pump quote — it came in way too high",
       "title": "Call supplier about high pump quote",
       "type": "task",

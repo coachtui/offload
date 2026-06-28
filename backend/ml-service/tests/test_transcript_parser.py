@@ -65,10 +65,12 @@ def test_junk_example_drops_filler():
 
 
 def test_few_shot_examples_include_junk_and_consolidation():
-    # create_few_shot_examples() must wire in the new examples (5 pairs total
-    # after Task 3: examples 1,2,3,4,5 -> 5 user + 5 assistant messages).
-    msgs = tp.create_few_shot_examples()
-    assert len(msgs) >= 8  # at least 4 examples wired (8 messages); 10 after Task 3
+    # The junk-drop (EXAMPLE_5) and consolidation (EXAMPLE_4) demonstrations must
+    # actually be wired into the prompt sent to the LLM — not merely defined as
+    # constants. Verify by content, so an un-wired example fails loudly.
+    blob = " ".join(m["content"] for m in tp.create_few_shot_examples())
+    assert tp.EXAMPLE_4_INPUT in blob, "consolidation example not wired into prompt"
+    assert tp.EXAMPLE_5_INPUT in blob, "junk-drop example not wired into prompt"
 
 
 def test_consolidation_example_is_single_note():
