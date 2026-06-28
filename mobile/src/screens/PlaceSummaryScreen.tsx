@@ -51,7 +51,7 @@ function formatNoteDate(value: Date | string): string {
 
 export default function PlaceSummaryScreen({ navigation }: Props) {
   const route = useRoute<PlaceSummaryRoute>();
-  const { placeId, placeName, eventType } = route.params;
+  const { placeId, geofenceId, placeName, eventType } = route.params;
 
   const [objects, setObjects] = useState<AtomicObject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,14 +63,16 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const loadObjects = useCallback(async () => {
     setLoading(true);
     try {
-      const { objects: loaded } = await apiService.getPlaceObjects(placeId);
+      const { objects: loaded } = geofenceId
+        ? await apiService.getGeofenceObjects(geofenceId, true)
+        : await apiService.getPlaceObjects(placeId!);
       setObjects(loaded);
     } catch (err: any) {
       console.error('[PlaceSummary] Failed to load objects:', err.message);
     } finally {
       setLoading(false);
     }
-  }, [placeId]);
+  }, [placeId, geofenceId]);
 
   useEffect(() => {
     loadObjects();
@@ -81,8 +83,13 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const handleDone = async (objectId: string) => {
     setActionLoading(objectId);
     try {
-      await apiService.markPlaceObjectDone(placeId, objectId);
-      setObjects(prev => prev.filter(o => o.id !== objectId));
+      if (geofenceId) {
+        await apiService.updateObjectState(objectId, 'resolved');
+        await loadObjects();
+      } else {
+        await apiService.markPlaceObjectDone(placeId!, objectId);
+        setObjects(prev => prev.filter(o => o.id !== objectId));
+      }
     } catch (err: any) {
       Alert.alert('Error', 'Failed to mark as done.');
     } finally {
@@ -93,7 +100,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const handleDismiss = async (objectId: string) => {
     setActionLoading(objectId);
     try {
-      await apiService.dismissPlaceObject(placeId, objectId);
+      await apiService.dismissPlaceObject(placeId!, objectId);
       setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
       Alert.alert('Error', 'Failed to dismiss.');
@@ -107,7 +114,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     setActionLoading(objectId);
     try {
       const until = new Date(Date.now() + hours * 60 * 60 * 1000);
-      await apiService.snoozePlaceObject(placeId, objectId, until);
+      await apiService.snoozePlaceObject(placeId!, objectId, until);
       setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
       Alert.alert('Error', 'Failed to snooze.');
@@ -128,7 +135,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
           onPress: async () => {
             setActionLoading(objectId);
             try {
-              await apiService.unlinkPlaceObject(placeId, objectId);
+              await apiService.unlinkPlaceObject(placeId!, objectId);
               setObjects(prev => prev.filter(o => o.id !== objectId));
             } catch (err: any) {
               Alert.alert('Error', 'Failed to unlink.');
@@ -176,29 +183,33 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
               <Text style={[styles.actionBtnText, { color: '#22c55e' }]}>Done</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleDismiss(item.id)}
-            >
-              <Ionicons name="eye-off-outline" size={14} color="#94a3b8" />
-              <Text style={styles.actionBtnText}>Dismiss</Text>
-            </TouchableOpacity>
+            {!geofenceId && (
+              <>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => handleDismiss(item.id)}
+                >
+                  <Ionicons name="eye-off-outline" size={14} color="#94a3b8" />
+                  <Text style={styles.actionBtnText}>Dismiss</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => setSnoozeTarget(item.id)}
-            >
-              <Ionicons name="time-outline" size={14} color="#94a3b8" />
-              <Text style={styles.actionBtnText}>Snooze</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => setSnoozeTarget(item.id)}
+                >
+                  <Ionicons name="time-outline" size={14} color="#94a3b8" />
+                  <Text style={styles.actionBtnText}>Snooze</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleUnlink(item.id)}
-            >
-              <Ionicons name="unlink-outline" size={14} color="#94a3b8" />
-              <Text style={styles.actionBtnText}>Unlink</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => handleUnlink(item.id)}
+                >
+                  <Ionicons name="unlink-outline" size={14} color="#94a3b8" />
+                  <Text style={styles.actionBtnText}>Unlink</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -217,7 +228,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
             {placeName}
           </Text>
           <Text style={styles.placeSubtitle}>
-            {eventType === 'enter' ? "You're here" : 'You just left'}
+            {eventType === 'enter' ? "You're here" : eventType === 'exit' ? 'You just left' : 'Linked notes'}
           </Text>
         </View>
         <Ionicons name="location" size={20} color="#3b82f6" style={{ marginRight: 4 }} />

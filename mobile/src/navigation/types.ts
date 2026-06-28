@@ -21,7 +21,7 @@ export type RootStackParamList = {
   Search: undefined;
   AskOffload: { initialQuery?: string } | undefined;
   Insights: undefined;
-  PlaceSummary: { placeId: string; placeName: string; eventType: 'enter' | 'exit' };
+  PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
 };
 
 declare global {
