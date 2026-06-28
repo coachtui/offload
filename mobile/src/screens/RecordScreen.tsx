@@ -38,6 +38,8 @@ export function RecordScreen({ navigation }: Props) {
     relatedNotes,
     contradictions,
     hasGeofenceCandidates,
+    isEnhancing,
+    transcriptionMethod,
     startRecording,
     stopRecording,
     reset,
@@ -157,6 +159,12 @@ export function RecordScreen({ navigation }: Props) {
           </View>
         ) : (
           <View>
+            {isDone && transcriptionMethod === 'gpt-4o' && finalTranscript ? (
+              <View style={styles.enhancedBadge}>
+                <Ionicons name="sparkles" size={12} color="#7c3aed" />
+                <Text style={styles.enhancedBadgeText}>Enhanced transcript</Text>
+              </View>
+            ) : null}
             {finalTranscript ? (
               <Text style={styles.transcriptText}>{finalTranscript}</Text>
             ) : null}
@@ -169,7 +177,13 @@ export function RecordScreen({ navigation }: Props) {
                 <Text style={styles.listeningText}>Listening...</Text>
               </View>
             )}
-            {isProcessing && (
+            {isEnhancing && (
+              <View style={styles.listeningIndicator}>
+                <ActivityIndicator size="small" color="#7c3aed" />
+                <Text style={styles.enhancingText}>Improving transcript…</Text>
+              </View>
+            )}
+            {isProcessing && !isEnhancing && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color="#f59e0b" />
                 <Text style={styles.processingText}>Saving transcript...</Text>
@@ -366,6 +380,26 @@ const styles = StyleSheet.create({
   processingText: {
     color: '#f59e0b',
     fontSize: 14,
+  },
+  enhancingText: {
+    color: '#7c3aed',
+    fontSize: 14,
+  },
+  enhancedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  enhancedBadgeText: {
+    color: '#7c3aed',
+    fontSize: 11,
+    fontWeight: '600',
   },
   errorContainer: {
     backgroundColor: '#FEE2E2',

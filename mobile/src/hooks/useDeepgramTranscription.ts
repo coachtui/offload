@@ -16,6 +16,12 @@ interface TranscriptionState {
   // True when the saved note had location-triggered reminders — signals the UI to
   // re-fetch geofences after a brief delay so new server-side geofences are registered with the OS.
   hasGeofenceCandidates: boolean;
+  // True while the gpt-4o-transcribe pass is in flight (the displayed Deepgram
+  // text is about to be replaced with a higher-accuracy version).
+  isEnhancing: boolean;
+  // Which transcription produced the current finalTranscript. 'gpt-4o' once the
+  // higher-accuracy result has been swapped in; 'deepgram' otherwise.
+  transcriptionMethod: 'deepgram' | 'gpt-4o' | null;
 }
 
 interface UseDeepgramTranscriptionReturn extends TranscriptionState {
@@ -47,6 +53,8 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     relatedNotes: [],
     contradictions: [],
     hasGeofenceCandidates: false,
+    isEnhancing: false,
+    transcriptionMethod: null,
   });
 
   // Incremented on each new recording session so stale background calls don't update state
@@ -292,12 +300,16 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       : partial;
     console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
 
+    // Enhancement runs whenever we captured audio for the gpt-4o pass.
+    const willEnhance = audioChunksRef.current.length > 0;
     setState(prev => ({
       ...prev,
       status: 'processing',
       duration: finalDuration,
       finalTranscript: transcript,
       partialTranscript: '',
+      isEnhancing: willEnhance,
+      transcriptionMethod: 'deepgram',
     }));
 
     // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
@@ -306,7 +318,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     // Any failure (network, empty audio, API error) keeps the Deepgram text.
     let transcriptToSave = transcript;
     let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
-    if (audioChunksRef.current.length > 0) {
+    if (willEnhance) {
       try {
         console.log('[Recording] requesting gpt-4o transcription —',
           audioChunksRef.current.length, 'chunks');
@@ -319,13 +331,19 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           transcriptionMethod = 'gpt-4o';
           console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
             '— swapping in for saved note');
-          setState(prev => ({ ...prev, finalTranscript: transcriptToSave }));
+          setState(prev => ({
+            ...prev,
+            finalTranscript: transcriptToSave,
+            transcriptionMethod: 'gpt-4o',
+          }));
         } else {
           console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
         }
       } catch (error) {
         console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
           error instanceof Error ? error.message : error);
+      } finally {
+        setState(prev => ({ ...prev, isEnhancing: false }));
       }
     }
 
@@ -413,6 +431,8 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       relatedNotes: [],
       contradictions: [],
       hasGeofenceCandidates: false,
+      isEnhancing: false,
+      transcriptionMethod: null,
     });
     finalTranscriptRef.current = '';
     partialTranscriptRef.current = '';
