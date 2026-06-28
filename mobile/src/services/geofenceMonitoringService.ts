@@ -514,12 +514,34 @@ class GeofenceMonitoringService {
    * Notification for a manual geofence — original behaviour.
    */
   private async showManualGeofenceNotification(event: GeofenceEvent): Promise<void> {
-    const { count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
-    console.log(`[GeofenceMonitoring] Manual geofence linked objects: count=${count}`);
+    const { ok, count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
+    console.log(`[GeofenceMonitoring] Manual geofence linked objects: ok=${ok}, count=${count}`);
 
     const title = event.type === 'enter'
       ? `📍 Arrived at ${event.region.name}`
       : `👋 Left ${event.region.name}`;
+
+    if (!ok) {
+      // Backend was unreachable or auth failed — fire a generic arrival notification
+      // so the user is never silently dropped. Mirrors showPlaceNotification's null-data branch.
+      console.log(`[GeofenceMonitoring] Geofence ${event.region.identifier} summary fetch failed — firing generic notification`);
+      const notifId = await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body: 'Tap to view your notes',
+          data: {
+            geofenceId: event.region.identifier,
+            geofenceName: event.region.name,
+            eventType: event.type,
+            screen: 'Objects',
+          },
+          sound: true,
+        },
+        trigger: null,
+      });
+      console.log(`[GeofenceMonitoring] Generic fallback notification scheduled (id: ${notifId})`);
+      return;
+    }
 
     if (count === 0) {
       console.log(`[GeofenceMonitoring] Geofence ${event.region.identifier} has no open notes — suppressing notification`);
@@ -555,28 +577,45 @@ class GeofenceMonitoringService {
   /**
    * Fetch the linked objects for a geofence and return count + top-3 truncated titles.
    *
-   * KNOWN ISSUE: Uses JWT from SecureStore which may be expired when background task fires.
-   * Fails gracefully (returns count=0, titles=[]).
-   * TODO: Implement token refresh or local caching strategy.
+   * Returns { ok: true, count, titles } on a successful authenticated response.
+   * Returns { ok: false, count: 0, titles: [] } when the token is missing/expired,
+   * the backend is unreachable, or any other error occurs — callers MUST treat !ok
+   * as "unknown" rather than "confirmed empty" and fire a fallback notification.
+   *
+   * Retries once with a fresh token on a 401, mirroring fetchPlaceNotify.
    */
   private async getLinkedObjectsSummary(
     geofenceId: string
-  ): Promise<{ count: number; titles: string[] }> {
+  ): Promise<{ ok: boolean; count: number; titles: string[] }> {
+    const FAIL = { ok: false, count: 0, titles: [] as string[] };
     try {
-      const token = await SecureStore.getItemAsync('accessToken');
+      let token = await SecureStore.getItemAsync('accessToken');
       if (!token) {
-        console.warn('[GeofenceMonitoring] No access token — skipping linked objects fetch');
-        return { count: 0, titles: [] };
+        console.warn('[GeofenceMonitoring] No access token — attempting refresh before linked objects fetch');
+        token = await refreshAuthToken();
+        if (!token) {
+          console.warn('[GeofenceMonitoring] Token refresh failed — cannot fetch linked objects');
+          return FAIL;
+        }
       }
 
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects?openOnly=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const doFetch = (t: string) =>
+        fetch(`${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects?openOnly=true`, {
+          headers: { Authorization: `Bearer ${t}` },
+        });
+
+      let response = await doFetch(token);
+
+      if (response.status === 401) {
+        console.log('[GeofenceMonitoring] linked-objects 401 — refreshing token and retrying');
+        const newToken = await refreshAuthToken();
+        if (!newToken) return FAIL;
+        response = await doFetch(newToken);
+      }
 
       if (!response.ok) {
-        console.warn(`[GeofenceMonitoring] API call failed (status ${response.status}) — token may be expired`);
-        return { count: 0, titles: [] };
+        console.warn(`[GeofenceMonitoring] linked-objects API failed (status ${response.status})`);
+        return FAIL;
       }
 
       const data = await response.json();
@@ -593,10 +632,10 @@ class GeofenceMonitoringService {
         .filter(Boolean);
 
       console.log(`[GeofenceMonitoring] getLinkedObjectsSummary: geofence ${geofenceId} → count=${count}`);
-      return { count, titles };
+      return { ok: true, count, titles };
     } catch (error) {
       console.warn('[GeofenceMonitoring] Error fetching linked objects summary:', error);
-      return { count: 0, titles: [] };
+      return FAIL;
     }
   }
 
