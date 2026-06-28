@@ -53,19 +53,14 @@ def test_every_example_output_validates():
     assert len(objs) >= 3
 
 
-# Filler tokens that must never appear verbatim as a saved note.
-_FILLER = {"anyway", "um", "uh", "let me think", "that's about it",
-           "yeah", "so", "okay", "i guess"}
-
-
 def test_junk_example_drops_filler():
     objs = _load(tp.EXAMPLE_5_OUTPUT)
     # Exactly one real item survives in the junk example.
     assert len(objs) == 1, f"expected 1 surviving note, got {len(objs)}"
     surviving = objs[0]
-    # The surviving note is the real reminder, not a filler fragment.
+    # The surviving note is the real reminder content, not filler.
     text = (surviving.cleaned_text or "").strip().lower()
-    assert text not in _FILLER
+    assert "inspector" in text and "permit" in text, text
     assert surviving.title and surviving.title.strip()
 
 

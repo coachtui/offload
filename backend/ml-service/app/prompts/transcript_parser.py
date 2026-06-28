@@ -17,10 +17,12 @@ SEGMENTATION RULES:
 
 SIGNIFICANCE GATE — what deserves to be a note:
 - Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
-  observation, question, decision, reference, or a genuine personal reflection.
+  observation, question, decision, reference, or a genuine journal reflection (feelings, mood).
 - DROP entirely (produce NO object for): filler and conversational glue ("um",
   "okay so", "anyway", "yeah"), false starts, thinking-out-loud ("let me think"),
   and sign-offs ("that's about it", "I guess that's everything").
+- Drop a segment ONLY when it is entirely filler. If filler precedes real content
+  ("Yeah, remind me to..."), strip the filler and KEEP the content as a note.
 - The test is MEANING, not length. "Call the supplier" is 3 words and is a real
   task — keep it. "Anyway, where was I" is filler — drop it.
 - If a recording is entirely filler, return {"atomic_objects": []}.
@@ -373,7 +375,7 @@ EXAMPLE_5_INPUT = """Um, okay. Let me think. Yeah so. Where was I. Oh — remind
 EXAMPLE_5_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "remind me to email the inspector about the Sand Island permit",
+      "raw_text": "Oh — remind me to email the inspector about the Sand Island permit",
       "cleaned_text": "Email the inspector about the Sand Island permit",
       "title": "Email inspector re: Sand Island permit",
       "type": "reminder",
