@@ -2,18 +2,47 @@
  * Authentication routes
  */
 
-import { Router, Request, Response } from 'express';
-import { register, login, refreshSession, getUserById } from '../services/userService';
+import { Router, Request, Response, NextFunction } from 'express';
+import {
+  register,
+  refreshSession,
+  getUserById,
+  loginWithLockout,
+  InvalidCredentialsError,
+  LoginLockoutError,
+} from '../services/userService';
 import { authenticate } from '../auth/middleware';
+import { RateLimiter } from '../utils/rateLimiter';
 import { z } from 'zod';
 
 const router = Router();
+
+// Per-IP flood guard across all auth endpoints (separate from the per-email
+// login lockout below). Generous enough that real use never trips it.
+const ipAuthLimiter = new RateLimiter({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 30,
+  blockDurationMs: 15 * 60 * 1000,
+});
+
+function ipRateLimit(req: Request, res: Response, next: NextFunction): void {
+  const outcome = ipAuthLimiter.check(req.ip || 'unknown');
+  if (!outcome.allowed) {
+    res.setHeader('Retry-After', String(outcome.retryAfter ?? 900));
+    res.status(429).json({
+      error: 'RATE_LIMITED',
+      message: 'Too many requests. Please try again later.',
+    });
+    return;
+  }
+  next();
+}
 
 /**
  * POST /api/v1/auth/register
  * Register a new user
  */
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', ipRateLimit, async (req: Request, res: Response) => {
   try {
     const result = await register(req.body);
     res.status(201).json(result);
@@ -48,9 +77,9 @@ router.post('/register', async (req: Request, res: Response) => {
  * POST /api/v1/auth/login
  * Login user
  */
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', ipRateLimit, async (req: Request, res: Response) => {
   try {
-    const result = await login(req.body);
+    const result = await loginWithLockout(req.body);
     res.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -62,17 +91,28 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
-    if (error instanceof Error) {
-      if (
-        error.message.includes('Invalid email') ||
-        error.message.includes('Invalid password')
-      ) {
-        res.status(401).json({
-          error: 'UNAUTHORIZED',
-          message: error.message,
-        });
-        return;
-      }
+    if (error instanceof LoginLockoutError) {
+      const mins = Math.max(1, Math.ceil(error.retryAfterSeconds / 60));
+      res.setHeader('Retry-After', String(error.retryAfterSeconds));
+      res.status(429).json({
+        error: 'RATE_LIMITED',
+        message: `Too many failed attempts. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
+      });
+      return;
+    }
+
+    if (error instanceof InvalidCredentialsError) {
+      const n = error.attemptsRemaining;
+      const message =
+        n > 0
+          ? `Invalid email or password. ${n} attempt${n === 1 ? '' : 's'} remaining.`
+          : 'Invalid email or password. No attempts remaining — try again later.';
+      res.status(401).json({
+        error: 'UNAUTHORIZED',
+        message,
+        attemptsRemaining: n,
+      });
+      return;
     }
 
     res.status(500).json({
@@ -84,9 +124,10 @@ router.post('/login', async (req: Request, res: Response) => {
 
 /**
  * POST /api/v1/auth/refresh
- * Exchange a refresh token for a fresh access token (+ rotated refresh token).
+ * Exchange a refresh token for a fresh access token (+ a new refresh token;
+ * stateless — the previous one stays valid until its own expiry).
  */
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', ipRateLimit, async (req: Request, res: Response) => {
   try {
     const { refreshToken } = req.body ?? {};
     if (!refreshToken || typeof refreshToken !== 'string') {
@@ -100,10 +141,16 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const result = await refreshSession(refreshToken);
     res.json(result);
   } catch (error) {
-    // Any token problem (expired, wrong type, malformed, deleted user) → 401
+    // Log the specific cause server-side, but return a generic message so we
+    // don't leak token state or account existence ("User not found") to an
+    // unauthenticated caller. Any token problem → 401.
+    console.warn(
+      '[Auth] POST /refresh failed:',
+      error instanceof Error ? error.message : error
+    );
     res.status(401).json({
       error: 'UNAUTHORIZED',
-      message: error instanceof Error ? error.message : 'Could not refresh session',
+      message: 'Could not refresh session',
     });
   }
 });

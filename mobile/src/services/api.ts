@@ -272,9 +272,17 @@ class ApiService {
     }
 
     if (response.status === 401) {
-      // Try a one-time silent refresh before giving up. Only on the first
-      // attempt — a 401 on the retry means refresh didn't help.
-      if (!isRetry) {
+      // The auth endpoints themselves return 401 for their own reasons (wrong
+      // password with attempts-remaining, expired refresh token) — refreshing
+      // there is pointless and would swallow those messages. Skip them.
+      const isAuthEndpoint =
+        endpoint.includes('/auth/login') ||
+        endpoint.includes('/auth/register') ||
+        endpoint.includes('/auth/refresh');
+
+      // Otherwise try a one-time silent refresh before giving up. Only on the
+      // first attempt — a 401 on the retry means refresh didn't help.
+      if (!isRetry && !isAuthEndpoint) {
         const newToken = await this.refreshOnce();
         if (newToken) {
           this.accessToken = newToken;
@@ -282,9 +290,12 @@ class ApiService {
           return this.request<T>(endpoint, options, timeoutMs, true);
         }
       }
-      // Refresh unavailable or failed — clear and signal AuthError for logout.
-      console.warn(`[ApiService] 401 on ${endpoint} — clearing stored token`);
-      await this.clearToken();
+      // Refresh unavailable, failed, or an auth endpoint — surface the server's
+      // message (e.g. "3 attempts remaining") and signal AuthError for logout.
+      console.warn(`[ApiService] 401 on ${endpoint}`);
+      if (!isAuthEndpoint) {
+        await this.clearToken();
+      }
       const body = await response.json().catch(() => ({}));
       throw new AuthError(body.message || 'Session expired. Please log in again.');
     }

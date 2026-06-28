@@ -21,6 +21,10 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Behind Railway's proxy — trust one hop so req.ip is the real client address
+// (used for IP-based rate limiting on auth routes).
+app.set('trust proxy', 1);
+
 // Create HTTP server
 const server = createServer(app);
 
