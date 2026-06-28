@@ -3,7 +3,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { register, login, getUserById } from '../services/userService';
+import { register, login, refreshSession, getUserById } from '../services/userService';
 import { authenticate } from '../auth/middleware';
 import { z } from 'zod';
 
@@ -78,6 +78,32 @@ router.post('/login', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Login failed',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/auth/refresh
+ * Exchange a refresh token for a fresh access token (+ rotated refresh token).
+ */
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body ?? {};
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'refreshToken is required',
+      });
+      return;
+    }
+
+    const result = await refreshSession(refreshToken);
+    res.json(result);
+  } catch (error) {
+    // Any token problem (expired, wrong type, malformed, deleted user) → 401
+    res.status(401).json({
+      error: 'UNAUTHORIZED',
+      message: error instanceof Error ? error.message : 'Could not refresh session',
     });
   }
 });

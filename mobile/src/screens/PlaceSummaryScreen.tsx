@@ -37,6 +37,18 @@ const SNOOZE_OPTIONS = [
   { label: 'Tomorrow', hours: 24 },
 ];
 
+/** "When did I take this note?" — short date, with year if it's not this year. */
+function formatNoteDate(value: Date | string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const opts: Intl.DateTimeFormatOptions =
+    d.getFullYear() === now.getFullYear()
+      ? { month: 'short', day: 'numeric' }
+      : { month: 'short', day: 'numeric', year: 'numeric' };
+  return d.toLocaleDateString(undefined, opts);
+}
+
 export default function PlaceSummaryScreen({ navigation }: Props) {
   const route = useRoute<PlaceSummaryRoute>();
   const { placeId, placeName, eventType } = route.params;
@@ -142,6 +154,9 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
             <View style={styles.typeBadge}>
               <Text style={styles.typeBadgeText}>{item.objectType}</Text>
             </View>
+          ) : null}
+          {item.createdAt ? (
+            <Text style={styles.objectDate}>{formatNoteDate(item.createdAt)}</Text>
           ) : null}
         </View>
 
@@ -320,7 +335,13 @@ const styles = StyleSheet.create({
   },
   objectHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 6,
+  },
+  objectDate: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    color: '#64748b',
   },
   typeBadge: {
     backgroundColor: '#1e3a5f',

@@ -157,8 +157,46 @@ export class AuthError extends Error {
   }
 }
 
+/**
+ * Exchange the stored refresh token for a fresh access token.
+ * Standalone (not a class method) so the geofence background task can reuse it
+ * without the ApiService singleton. Returns the new access token, or null if
+ * there is no refresh token or the refresh failed (caller should then re-auth).
+ * Uses a raw fetch so it never recurses through ApiService's 401 handling.
+ */
+export async function refreshAuthToken(): Promise<string | null> {
+  const refreshToken = await SecureStore.getItemAsync('refreshToken');
+  if (!refreshToken) return null;
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) {
+      console.warn(`[ApiService] token refresh failed (${res.status})`);
+      return null;
+    }
+    const data = await res.json();
+    if (!data?.accessToken) return null;
+
+    await SecureStore.setItemAsync('accessToken', data.accessToken);
+    if (data.refreshToken) {
+      await SecureStore.setItemAsync('refreshToken', data.refreshToken);
+    }
+    console.log('[ApiService] token refreshed');
+    return data.accessToken as string;
+  } catch (err) {
+    console.warn('[ApiService] token refresh threw:', err);
+    return null;
+  }
+}
+
 class ApiService {
   private accessToken: string | null = null;
+  // Single-flight guard so concurrent 401s trigger only one refresh.
+  private refreshPromise: Promise<string | null> | null = null;
 
   async init(): Promise<void> {
     this.accessToken = await SecureStore.getItemAsync('accessToken');
@@ -193,10 +231,23 @@ class ApiService {
    * Core request helper.
    * On 401: clears stored token and throws AuthError so callers can trigger logout.
    */
+  /**
+   * Coalesces concurrent refresh attempts into a single in-flight request.
+   */
+  private refreshOnce(): Promise<string | null> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = refreshAuthToken().finally(() => {
+        this.refreshPromise = null;
+      });
+    }
+    return this.refreshPromise;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    timeoutMs = 30000
+    timeoutMs = 30000,
+    isRetry = false
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     const headers = await this.getHeaders();
@@ -221,7 +272,17 @@ class ApiService {
     }
 
     if (response.status === 401) {
-      // Token is invalid or expired — clear it and signal AuthError
+      // Try a one-time silent refresh before giving up. Only on the first
+      // attempt — a 401 on the retry means refresh didn't help.
+      if (!isRetry) {
+        const newToken = await this.refreshOnce();
+        if (newToken) {
+          this.accessToken = newToken;
+          console.log(`[ApiService] 401 on ${endpoint} — refreshed, retrying`);
+          return this.request<T>(endpoint, options, timeoutMs, true);
+        }
+      }
+      // Refresh unavailable or failed — clear and signal AuthError for logout.
       console.warn(`[ApiService] 401 on ${endpoint} — clearing stored token`);
       await this.clearToken();
       const body = await response.json().catch(() => ({}));

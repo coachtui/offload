@@ -2,7 +2,7 @@
  * JWT authentication utilities
  */
 
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -15,8 +15,10 @@ if (!JWT_SECRET) {
   );
 }
 
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
+// Access token long-lived so backgrounded geofence triggers rarely hit an
+// expired token; refresh token (used by POST /auth/refresh) outlives it.
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
+const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '90d';
 
 export interface JWTPayload {
   userId: string;
@@ -35,8 +37,8 @@ export function generateAccessToken(userId: string, email: string): string {
   };
 
   return jwt.sign(payload, JWT_SECRET as string, {
-    expiresIn: JWT_EXPIRES_IN as string | number,
-  });
+    expiresIn: JWT_EXPIRES_IN,
+  } as SignOptions);
 }
 
 /**
@@ -50,8 +52,8 @@ export function generateRefreshToken(userId: string, email: string): string {
   };
 
   return jwt.sign(payload, JWT_SECRET as string, {
-    expiresIn: JWT_REFRESH_EXPIRES_IN as string | number,
-  });
+    expiresIn: JWT_REFRESH_EXPIRES_IN,
+  } as SignOptions);
 }
 
 /**
@@ -71,6 +73,18 @@ export function verifyToken(token: string): JWTPayload {
     }
     throw new Error('Token verification failed');
   }
+}
+
+/**
+ * Verify a refresh token specifically. Rejects access tokens (wrong type),
+ * expired tokens, and malformed tokens with distinct messages.
+ */
+export function verifyRefreshToken(token: string): JWTPayload {
+  const payload = verifyToken(token);
+  if (payload.type !== 'refresh') {
+    throw new Error('Invalid token type');
+  }
+  return payload;
 }
 
 /**

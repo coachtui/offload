@@ -3,7 +3,7 @@
  */
 
 import { User } from '../models/User';
-import { generateAccessToken, generateRefreshToken } from '../auth/jwt';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../auth/jwt';
 import { z } from 'zod';
 
 // Validation schemas
@@ -63,6 +63,32 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
     },
     accessToken,
     refreshToken,
+  };
+}
+
+/**
+ * Exchange a valid refresh token for a fresh access token (and a rotated
+ * refresh token). Throws on wrong token type, expiry, or a deleted user.
+ */
+export async function refreshSession(refreshToken: string): Promise<AuthResponse> {
+  const payload = verifyRefreshToken(refreshToken);
+
+  // Ensure the user still exists (handles deleted accounts)
+  const user = await User.findById(payload.userId);
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  const accessToken = generateAccessToken(user.id, user.email);
+  const rotatedRefreshToken = generateRefreshToken(user.id, user.email);
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+    },
+    accessToken,
+    refreshToken: rotatedRefreshToken,
   };
 }
 

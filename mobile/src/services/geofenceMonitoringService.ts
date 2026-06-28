@@ -14,6 +14,7 @@ import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
+import { refreshAuthToken } from './api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -382,26 +383,24 @@ class GeofenceMonitoringService {
    */
   private async showPlaceNotification(event: GeofenceEvent): Promise<void> {
     const placeId = event.region.placeId!;
+    const fallbackPlaceName = event.region.name;
 
     try {
-      const token = await SecureStore.getItemAsync('accessToken');
-      if (!token) {
-        console.warn('[GeofenceMonitoring] No access token — skipping place notification');
+      const data = await this.fetchPlaceNotify(placeId);
+
+      // Backend unreachable / auth failed even after refresh. Never stay silent:
+      // still tell the user they arrived. Tapping opens PlaceSummary, which
+      // foregrounds the app and reloads the list with a fresh token.
+      if (data === null) {
+        await this.schedulePlaceNotification(
+          event,
+          placeId,
+          fallbackPlaceName,
+          `📍 You're at ${fallbackPlaceName}`,
+          'Tap to view your notes'
+        );
         return;
       }
-
-      const response = await fetch(`${API_BASE_URL}/api/v1/places/${placeId}/notify`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
-
-      if (!response.ok) {
-        console.warn(`[GeofenceMonitoring] Place notify API failed (${response.status})`);
-        return;
-      }
-
-      const data = await response.json();
 
       if (data.cooldown) {
         console.log(`[GeofenceMonitoring] Place ${placeId} in cooldown — suppressing notification`);
@@ -409,7 +408,7 @@ class GeofenceMonitoringService {
       }
 
       const objects: any[] = data.objects || [];
-      const placeName: string = data.placeName || event.region.name;
+      const placeName: string = data.placeName || fallbackPlaceName;
       const count = objects.length;
 
       const title = `📍 You're at ${placeName}`;
@@ -423,26 +422,89 @@ class GeofenceMonitoringService {
         body = `${count} notes waiting`;
       }
 
-      const notifId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data: {
-            placeId,
-            placeName,
-            geofenceId: event.region.identifier,
-            eventType: event.type,
-            screen: 'PlaceSummary',
-          },
-          sound: true,
-        },
-        trigger: null,
-      });
-
-      console.log(`[GeofenceMonitoring] Place notification scheduled: ${title} (id: ${notifId})`);
+      await this.schedulePlaceNotification(event, placeId, placeName, title, body);
     } catch (error) {
       console.warn('[GeofenceMonitoring] Error in showPlaceNotification:', error);
+      // Last-resort fallback so an unexpected error never eats the reminder.
+      try {
+        await this.schedulePlaceNotification(
+          event,
+          placeId,
+          fallbackPlaceName,
+          `📍 You're at ${fallbackPlaceName}`,
+          'Tap to view your notes'
+        );
+      } catch {
+        /* nothing more we can do */
+      }
     }
+  }
+
+  /**
+   * POST /places/:id/notify with the stored access token, refreshing once on a
+   * 401. Returns the parsed payload, or null if there's no usable token or the
+   * call failed (so the caller can fall back to a generic arrival notification).
+   */
+  private async fetchPlaceNotify(placeId: string): Promise<any | null> {
+    let token = await SecureStore.getItemAsync('accessToken');
+    if (!token) {
+      token = await refreshAuthToken();
+      if (!token) {
+        console.warn('[GeofenceMonitoring] No access token and refresh failed');
+        return null;
+      }
+    }
+
+    const doFetch = (t: string) =>
+      fetch(`${API_BASE_URL}/api/v1/places/${placeId}/notify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+    let response = await doFetch(token);
+    if (response.status === 401) {
+      console.log('[GeofenceMonitoring] notify 401 — refreshing token and retrying');
+      const newToken = await refreshAuthToken();
+      if (!newToken) return null;
+      response = await doFetch(newToken);
+    }
+
+    if (!response.ok) {
+      console.warn(`[GeofenceMonitoring] Place notify API failed (${response.status})`);
+      return null;
+    }
+    return response.json();
+  }
+
+  /**
+   * Schedule the local "you've arrived" notification that deep-links into
+   * PlaceSummary. Shared by the normal and fallback paths.
+   */
+  private async schedulePlaceNotification(
+    event: GeofenceEvent,
+    placeId: string,
+    placeName: string,
+    title: string,
+    body: string
+  ): Promise<void> {
+    const notifId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: {
+          placeId,
+          placeName,
+          geofenceId: event.region.identifier,
+          eventType: event.type,
+          screen: 'PlaceSummary',
+        },
+        sound: true,
+      },
+      trigger: null,
+    });
+
+    console.log(`[GeofenceMonitoring] Place notification scheduled: ${title} (id: ${notifId})`);
   }
 
   /**
