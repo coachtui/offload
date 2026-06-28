@@ -11,14 +11,16 @@ Your task: split the transcript into discrete meaning units. Each unit represent
 SEGMENTATION RULES — one meaningful thread = one note:
 - Group everything about a single thread (a task and its directly-related context,
   reason, place, and timing) into ONE object. Do NOT shatter one thread into pieces.
-- Start a NEW object only when the speaker genuinely moves to an UNRELATED thread.
-  "Call Dave about the quote, and separately, book the hotel for the trip" → 2 objects.
+- Start a NEW object whenever the speaker names a separate, distinct action — even a
+  brief one. "Set up crew to clear drains... need traffic control out there too" → 2
+  objects (clearing drains and arranging traffic control are distinct actions).
+  Distinct actions are ALWAYS their own notes; never merge two clauses that each name
+  a real action.
 - Trailing fragments with NO standalone meaning ("...and that as well", "...the usual",
   "...you know the drill") belong to the thread they extend — fold them in; never make
-  them their own note. (A clause that names a real, distinct action is NOT a mere
-  fragment — keep it as its own note.)
-- When unsure whether two adjacent thoughts are one thread or two, prefer ONE
-  consolidated note over two fragments.
+  them their own note.
+- When unsure whether a trailing fragment is its own thought or just part of the prior
+  one, prefer folding it in. Consolidate fragments; never consolidate distinct actions.
 
 SIGNIFICANCE GATE — what deserves to be a note:
 - Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
@@ -384,31 +386,31 @@ EXAMPLE_3_OUTPUT = """{
 # Few-shot example 4 — Consolidation (rambly fragments about ONE topic → 1 note)
 # ---------------------------------------------------------------------------
 
-EXAMPLE_4_INPUT = """Okay so the pump, the pump quote, yeah it came in like way over, way too high, and I gotta, I need to call the supplier about that tomorrow and get it sorted out."""
+EXAMPLE_4_INPUT = """So the, the client invoice, yeah I keep forgetting it, I gotta send the client invoice for the Kapālama job before end of month or we don't get paid this cycle."""
 
 EXAMPLE_4_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "Okay so the pump, the pump quote, yeah it came in like way over, way too high, and I gotta, I need to call the supplier about that tomorrow and get it sorted out",
-      "cleaned_text": "Call the supplier tomorrow about the pump quote — it came in way too high",
-      "title": "Call supplier about high pump quote",
+      "raw_text": "So the, the client invoice, yeah I keep forgetting it, I gotta send the client invoice for the Kapālama job before end of month or we don't get paid this cycle",
+      "cleaned_text": "Send the client invoice for the Kapālama job before end of month — or we miss this pay cycle",
+      "title": "Send Kapālama client invoice before month-end",
       "type": "task",
-      "domain": "work",
-      "tags": ["supplier", "pump", "quote", "pricing"],
-      "entities": ["supplier"],
-      "confidence": 0.93,
+      "domain": "finance",
+      "tags": ["invoice", "client", "Kapālama", "payment"],
+      "entities": ["Kapālama"],
+      "confidence": 0.92,
       "temporal_hints": {
         "has_date": true,
-        "date_text": "tomorrow",
+        "date_text": "before end of month",
         "urgency": "high"
       },
       "location_hints": {
-        "places": [],
+        "places": ["Kapālama"],
         "geofence_candidate": false
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Call the supplier tomorrow to renegotiate the pump quote"
+        "next_action": "Send the client invoice for the Kapālama job before end of month"
       },
       "context_inherited_from": null
     }

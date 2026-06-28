@@ -87,6 +87,17 @@ def test_consolidation_example_is_single_note():
     assert note.title and note.title.strip()
 
 
+def test_segmentation_example_note_counts():
+    # Pin the note count of each segmentation example so a regression that
+    # collapses or shatters an example is caught (the aggregate validate test
+    # cannot detect a single example merging/splitting).
+    assert len(_load(tp.EXAMPLE_1_OUTPUT)) == 3   # distinct topics stay separate
+    assert len(_load(tp.EXAMPLE_2_OUTPUT)) == 4   # distinct jobsite actions
+    assert len(_load(tp.EXAMPLE_3_OUTPUT)) == 2
+    assert len(_load(tp.EXAMPLE_4_OUTPUT)) == 1   # rambly single thread consolidates
+    assert len(_load(tp.EXAMPLE_5_OUTPUT)) == 1   # junk dropped, one survivor
+
+
 def test_place_names_preserved_in_cleaned_text():
     # Jobsite example must keep local place names verbatim in cleaned_text.
     objs = _load(tp.EXAMPLE_2_OUTPUT)
