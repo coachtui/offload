@@ -5,6 +5,8 @@
 import {
   transcribeAudio,
   transcribeAudioFile,
+  transcribeWithGpt4o,
+  pcmToWav,
   StreamingTranscriber,
   testWhisperConnection,
   TranscriptionResult,
@@ -13,9 +15,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-// Mock OpenAI
+// Mock OpenAI. The service constructs `new OpenAI()` once at module load, so the
+// mock must return a SINGLETON instance — otherwise mocks configured in tests
+// would target a different object than the one the service actually uses. The
+// singleton is created inside the (hoisted) factory to avoid a temporal-dead-zone
+// error, then retrieved below after the service module is imported.
 jest.mock('openai', () => {
-  return jest.fn().mockImplementation(() => ({
+  const instance = {
     audio: {
       transcriptions: {
         create: jest.fn(),
@@ -24,16 +30,19 @@ jest.mock('openai', () => {
     models: {
       list: jest.fn(),
     },
-  }));
+  };
+  const ctor: any = jest.fn(() => instance);
+  // The service also imports the named `toFile` helper. Provide a lightweight
+  // stand-in that just echoes the buffer so create() receives an upload object.
+  ctor.toFile = jest.fn(async (data: any, name?: string) => ({ data, name }));
+  return ctor;
 });
 
-// Get mocked OpenAI instance
-const mockOpenAI = jest.requireMock('openai');
-let mockOpenAIInstance: any;
+// Retrieve the singleton the service is actually using.
+const mockOpenAIInstance = (jest.requireMock('openai') as jest.Mock)();
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockOpenAIInstance = new mockOpenAI();
 });
 
 describe('TranscriptionService', () => {
@@ -98,18 +107,15 @@ describe('TranscriptionService', () => {
       );
     });
 
-    it('should clean up temp file after transcription', async () => {
+    it('should not leave temp files behind (uploads from buffer)', async () => {
       mockOpenAIInstance.audio.transcriptions.create.mockResolvedValue({ text: 'Test' });
 
       const audioBuffer = Buffer.from('mock audio data');
       await transcribeAudio(audioBuffer);
 
-      // Check that temp files in the temp directory are cleaned up
-      const tempDir = os.tmpdir();
-      const tempFiles = fs.readdirSync(tempDir).filter(f => f.startsWith('whisper_'));
-
-      // Should have no whisper temp files (or very few if tests run in parallel)
-      expect(tempFiles.length).toBeLessThan(5);
+      // The buffer is uploaded directly via toFile — no whisper_ temp file is written.
+      const tempFiles = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('whisper_'));
+      expect(tempFiles.length).toBe(0);
     });
 
     it('should handle API errors gracefully', async () => {
@@ -120,6 +126,80 @@ describe('TranscriptionService', () => {
       const audioBuffer = Buffer.from('mock audio data');
 
       await expect(transcribeAudio(audioBuffer)).rejects.toThrow('API rate limit exceeded');
+    });
+  });
+
+  describe('pcmToWav', () => {
+    it('prepends a valid 44-byte WAV header with default 16kHz mono 16-bit', () => {
+      const pcm = Buffer.alloc(8000); // 0.25s of 16kHz/16-bit mono
+      const wav = pcmToWav(pcm);
+
+      expect(wav.length).toBe(44 + pcm.length);
+      expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+      expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
+      expect(wav.toString('ascii', 12, 16)).toBe('fmt ');
+      expect(wav.toString('ascii', 36, 40)).toBe('data');
+
+      expect(wav.readUInt32LE(4)).toBe(36 + pcm.length); // RIFF chunk size
+      expect(wav.readUInt16LE(20)).toBe(1); // PCM format
+      expect(wav.readUInt16LE(22)).toBe(1); // channels
+      expect(wav.readUInt32LE(24)).toBe(16000); // sample rate
+      expect(wav.readUInt32LE(28)).toBe(16000 * 2); // byte rate (mono 16-bit)
+      expect(wav.readUInt16LE(32)).toBe(2); // block align
+      expect(wav.readUInt16LE(34)).toBe(16); // bits per sample
+      expect(wav.readUInt32LE(40)).toBe(pcm.length); // data chunk size
+    });
+
+    it('honors custom sample rate and channel count', () => {
+      const pcm = Buffer.alloc(100);
+      const wav = pcmToWav(pcm, { sampleRate: 44100, channels: 2 });
+
+      expect(wav.readUInt16LE(22)).toBe(2); // channels
+      expect(wav.readUInt32LE(24)).toBe(44100); // sample rate
+      expect(wav.readUInt32LE(28)).toBe(44100 * 2 * 2); // byte rate (stereo 16-bit)
+      expect(wav.readUInt16LE(32)).toBe(4); // block align
+    });
+
+    it('preserves the original PCM bytes after the header', () => {
+      const pcm = Buffer.from([1, 2, 3, 4, 5, 6]);
+      const wav = pcmToWav(pcm);
+      expect(wav.subarray(44)).toEqual(pcm);
+    });
+  });
+
+  describe('transcribeWithGpt4o', () => {
+    it('uses gpt-4o-transcribe with response_format json', async () => {
+      mockOpenAIInstance.audio.transcriptions.create.mockResolvedValue({ text: 'clean transcript' });
+
+      const result = await transcribeWithGpt4o(Buffer.alloc(1600));
+
+      expect(result.text).toBe('clean transcript');
+      expect(mockOpenAIInstance.audio.transcriptions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'gpt-4o-transcribe',
+          response_format: 'json',
+        })
+      );
+      // Must NOT request verbose_json — gpt-4o-transcribe rejects it
+      const callArg = mockOpenAIInstance.audio.transcriptions.create.mock.calls[0][0];
+      expect(callArg.response_format).not.toBe('verbose_json');
+    });
+
+    it('throws on empty audio buffer', async () => {
+      await expect(transcribeWithGpt4o(Buffer.alloc(0))).rejects.toThrow('Empty audio');
+    });
+
+    it('does not leave temp files behind (uploads from buffer)', async () => {
+      mockOpenAIInstance.audio.transcriptions.create.mockResolvedValue({ text: 'x' });
+      await transcribeWithGpt4o(Buffer.alloc(1600));
+
+      const tempFiles = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('gpt4o_'));
+      expect(tempFiles.length).toBe(0);
+    });
+
+    it('propagates API errors so the caller can fall back', async () => {
+      mockOpenAIInstance.audio.transcriptions.create.mockRejectedValue(new Error('API down'));
+      await expect(transcribeWithGpt4o(Buffer.alloc(1600))).rejects.toThrow('API down');
     });
   });
 

@@ -3,7 +3,7 @@
  * Uses Deepgram for real-time transcription (mobile connects directly to Deepgram)
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, json } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
 import { parseTranscript, checkMLServiceHealth } from '../services/mlService';
@@ -11,6 +11,7 @@ import { createObject } from '../services/objectService';
 import { Session } from '../models/Session';
 import { resolveObjectPlaces } from '../services/placeService';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
+import { transcribeWithGpt4o } from '../services/transcriptionService';
 
 const router = Router();
 
@@ -132,7 +133,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
       userId,
       deviceId: 'mobile-deepgram',
       location: geoLocation,
-      metadata: { ...metadata, duration, transcriptionMethod: 'deepgram' },
+      metadata: { duration, transcriptionMethod: 'deepgram', ...metadata },
     });
     console.log('[Voice] session created:', session.id);
 
@@ -292,6 +293,74 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
     });
   }
 });
+
+// Validation for the audio transcription endpoint. audioChunks are base64-encoded
+// raw PCM segments as they arrived from the mobile microphone (each chunk is a
+// whole number of bytes, so decoding per-chunk and concatenating is safe —
+// joining the base64 strings themselves would not be, due to padding).
+const transcribeAudioSchema = z.object({
+  audioChunks: z.array(z.string()).min(1, 'audioChunks is required'),
+  sampleRate: z.number().optional(),
+  channels: z.number().optional(),
+});
+
+/**
+ * POST /api/v1/voice/transcribe-audio - Transcribe raw PCM audio with gpt-4o-transcribe
+ *
+ * The mobile app streams audio to Deepgram for the live word-by-word preview, and
+ * also accumulates the raw PCM. On stop it sends that audio here for a final,
+ * higher-accuracy transcript that becomes the saved note. Returns { transcript };
+ * on any failure the client falls back to the Deepgram preview text.
+ *
+ * Uses a route-scoped JSON body limit (audio payloads far exceed the global 100kb).
+ */
+router.post(
+  // Base64 audio inflates ~33% over the raw bytes; keep the body limit above the
+  // 24MB WAV cap in transcribeWithGpt4o so that guard returns the clear error.
+  '/transcribe-audio',
+  json({ limit: '40mb' }),
+  async (req: Request, res: Response) => {
+    const userId = req.user?.id;
+    console.log(`[Voice] POST /transcribe-audio — userId: ${userId}`);
+
+    try {
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const validationResult = transcribeAudioSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        console.warn('[Voice] transcribe-audio validation failed:', validationResult.error.errors);
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: validationResult.error.errors,
+        });
+      }
+
+      const { audioChunks, sampleRate, channels } = validationResult.data;
+
+      // Decode each base64 chunk independently, then concat the raw bytes.
+      const pcm = Buffer.concat(audioChunks.map((c) => Buffer.from(c, 'base64')));
+      console.log('[Voice] transcribe-audio — chunks:', audioChunks.length, '— pcm bytes:', pcm.length);
+
+      if (pcm.length === 0) {
+        return res.status(400).json({ error: 'Empty audio' });
+      }
+
+      const result = await transcribeWithGpt4o(pcm, { sampleRate, channels });
+      const transcript = result.text.trim();
+      console.log('[Voice] transcribe-audio — gpt-4o transcript length:', transcript.length);
+
+      res.json({ transcript });
+    } catch (error) {
+      console.error('[Voice] transcribe-audio error:', error);
+      res.status(500).json({
+        error: 'Failed to transcribe audio',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+);
 
 /**
  * GET /api/v1/voice/sessions - List user's voice sessions

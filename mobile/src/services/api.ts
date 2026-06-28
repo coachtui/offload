@@ -496,6 +496,30 @@ class ApiService {
     return this.request('/api/v1/voice/deepgram-token');
   }
 
+  /**
+   * Send accumulated raw-PCM audio chunks (base64) for high-accuracy transcription
+   * via gpt-4o-transcribe. Returns the clean transcript that should be saved.
+   * Deepgram remains the live preview; this is the final result swapped in on stop.
+   */
+  async transcribeAudio(
+    audioChunks: string[],
+    opts: { sampleRate?: number; channels?: number } = {}
+  ): Promise<{ transcript: string }> {
+    return this.request(
+      '/api/v1/voice/transcribe-audio',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          audioChunks,
+          sampleRate: opts.sampleRate ?? 16000,
+          channels: opts.channels ?? 1,
+        }),
+      },
+      // Upload + transcription can take longer than a normal request — allow 60s.
+      60000
+    );
+  }
+
   async saveTranscript(data: {
     transcript: string;
     duration?: number;
