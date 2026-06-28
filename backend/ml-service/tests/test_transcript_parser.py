@@ -10,6 +10,8 @@ assert the meaningful-notes invariants directly on those examples:
 """
 
 import json
+import os
+import asyncio
 from pathlib import Path
 import sys
 
@@ -18,7 +20,7 @@ import pytest
 # Ensure the app package is importable when running from the tests/ directory
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.models.transcript import AtomicObjectParsed
+from app.models.transcript import AtomicObjectParsed, TranscriptParseRequest
 from app.prompts import transcript_parser as tp
 
 
@@ -109,3 +111,44 @@ def test_place_names_preserved_in_cleaned_text():
 def test_full_few_shot_set_has_five_examples():
     msgs = tp.create_few_shot_examples()
     assert len(msgs) == 10, f"expected 5 example pairs (10 messages), got {len(msgs)}"
+
+
+# ---------------------------------------------------------------------------
+# Gated integration test — auto-skips without a live LLM API key
+# ---------------------------------------------------------------------------
+
+_MESSY = (
+    "Um okay so. Yeah. I need to call the pump supplier tomorrow, their quote at "
+    "Puʻuhale was way too high. Anyway. Set up traffic control on Middle Street too. "
+    "Let me think. That's about it I guess. Oh and remind me to grab coffee filters "
+    "when I get to Costco."
+)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),
+    reason="requires a live LLM API key",
+)
+def test_live_parse_is_meaningful():
+    from app.services.parser import get_parser
+
+    req = TranscriptParseRequest(
+        transcript=_MESSY, user_id="test-user", session_id="test-session"
+    )
+    objs, _model, _t, _raw = asyncio.run(get_parser().parse_transcript(req))
+
+    # Every note has a real title (the headline fix).
+    assert all(o.title and o.title.strip() for o in objs), \
+        [o.cleaned_text for o in objs]
+    # Junk dropped: no note is pure filler.
+    for o in objs:
+        assert o.cleaned_text.strip().lower() not in {"anyway", "yeah", "okay", "that's about it"}
+    # Place name preserved somewhere.
+    assert any("Puʻuhale" in o.cleaned_text or "Middle Street" in o.cleaned_text for o in objs)
+    # Location reminder survived as a geofence reminder.
+    assert any(
+        o.type == "reminder" and o.location_hints.geofence_candidate for o in objs
+    ), "Costco location reminder was lost"
+    # Consolidated, not shattered: a messy 4-thread dump should not explode.
+    assert len(objs) <= 6, f"too many notes ({len(objs)}): {[o.title for o in objs]}"
