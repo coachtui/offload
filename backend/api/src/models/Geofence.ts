@@ -104,6 +104,20 @@ export class GeofenceModel {
   }
 
   /**
+   * Find geofences by user with an EXACT case-insensitive name match.
+   * Used to link a spoken place name to a manually-labeled geofence.
+   */
+  static async findByUserAndName(userId: string, name: string): Promise<GeofenceModel[]> {
+    const rows = await queryMany<GeofenceRow>(
+      `SELECT * FROM hub.geofences
+       WHERE user_id = $1 AND lower(name) = lower($2)
+       ORDER BY created_at DESC`,
+      [userId, name]
+    );
+    return rows.map((row) => new GeofenceModel(row));
+  }
+
+  /**
    * Find geofences containing a location
    */
   static async findByLocation(
