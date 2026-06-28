@@ -32,7 +32,13 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+// The audio transcription route carries large base64 payloads and sets its own
+// (40mb) JSON body limit. Skip the global 100kb parser for it, otherwise the
+// global parser rejects the body before the route-scoped limit can apply.
+app.use((req, res, next) => {
+  if (req.path === '/api/v1/voice/transcribe-audio') return next();
+  express.json()(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 
 // Health check
