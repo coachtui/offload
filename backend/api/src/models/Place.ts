@@ -249,9 +249,10 @@ export class PlaceModel {
        WHERE opl.place_id = $1
          AND opl.active = true
          AND ao.deleted_at IS NULL
+         AND ao.state IN ('open','active')
          AND (opl.snoozed_until IS NULL OR opl.snoozed_until < NOW())
          AND ($2::timestamptz IS NULL OR opl.dismissed_at IS NULL OR opl.dismissed_at < $2)
-       ORDER BY opl.created_at ASC`,
+       ORDER BY ao.created_at DESC`,
       [placeId, sinceEnteredAt ?? null]
     );
     return rows.map(r => r.object_id);

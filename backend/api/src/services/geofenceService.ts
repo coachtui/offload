@@ -126,7 +126,7 @@ export async function getGeofenceObjects(
     return [];
   }
 
-  const linkedIds = await GeofenceModel.getLinkedObjectIds(geofenceId);
+  const linkedIds = await GeofenceModel.getOpenLinkedObjectIds(geofenceId);
   console.log(`[geofenceService] getGeofenceObjects: geofence ${geofenceId} has ${linkedIds.length} linked object(s)`);
 
   if (linkedIds.length === 0) return [];

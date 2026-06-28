@@ -327,6 +327,24 @@ export class GeofenceModel {
   }
 
   /**
+   * IDs of linked objects that are still OPEN (state open/active, not deleted),
+   * newest-first. Used for arrival notifications and the browse-by-place view.
+   */
+  static async getOpenLinkedObjectIds(geofenceId: string): Promise<string[]> {
+    const rows = await queryMany<{ object_id: string }>(
+      `SELECT go.object_id
+       FROM hub.geofence_objects go
+       JOIN hub.atomic_objects ao ON ao.id = go.object_id
+       WHERE go.geofence_id = $1
+         AND ao.deleted_at IS NULL
+         AND ao.state IN ('open','active')
+       ORDER BY ao.created_at DESC`,
+      [geofenceId]
+    );
+    return rows.map((r) => r.object_id);
+  }
+
+  /**
    * Atomically replace the full set of linked objects for a geofence.
    * Runs inside a transaction: delete all existing links then insert the new set.
    */
