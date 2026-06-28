@@ -2,6 +2,7 @@
  * Place Intelligence API routes
  *
  * GET    /api/v1/places                              — list user's inferred places
+ * GET    /api/v1/places/overview                     — merged geofences + places overview
  * GET    /api/v1/places/:id/objects                  — get active linked objects
  * POST   /api/v1/places/:id/notify                   — check cooldown + return objects (called on geofence enter)
  * POST   /api/v1/places/:placeId/objects/:objectId/done     — mark done
@@ -22,6 +23,7 @@ import {
   snoozePlaceObject,
   unlinkPlaceObject,
 } from '../services/placeService';
+import { getPlacesOverview } from '../services/geofenceService';
 
 const router = Router();
 router.use(authenticate);
@@ -38,6 +40,19 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('[places] GET / error:', error);
     res.status(500).json({ error: 'Failed to list places' });
+  }
+});
+
+// ─── GET /api/v1/places/overview ───────────────────────────────────────────
+
+router.get('/overview', async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const places = await getPlacesOverview(userId);
+    res.json({ places });
+  } catch (error: any) {
+    res.status(error.status ?? 500).json({ error: error.message || 'Failed to load places overview' });
   }
 });
 

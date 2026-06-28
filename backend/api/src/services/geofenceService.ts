@@ -6,6 +6,7 @@ import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import type { Geofence, GeofenceCreateRequest, GeoPoint, AtomicObject } from '@shared/types';
 import { z } from 'zod';
+import { queryMany } from '../db/queries';
 
 // Validation schemas
 export const createGeofenceSchema = z.object({
@@ -252,4 +253,54 @@ export async function deleteGeofence(
 async function filterValidObjectIds(userId: string, objectIds: string[]): Promise<string[]> {
   const objects = await AtomicObjectModel.findByIds(objectIds);
   return objects.filter((o) => o.userId === userId).map((o) => o.id);
+}
+
+export interface PlaceOverviewItem {
+  kind: 'geofence' | 'place';
+  id: string;
+  name: string;
+  openCount: number;
+  labeled: boolean;
+}
+
+/**
+ * Merged browse list: every manually-labeled geofence (always shown) plus every
+ * inferred place that still has >=1 open note. Labeled first, then by open count.
+ */
+export async function getPlacesOverview(userId: string): Promise<PlaceOverviewItem[]> {
+  const geofences = await queryMany<{ id: string; name: string; open_count: string }>(
+    `SELECT g.id, g.name,
+            COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count
+     FROM hub.geofences g
+     LEFT JOIN hub.geofence_objects go ON go.geofence_id = g.id
+     LEFT JOIN hub.atomic_objects ao ON ao.id = go.object_id
+     WHERE g.user_id = $1 AND g.created_by = 'manual'
+     GROUP BY g.id, g.name
+     ORDER BY g.created_at DESC`,
+    [userId]
+  );
+
+  const places = await queryMany<{ id: string; name: string; open_count: string }>(
+    `SELECT p.id, p.normalized_name AS name,
+            COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count
+     FROM hub.places p
+     JOIN hub.object_place_links opl ON opl.place_id = p.id
+     JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+     WHERE p.user_id = $1
+     GROUP BY p.id, p.normalized_name
+     HAVING COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) >= 1
+     ORDER BY open_count DESC`,
+    [userId]
+  );
+
+  return [
+    ...geofences.map((g) => ({
+      kind: 'geofence' as const, id: g.id, name: g.name,
+      openCount: parseInt(g.open_count, 10), labeled: true,
+    })),
+    ...places.map((p) => ({
+      kind: 'place' as const, id: p.id, name: p.name,
+      openCount: parseInt(p.open_count, 10), labeled: false,
+    })),
+  ];
 }
