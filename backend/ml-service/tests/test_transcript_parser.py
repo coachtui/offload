@@ -69,3 +69,30 @@ def test_few_shot_examples_include_junk_and_consolidation():
     # after Task 3: examples 1,2,3,4,5 -> 5 user + 5 assistant messages).
     msgs = tp.create_few_shot_examples()
     assert len(msgs) >= 8  # at least 4 examples wired (8 messages); 10 after Task 3
+
+
+def test_consolidation_example_is_single_note():
+    # A rambly, fragmented thought about ONE topic becomes ONE note.
+    objs = _load(tp.EXAMPLE_4_OUTPUT)
+    assert len(objs) == 1, f"expected rambly fragments to consolidate, got {len(objs)}"
+    note = objs[0]
+    # cleaned_text is rephrased (not a verbatim copy of the rambly raw_text).
+    assert note.cleaned_text.strip() != note.raw_text.strip()
+    # cleaned_text reads clean: no stray filler tokens.
+    lowered = note.cleaned_text.lower()
+    for f in ("um", "uh", "like", "yeah", "kinda"):
+        assert f" {f} " not in f" {lowered} ", f"filler '{f}' leaked into cleaned_text"
+    assert note.title and note.title.strip()
+
+
+def test_place_names_preserved_in_cleaned_text():
+    # Jobsite example must keep local place names verbatim in cleaned_text.
+    objs = _load(tp.EXAMPLE_2_OUTPUT)
+    joined = " ".join(o.cleaned_text for o in objs)
+    for place in ("Puʻuhale", "Middle Street", "Sand Island", "Kapālama"):
+        assert place in joined, f"place name '{place}' was lost from cleaned_text"
+
+
+def test_full_few_shot_set_has_five_examples():
+    msgs = tp.create_few_shot_examples()
+    assert len(msgs) == 10, f"expected 5 example pairs (10 messages), got {len(msgs)}"

@@ -8,12 +8,15 @@ SYSTEM_PROMPT = """You are an expert at parsing voice transcripts into structure
 
 Your task: split the transcript into discrete meaning units. Each unit represents ONE distinct idea, task, reminder, observation, question, decision, or journal entry.
 
-SEGMENTATION RULES:
-- Split when the topic OR intent changes
-- "I need to call Dave AND book the hotel" → 2 objects (different tasks, different contexts)
-- A single coherent sentence/thought that covers one topic is ONE object
-- Do NOT split one coherent task into fragments just because it has multiple sub-clauses
-- Do NOT merge unrelated thoughts just because they are adjacent
+SEGMENTATION RULES — one meaningful thread = one note:
+- Group everything about a single thread (a task and its directly-related context,
+  reason, place, and timing) into ONE object. Do NOT shatter one thread into pieces.
+- Start a NEW object only when the speaker genuinely moves to an UNRELATED thread.
+  "Call Dave about the quote, and separately, book the hotel for the trip" → 2 objects.
+- Trailing fragments ("...out there too", "...and that thing as well") belong to the
+  thread they extend — fold them in; never make them their own note.
+- When unsure whether two adjacent thoughts are one thread or two, prefer ONE
+  consolidated note over two fragments.
 
 SIGNIFICANCE GATE — what deserves to be a note:
 - Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
@@ -101,7 +104,14 @@ LOCATION REMINDER RULES — CRITICAL:
 
 FIELD RULES:
 - raw_text: take the actual words from the transcript; minimal editing
-- cleaned_text: STRICT RULES — (1) ONLY remove filler words ("um", "uh", "like", "you know"), false starts, and repetitions. (2) Do NOT rephrase, expand, infer, or add words not in the original. (3) Do NOT normalize field shorthand into full sentences — preserve the speaker's vocabulary exactly. (4) Preserve all local place names verbatim. If you cannot clean without rewriting, copy raw_text as-is.
+- cleaned_text: rewrite the thread into ONE clear, readable line a person would want
+  to see in a notes list. Fix grammar, drop false starts/repetition/filler, and
+  merge the thread's fragments into a coherent sentence. BUT: (1) preserve every
+  local place name verbatim (Puʻuhale, Middle Street, Sand Island, Kapālama, etc.);
+  (2) preserve field/construction shorthand exactly (drainage inlet, vac truck,
+  Godwin pump, dewatering, punch list, RFI, change order); (3) do NOT invent facts,
+  numbers, names, or commitments the speaker did not say. The verbatim words live in
+  raw_text; readability lives here.
 - title: ALWAYS set a short, meaningful title (max 8 words) for every object — never null. It is the headline shown in the notes list. Make it specific: "Call pump supplier about pricing", not "Phone call". Title the thought, not the words.
 - entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
 - temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
@@ -367,6 +377,42 @@ EXAMPLE_3_OUTPUT = """{
 
 
 # ---------------------------------------------------------------------------
+# Few-shot example 4 — Consolidation (rambly fragments about ONE topic → 1 note)
+# ---------------------------------------------------------------------------
+
+EXAMPLE_4_INPUT = """Okay so the pump, the pump quote, yeah it came in like way over, way too high, and I gotta, I need to call the supplier about that tomorrow and get it sorted out."""
+
+EXAMPLE_4_OUTPUT = """{
+  "atomic_objects": [
+    {
+      "raw_text": "the pump quote came in way over, way too high, and I need to call the supplier about that tomorrow and get it sorted out",
+      "cleaned_text": "Call the supplier tomorrow about the pump quote — it came in way too high",
+      "title": "Call supplier about high pump quote",
+      "type": "task",
+      "domain": "work",
+      "tags": ["supplier", "pump", "quote", "pricing"],
+      "entities": ["supplier"],
+      "confidence": 0.93,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "tomorrow",
+        "urgency": "high"
+      },
+      "location_hints": {
+        "places": [],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Call the supplier tomorrow to renegotiate the pump quote"
+      },
+      "context_inherited_from": null
+    }
+  ]
+}"""
+
+
+# ---------------------------------------------------------------------------
 # Few-shot example 5 — Significance gate (drop filler, keep the one real item)
 # ---------------------------------------------------------------------------
 
@@ -453,6 +499,14 @@ def create_few_shot_examples() -> List[dict]:
         {
             "role": "assistant",
             "content": EXAMPLE_3_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_4_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_4_OUTPUT
         },
         {
             "role": "user",
