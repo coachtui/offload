@@ -94,8 +94,8 @@ def test_segmentation_example_note_counts():
     # collapses or shatters an example is caught (the aggregate validate test
     # cannot detect a single example merging/splitting).
     assert len(_load(tp.EXAMPLE_1_OUTPUT)) == 3   # distinct topics stay separate
-    assert len(_load(tp.EXAMPLE_2_OUTPUT)) == 4   # distinct jobsite actions
-    assert len(_load(tp.EXAMPLE_3_OUTPUT)) == 2
+    assert len(_load(tp.EXAMPLE_2_OUTPUT)) == 3   # drains+traffic fold; vac truck & punch list separate
+    assert len(_load(tp.EXAMPLE_3_OUTPUT)) == 1   # two Costco errands fold into one shopping reminder
     assert len(_load(tp.EXAMPLE_4_OUTPUT)) == 1   # rambly single thread consolidates
     assert len(_load(tp.EXAMPLE_5_OUTPUT)) == 1   # junk dropped, one survivor
 

@@ -8,19 +8,19 @@ SYSTEM_PROMPT = """You are an expert at parsing voice transcripts into structure
 
 Your task: split the transcript into discrete meaning units. Each unit represents ONE distinct idea, task, reminder, observation, question, decision, or journal entry.
 
-SEGMENTATION RULES — one meaningful thread = one note:
-- Group everything about a single thread (a task and its directly-related context,
-  reason, place, and timing) into ONE object. Do NOT shatter one thread into pieces.
-- Start a NEW object whenever the speaker names a separate, distinct action — even a
-  brief one. "Set up crew to clear drains... need traffic control out there too" → 2
-  objects (clearing drains and arranging traffic control are distinct actions).
-  Distinct actions are ALWAYS their own notes; never merge two clauses that each name
-  a real action.
+SEGMENTATION RULES — one thread = one note (prefer fewer, richer notes):
+- A "thread" is everything tied to the same CONTEXT — the same place, job, trip, or
+  topic — even when it involves several related actions. Keep a thread together as ONE
+  note and capture its sub-actions inside that note; do NOT split related actions out.
+  "Clear the drains on Middle Street and set up traffic control out there" → ONE note
+  (same site, same job) covering both actions.
+- Start a NEW note only when the speaker moves to a genuinely DIFFERENT context — a
+  different place, job, or topic. "Call Dave about the quote, and separately, book the
+  hotel" → 2 notes (unrelated). After Middle Street drainage work, "check the vac truck
+  at Sand Island" → a new note (different site and task).
 - Trailing fragments with NO standalone meaning ("...and that as well", "...the usual",
-  "...you know the drill") belong to the thread they extend — fold them in; never make
-  them their own note.
-- When unsure whether a trailing fragment is its own thought or just part of the prior
-  one, prefer folding it in. Consolidate fragments; never consolidate distinct actions.
+  "...you know the drill") fold into the thread they extend.
+- When unsure whether two things are one thread or two, prefer ONE consolidated note.
 
 SIGNIFICANCE GATE — what deserves to be a note:
 - Emit an object ONLY if it carries standalone meaning: a task, reminder, idea,
@@ -223,14 +223,14 @@ EXAMPLE_2_INPUT = """Set up crew to clear drainage inlets from Middle Street to 
 EXAMPLE_2_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
-      "cleaned_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today",
-      "title": "Clear drainage inlets: Middle Street to Puʻuhale",
+      "raw_text": "Set up crew to clear drainage inlets from Middle Street to Puʻuhale today. Need traffic control out there too",
+      "cleaned_text": "Clear drainage inlets from Middle Street to Puʻuhale today, and set up traffic control out there",
+      "title": "Drains + traffic control: Middle St to Puʻuhale",
       "type": "task",
       "domain": "work",
-      "tags": ["drainage", "crew", "Middle Street", "Puuhale", "today"],
+      "tags": ["drainage", "traffic control", "crew", "Middle Street", "Puuhale", "today"],
       "entities": ["Middle Street", "Puʻuhale"],
-      "confidence": 0.97,
+      "confidence": 0.95,
       "temporal_hints": {
         "has_date": true,
         "date_text": "today",
@@ -242,33 +242,9 @@ EXAMPLE_2_OUTPUT = """{
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Deploy crew to clear drainage inlets from Middle Street to Puʻuhale"
+        "next_action": "Deploy crew to clear drainage inlets and set up traffic control from Middle Street to Puʻuhale"
       },
       "context_inherited_from": null
-    },
-    {
-      "raw_text": "Need traffic control out there too",
-      "cleaned_text": "Need traffic control out there too",
-      "title": "Arrange traffic control on Middle Street",
-      "type": "task",
-      "domain": "work",
-      "tags": ["traffic control", "safety", "Middle Street"],
-      "entities": ["Middle Street", "Puʻuhale"],
-      "confidence": 0.90,
-      "temporal_hints": {
-        "has_date": true,
-        "date_text": "today",
-        "urgency": "high"
-      },
-      "location_hints": {
-        "places": ["Middle Street", "Puʻuhale"],
-        "geofence_candidate": true
-      },
-      "actionability": {
-        "is_actionable": true,
-        "next_action": "Arrange traffic control for work zone on Middle Street"
-      },
-      "context_inherited_from": 0
     },
     {
       "raw_text": "check on the vac truck at Sand Island, make sure it's ready for dewatering tomorrow morning",
@@ -331,14 +307,14 @@ EXAMPLE_3_INPUT = """Remind me to get paper towels when I get to Costco. Also ne
 EXAMPLE_3_OUTPUT = """{
   "atomic_objects": [
     {
-      "raw_text": "Remind me to get paper towels when I get to Costco",
-      "cleaned_text": "Get paper towels when I get to Costco",
-      "title": "Buy paper towels at Costco",
+      "raw_text": "Remind me to get paper towels when I get to Costco. Also need to pick up a case of water",
+      "cleaned_text": "Get paper towels and a case of water when I get to Costco",
+      "title": "Buy paper towels and water at Costco",
       "type": "reminder",
       "domain": "personal",
-      "tags": ["shopping", "Costco", "paper towels", "errand"],
+      "tags": ["shopping", "Costco", "paper towels", "water", "errand"],
       "entities": ["Costco"],
-      "confidence": 0.97,
+      "confidence": 0.95,
       "temporal_hints": {
         "has_date": false,
         "date_text": null,
@@ -350,33 +326,9 @@ EXAMPLE_3_OUTPUT = """{
       },
       "actionability": {
         "is_actionable": true,
-        "next_action": "Buy paper towels at Costco"
+        "next_action": "Buy paper towels and a case of water at Costco"
       },
       "context_inherited_from": null
-    },
-    {
-      "raw_text": "Also need to pick up a case of water",
-      "cleaned_text": "Also need to pick up a case of water",
-      "title": "Buy a case of water at Costco",
-      "type": "task",
-      "domain": "personal",
-      "tags": ["shopping", "Costco", "water", "errand"],
-      "entities": ["Costco"],
-      "confidence": 0.88,
-      "temporal_hints": {
-        "has_date": false,
-        "date_text": null,
-        "urgency": "low"
-      },
-      "location_hints": {
-        "places": ["Costco"],
-        "geofence_candidate": true
-      },
-      "actionability": {
-        "is_actionable": true,
-        "next_action": "Buy a case of water at Costco"
-      },
-      "context_inherited_from": 0
     }
   ]
 }"""
