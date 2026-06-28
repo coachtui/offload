@@ -58,7 +58,7 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
     {
       "raw_text": "verbatim or near-verbatim excerpt from transcript",
       "cleaned_text": "filler/false-starts removed only — do NOT rephrase or expand",
-      "title": "Short title max 8 words — or null if cleaned_text is already short",
+      "title": "Short, specific title — max 8 words — ALWAYS set, never null",
       "type": "task",
       "domain": "work",
       "tags": ["tag1", "tag2"],
@@ -90,7 +90,7 @@ LOCATION REMINDER RULES — CRITICAL:
 FIELD RULES:
 - raw_text: take the actual words from the transcript; minimal editing
 - cleaned_text: STRICT RULES — (1) ONLY remove filler words ("um", "uh", "like", "you know"), false starts, and repetitions. (2) Do NOT rephrase, expand, infer, or add words not in the original. (3) Do NOT normalize field shorthand into full sentences — preserve the speaker's vocabulary exactly. (4) Preserve all local place names verbatim. If you cannot clean without rewriting, copy raw_text as-is.
-- title: only set if cleaned_text is longer than ~15 words; otherwise null
+- title: ALWAYS set a short, meaningful title (max 8 words) for every object — never null. It is the headline shown in the notes list. Make it specific: "Call pump supplier about pricing", not "Phone call". Title the thought, not the words.
 - entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
 - temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
 - location_hints.places: list ALL mentioned places, including streets, jobsites, neighborhoods
@@ -161,7 +161,7 @@ EXAMPLE_1_OUTPUT = """{
     {
       "raw_text": "I should remember to pick up Marcus from school at 3pm Thursday",
       "cleaned_text": "Pick up Marcus from school at 3pm Thursday",
-      "title": null,
+      "title": "Pick up Marcus from school Thursday",
       "type": "reminder",
       "domain": "family",
       "tags": ["pickup", "school", "Marcus", "Thursday"],
@@ -221,7 +221,7 @@ EXAMPLE_2_OUTPUT = """{
     {
       "raw_text": "Need traffic control out there too",
       "cleaned_text": "Need traffic control out there too",
-      "title": null,
+      "title": "Arrange traffic control on Middle Street",
       "type": "task",
       "domain": "work",
       "tags": ["traffic control", "safety", "Middle Street"],
@@ -269,7 +269,7 @@ EXAMPLE_2_OUTPUT = """{
     {
       "raw_text": "Reminder for the punch list walk at Kapālama, that's Friday",
       "cleaned_text": "Punch list walk at Kapālama on Friday",
-      "title": null,
+      "title": "Punch list walk at Kapālama Friday",
       "type": "reminder",
       "domain": "work",
       "tags": ["punch list", "walk", "Kapalama", "Friday"],
@@ -305,7 +305,7 @@ EXAMPLE_3_OUTPUT = """{
     {
       "raw_text": "Remind me to get paper towels when I get to Costco",
       "cleaned_text": "Get paper towels when I get to Costco",
-      "title": null,
+      "title": "Buy paper towels at Costco",
       "type": "reminder",
       "domain": "personal",
       "tags": ["shopping", "Costco", "paper towels", "errand"],
@@ -329,7 +329,7 @@ EXAMPLE_3_OUTPUT = """{
     {
       "raw_text": "Also need to pick up a case of water",
       "cleaned_text": "Also need to pick up a case of water",
-      "title": null,
+      "title": "Buy a case of water at Costco",
       "type": "task",
       "domain": "personal",
       "tags": ["shopping", "Costco", "water", "errand"],
