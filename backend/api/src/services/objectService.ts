@@ -119,6 +119,20 @@ export async function createObject(
     atomicObject.embeddingStatus = 'failed';
   }
 
+  // Best-effort keyword rule classification (non-fatal)
+  try {
+    const ruleText = `${atomicObject.title ?? ''} ${atomicObject.content ?? ''}`;
+    const { applyRulesToObject } = await import('./categoryService');
+    await applyRulesToObject(userId, atomicObject.id, ruleText);
+    const refreshed = await AtomicObjectModel.findById(atomicObject.id);
+    if (refreshed) {
+      atomicObject.categoryId = refreshed.categoryId;
+      atomicObject.categoryLocked = refreshed.categoryLocked;
+    }
+  } catch (err) {
+    console.warn('[objectService] Category rule application failed (non-fatal):', err);
+  }
+
   // Detect and persist relationships (fire-and-forget, never blocks response)
   if (process.env.ENABLE_RELATIONSHIPS !== 'false') {
     setImmediate(async () => {

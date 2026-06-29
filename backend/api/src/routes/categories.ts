@@ -5,6 +5,7 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  applyCategoryRules,
 } from '../services/categoryService';
 import { authenticate } from '../auth/middleware';
 
@@ -63,6 +64,16 @@ router.delete('/:id', async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch (error) {
     return handleError(error, res, 'Failed to delete category');
+  }
+});
+
+router.post('/:id/apply', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+    const result = await applyCategoryRules(req.user.id, req.params.id);
+    return res.json(result);
+  } catch (error) {
+    return handleError(error, res, 'Failed to apply category rules');
   }
 });
 
