@@ -367,9 +367,9 @@ export function ObjectsScreen({ navigation }: Props) {
       >
         <TouchableOpacity
           style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
-          onPress={() => setFilters({ ...filters, categoryId: undefined })}
+          onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
         >
-          <Text style={styles.filterChipText}>All</Text>
+          <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
         </TouchableOpacity>
         {categories.map((c) => (
           <TouchableOpacity
@@ -378,7 +378,7 @@ export function ObjectsScreen({ navigation }: Props) {
             onPress={() => setFilters({ ...filters, categoryId: c.id })}
           >
             <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
-            <Text style={styles.filterChipText}>{c.name}</Text>
+            <Text style={[styles.filterChipText, filters.categoryId === c.id && styles.filterChipTextActive]}>{c.name}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -954,7 +954,7 @@ export function ObjectsScreen({ navigation }: Props) {
                           style={[styles.categoryChip, !selectedObject?.categoryId && styles.categoryChipActive]}
                           onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: null } as any)}
                         >
-                          <Text style={styles.categoryChipText}>None</Text>
+                          <Text style={[styles.categoryChipText, !selectedObject?.categoryId && styles.categoryChipTextActive]}>None</Text>
                         </TouchableOpacity>
                         {categories.map((c) => (
                           <TouchableOpacity
@@ -963,7 +963,7 @@ export function ObjectsScreen({ navigation }: Props) {
                             onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: c.id } as any)}
                           >
                             <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
-                            <Text style={styles.categoryChipText}>{c.name}</Text>
+                            <Text style={[styles.categoryChipText, selectedObject?.categoryId === c.id && styles.categoryChipTextActive]}>{c.name}</Text>
                           </TouchableOpacity>
                         ))}
                       </ScrollView>
@@ -1725,6 +1725,9 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontWeight: '500',
   },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
 
   // Category picker (in detail modal)
   categoryPickerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 0 },
@@ -1744,6 +1747,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   categoryChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  categoryChipTextActive: { color: '#FFFFFF' },
   swatchSm: { width: 10, height: 10, borderRadius: 5 },
 
   // Status picker

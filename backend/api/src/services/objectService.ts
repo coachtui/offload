@@ -177,7 +177,10 @@ export async function listObjects(
       });
 
       const objectIds = searchResults.map((r) => r.objectId);
-      const objects = await AtomicObjectModel.findByIds(objectIds);
+      const allObjects = await AtomicObjectModel.findByIds(objectIds);
+      const objects = options.categoryId
+        ? allObjects.filter((obj) => obj.categoryId === options.categoryId)
+        : allObjects;
 
       return {
         objects: objects.map((obj) => obj.toAtomicObject()),

@@ -208,6 +208,7 @@ export interface SemanticSearchOptions {
   objectType?: string[];
   domain?: string[];
   category?: string[];
+  // NOTE: categoryId is a PostgreSQL-only FK; Weaviate has no field for it. Filtering by category on the search path is done by post-filtering results in objectService.listObjects.
   categoryId?: string;
   urgency?: 'low' | 'medium' | 'high';
   isActionable?: boolean;
