@@ -57,6 +57,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null); // objectId being actioned
   const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null); // objectId for snooze modal
+  const [editLoading, setEditLoading] = useState(false);
 
   // ─── Load objects ───────────────────────────────────────────────────────────
 
@@ -148,6 +149,36 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     );
   };
 
+  // ─── Edit reminder settings ─────────────────────────────────────────────────
+
+  const handleEditReminderSettings = async () => {
+    if (editLoading || !geofenceId) return;
+    setEditLoading(true);
+    try {
+      const { geofences } = await apiService.getGeofences();
+      const g = geofences.find((x) => x.id === geofenceId);
+      if (g) {
+        navigation.navigate('EditGeofence', {
+          geofenceId: g.id,
+          geofenceName: g.name,
+          type: g.type,
+          radius: g.radius,
+          notifyOnEnter: g.notifyOnEnter,
+          notifyOnExit: g.notifyOnExit,
+          quietHoursStart: g.quietHoursStart,
+          quietHoursEnd: g.quietHoursEnd,
+          location: g.location,
+        });
+      } else {
+        Alert.alert('Could not open reminder settings', 'Please try again.');
+      }
+    } catch {
+      Alert.alert('Could not open reminder settings', 'Please try again.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   const renderObject = ({ item }: { item: AtomicObject }) => {
@@ -233,6 +264,24 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
         </View>
         <Ionicons name="location" size={20} color="#3b82f6" style={{ marginRight: 4 }} />
       </View>
+
+      {/* Edit reminder settings — only for saved geofences */}
+      {geofenceId ? (
+        <TouchableOpacity
+          style={styles.editReminderRow}
+          onPress={handleEditReminderSettings}
+          disabled={editLoading}
+        >
+          {editLoading ? (
+            <ActivityIndicator size="small" color="#3b82f6" />
+          ) : (
+            <>
+              <Ionicons name="settings-outline" size={16} color="#3b82f6" />
+              <Text style={styles.editReminderText}>Edit reminder settings</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      ) : null}
 
       {/* Content */}
       {loading ? (
@@ -435,5 +484,19 @@ const styles = StyleSheet.create({
   snoozeCancelText: {
     fontSize: 15,
     color: '#64748b',
+  },
+  editReminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  editReminderText: {
+    fontSize: 13,
+    color: '#3b82f6',
+    fontWeight: '500',
   },
 });

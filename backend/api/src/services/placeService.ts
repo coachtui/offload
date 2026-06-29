@@ -330,6 +330,46 @@ export async function unlinkPlaceObject(
   await PlaceModel.removeLink(placeId, objectId);
 }
 
+// ─── Place promotion ──────────────────────────────────────────────────────────
+
+/**
+ * Promote a detected (inferred) place into a manual geofence reminder.
+ * Creates the geofence at the place's location with smart defaults, migrates
+ * the place's active note links onto it, and deactivates the original links so
+ * the place stops appearing as a separate "detected" row in the overview.
+ */
+export async function promotePlaceToGeofence(
+  userId: string,
+  placeId: string
+): Promise<GeofenceModel> {
+  const place = await PlaceModel.findById(placeId);
+  if (!place || place.userId !== userId) {
+    const err: any = new Error('Place not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const existingManual = (await GeofenceModel.findByUserAndName(userId, place.normalizedName))
+    .find(g => g.createdBy === 'manual');
+  const geofence = existingManual ?? await GeofenceModel.create(userId, {
+    name: place.normalizedName,
+    center: { latitude: place.lat, longitude: place.lng },
+    radius: 200,
+    type: 'custom',
+    notificationSettings: { enabled: true, onEnter: true, onExit: false },
+    placeId,
+    createdBy: 'manual',
+  });
+
+  const objectIds = await PlaceModel.getActiveLinkObjectIds(placeId);
+  for (const objectId of objectIds) {
+    await GeofenceModel.addLinkedObject(geofence.id, objectId);
+    await PlaceModel.setLinkInactive(placeId, objectId);
+  }
+
+  return geofence;
+}
+
 async function verifyPlaceOwnership(userId: string, placeId: string): Promise<void> {
   const place = await PlaceModel.findById(placeId);
   if (!place) throw Object.assign(new Error('Place not found'), { status: 404 });

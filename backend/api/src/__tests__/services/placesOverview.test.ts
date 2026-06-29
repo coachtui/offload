@@ -11,8 +11,8 @@ describe('getPlacesOverview', () => {
     // First query: labeled geofences with open counts
     mockQueries.queryMany
       .mockResolvedValueOnce([
-        { id: 'g-home', name: 'Home', open_count: '2' },
-        { id: 'g-gym', name: 'Gym', open_count: '0' },
+        { id: 'g-home', name: 'Home', open_count: '2', notification_enabled: true },
+        { id: 'g-gym', name: 'Gym', open_count: '0', notification_enabled: false },
       ] as any)
       // Second query: inferred places with open_count >= 1
       .mockResolvedValueOnce([
@@ -22,9 +22,9 @@ describe('getPlacesOverview', () => {
     const result = await getPlacesOverview('u1');
 
     expect(result).toEqual([
-      { kind: 'geofence', id: 'g-home', name: 'Home', openCount: 2, labeled: true },
-      { kind: 'geofence', id: 'g-gym', name: 'Gym', openCount: 0, labeled: true },
-      { kind: 'place', id: 'p-ramen', name: 'Ramen Shop', openCount: 1, labeled: false },
+      { kind: 'geofence', id: 'g-home', name: 'Home', openCount: 2, labeled: true, enabled: true },
+      { kind: 'geofence', id: 'g-gym', name: 'Gym', openCount: 0, labeled: true, enabled: false },
+      { kind: 'place', id: 'p-ramen', name: 'Ramen Shop', openCount: 1, labeled: false, enabled: false },
     ]);
   });
 });
