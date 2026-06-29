@@ -11,6 +11,7 @@ import {
   updateObject,
   deleteObject,
   findSimilarObjects,
+  bulkDeleteObjects,
 } from '../services/objectService';
 import { authenticate } from '../auth/middleware';
 import { z } from 'zod';
@@ -228,6 +229,40 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to create object',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/objects/bulk
+ * Bulk operations on multiple objects.
+ * Body: { ids: string[], action: 'delete' }
+ */
+router.post('/bulk', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+    }
+
+    const { ids, action } = req.body as { ids?: string[]; action?: string };
+
+    if (!Array.isArray(ids)) {
+      return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'ids must be an array' });
+    }
+
+    if (action === 'delete') {
+      const result = await bulkDeleteObjects(req.user.id, ids);
+      return res.json(result);
+    }
+
+    return res.status(400).json({
+      error: 'VALIDATION_ERROR',
+      message: `Unsupported action: ${action}`,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Bulk operation failed',
     });
   }
 });
