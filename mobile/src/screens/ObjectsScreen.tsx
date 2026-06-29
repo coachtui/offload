@@ -198,7 +198,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const {
     objects, isLoading, isRefreshing, error, hasMore,
     object: selectedObject, isLoadingDetail, isUpdating, updateError,
-    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects, bulkMoveObjects,
+    filters, refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects, bulkMoveObjects,
   } = useObjects();
 
   const { categories } = useCategories();
@@ -355,6 +355,35 @@ export function ObjectsScreen({ navigation }: Props) {
     clearResults();
     setFilters({});
   }, [setFilters, clearResults]);
+
+  const renderCategoryChips = useCallback(() => {
+    if (categories.length === 0) return null;
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterChipsRow}
+        contentContainerStyle={styles.filterChipsContent}
+      >
+        <TouchableOpacity
+          style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
+          onPress={() => setFilters({ ...filters, categoryId: undefined })}
+        >
+          <Text style={styles.filterChipText}>All</Text>
+        </TouchableOpacity>
+        {categories.map((c) => (
+          <TouchableOpacity
+            key={c.id}
+            style={[styles.filterChip, filters.categoryId === c.id && styles.filterChipActive]}
+            onPress={() => setFilters({ ...filters, categoryId: c.id })}
+          >
+            <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+            <Text style={styles.filterChipText}>{c.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
+  }, [categories, filters, setFilters]);
 
   // ─── Modal / detail actions ───────────────────────────────────────────────
 
@@ -1019,7 +1048,7 @@ export function ObjectsScreen({ navigation }: Props) {
         right={
           <View style={styles.headerRight}>
             <TouchableOpacity onPress={() => navigation.navigate('Categories')}>
-              <Ionicons name="pricetags-outline" size={22} color="#111827" />
+              <Ionicons name="pricetags-outline" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => selectionMode ? exitSelection() : setSelectionMode(true)}>
               <Text style={styles.headerActionText}>{selectionMode ? 'Cancel' : 'Select'}</Text>
@@ -1039,6 +1068,7 @@ export function ObjectsScreen({ navigation }: Props) {
       </View>
 
       {renderPrimaryFilters()}
+      {renderCategoryChips()}
       {renderGeofenceContext()}
       {renderDashboardCard()}
       {renderStaleBanner()}
@@ -1661,6 +1691,40 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   selectionDeleteText: { color: '#fff', fontWeight: '600' },
+
+  // Category filter chips (list screen)
+  filterChipsRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.bg,
+  },
+  filterChipsContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    gap: 5,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
 
   // Category picker (in detail modal)
   categoryPickerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 0 },

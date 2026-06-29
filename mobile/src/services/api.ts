@@ -400,6 +400,7 @@ class ApiService {
     offset?: number;
     domain?: string[];
     objectType?: string[];
+    categoryId?: string;
     dateFrom?: string;
     dateTo?: string;
   } = {}): Promise<ObjectsListResponse> {
@@ -412,6 +413,7 @@ class ApiService {
     if (options.objectType) {
       options.objectType.forEach(t => params.append('objectType', t));
     }
+    if (options.categoryId) params.append('categoryId', options.categoryId);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
 

@@ -84,6 +84,7 @@ export interface ListObjectsOptions {
   category?: Category[];
   domain?: string[];
   objectType?: string[];
+  categoryId?: string;
   dateFrom?: Date;
   dateTo?: Date;
   search?: string;
@@ -170,6 +171,7 @@ export async function listObjects(
         category: options.category,
         domain: options.domain,
         objectType: options.objectType,
+        categoryId: options.categoryId,
         dateFrom: options.dateFrom,
         dateTo: options.dateTo,
       });
@@ -193,6 +195,7 @@ export async function listObjects(
     category: options.category,
     domain: options.domain,
     objectType: options.objectType,
+    categoryId: options.categoryId,
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     limit,

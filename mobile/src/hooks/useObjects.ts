@@ -14,6 +14,7 @@ interface ObjectsState {
 interface ObjectFilters {
   domain?: string[];
   objectType?: string[];
+  categoryId?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -70,6 +71,7 @@ export function useObjects(): UseObjectsReturn {
         offset: 0,
         domain: filters.domain,
         objectType: filters.objectType,
+        categoryId: filters.categoryId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });
@@ -104,6 +106,7 @@ export function useObjects(): UseObjectsReturn {
         offset,
         domain: filters.domain,
         objectType: filters.objectType,
+        categoryId: filters.categoryId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });

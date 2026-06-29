@@ -208,6 +208,7 @@ export interface SemanticSearchOptions {
   objectType?: string[];
   domain?: string[];
   category?: string[];
+  categoryId?: string;
   urgency?: 'low' | 'medium' | 'high';
   isActionable?: boolean;
   dateFrom?: Date;

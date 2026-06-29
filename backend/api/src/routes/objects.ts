@@ -54,6 +54,8 @@ router.get('/', async (req: Request, res: Response) => {
           : [req.query.objectType]) as string[]
       : undefined;
 
+    const categoryId = req.query.categoryId as string | undefined;
+
     const dateFrom = req.query.dateFrom
       ? new Date(req.query.dateFrom as string)
       : undefined;
@@ -72,6 +74,7 @@ router.get('/', async (req: Request, res: Response) => {
       category: category as any,
       domain,
       objectType,
+      categoryId,
       dateFrom,
       dateTo,
       search: req.query.search as string,
