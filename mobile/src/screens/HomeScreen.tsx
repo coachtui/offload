@@ -34,14 +34,6 @@ const NAV_ITEMS = [
     iconBg: '#EEF2FF',
   },
   {
-    icon: 'notifications-outline' as const,
-    label: 'Place reminders',
-    description: 'Get notified when you arrive somewhere',
-    route: 'Reminders' as const,
-    iconColor: '#0284C7',
-    iconBg: '#E0F2FE',
-  },
-  {
     icon: 'bar-chart-outline' as const,
     label: 'Insights',
     description: 'Patterns across your notes',
@@ -52,7 +44,7 @@ const NAV_ITEMS = [
   {
     icon: 'location-outline' as const,
     label: 'Places',
-    description: 'Your notes grouped by location',
+    description: 'Your places, notes, and arrival reminders',
     route: 'Places' as const,
     iconColor: '#7C3AED',
     iconBg: '#F3E8FF',
