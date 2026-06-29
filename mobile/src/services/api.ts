@@ -23,6 +23,8 @@ export interface WeeklySynthesis {
   periodEnd: string;
   objectCount: number;
   domainBreakdown: Record<string, number>;
+  accomplished?: string[];
+  accomplishedCount?: number;
   narrative: string;           // paragraphs separated by \n\n
   patterns: string[];
   openThreads: string[];

@@ -232,6 +232,13 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
                 ))}
             </Section>
 
+            {/* Accomplished */}
+            {synthesis.accomplished && synthesis.accomplished.length > 0 && (
+              <Section title="Accomplished" icon="🏆">
+                <BulletList items={synthesis.accomplished} color="#22c55e" />
+              </Section>
+            )}
+
             {/* Patterns */}
             {synthesis.patterns.length > 0 && (
               <Section title="Patterns" icon="🔁">
