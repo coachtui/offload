@@ -154,12 +154,27 @@ class LocationService {
 
     try {
       console.log('[Privacy] Getting current location (one-time access)');
-      const location = await Location.getCurrentPositionAsync({
+      // getCurrentPositionAsync can hang indefinitely when the device can't get a
+      // fix (indoors, weak GPS) — a hang is not an error, so the catch never runs.
+      // Cap it so it can never block the caller (e.g. the record button, which
+      // awaits this before it can start recording). On timeout, fall back to the
+      // last known position; location is optional for recording either way.
+      const fresh = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced, // Balance accuracy vs battery
-      });
+      }).catch(() => null); // swallow late rejection so Promise.race loser is safe
 
-      console.log('[Privacy] Location obtained - not stored');
-      return location;
+      const timeout = new Promise<null>(resolve =>
+        setTimeout(() => resolve(null), 5000)
+      );
+
+      const location = await Promise.race([fresh, timeout]);
+      if (location) {
+        console.log('[Privacy] Location obtained - not stored');
+        return location;
+      }
+
+      console.warn('[Privacy] getCurrentPosition timed out — using last known position');
+      return await Location.getLastKnownPositionAsync().catch(() => null);
     } catch (error) {
       console.error('[Privacy] Error getting location:', error);
       return null;
