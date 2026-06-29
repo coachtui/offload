@@ -197,7 +197,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const {
     objects, isLoading, isRefreshing, error, hasMore,
     object: selectedObject, isLoadingDetail, isUpdating, updateError,
-    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail,
+    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject,
   } = useObjects();
 
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
@@ -370,6 +370,31 @@ export function ObjectsScreen({ navigation }: Props) {
       handleStatusChange(selectedObject.id, 'resolved');
     }
   }, [selectedObject, handleStatusChange]);
+
+  const handleDeleteNote = useCallback(
+    (objectId: string) => {
+      Alert.alert(
+        'Delete note?',
+        "This note will be removed. You can't undo this from the app.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const ok = await deleteObject(objectId);
+              if (ok) {
+                handleCloseModal();
+              } else {
+                Alert.alert("Couldn't delete", 'Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    },
+    [deleteObject, handleCloseModal]
+  );
 
   // ─── Renders: list screen ─────────────────────────────────────────────────
 
@@ -813,6 +838,14 @@ export function ObjectsScreen({ navigation }: Props) {
                       label="Edit"
                       onPress={handleEditPress}
                     />
+                    <TouchableOpacity
+                      style={styles.quickAction}
+                      onPress={() => selectedObject && handleDeleteNote(selectedObject.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                      <Text style={[styles.quickActionLabel, { color: '#ef4444' }]}>Delete</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* ··· Details toggle */}
