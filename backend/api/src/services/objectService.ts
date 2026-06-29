@@ -219,13 +219,19 @@ export async function updateObject(
     confidence: number;
     metadata: Partial<AtomicObjectModel['metadata']>;
     relationships: Partial<AtomicObjectModel['relationships']>;
+    categoryId: string | null;
   }>
 ): Promise<AtomicObject> {
   const object = await AtomicObjectModel.findById(objectId);
   if (!object) throw new Error('Object not found');
   if (object.userId !== userId) throw new Error('Unauthorized');
 
-  const updated = await object.update(updates);
+  const modelUpdates: any = { ...updates };
+  if (updates.categoryId !== undefined) {
+    modelUpdates.categoryId = updates.categoryId;
+    modelUpdates.categoryLocked = true;
+  }
+  const updated = await object.update(modelUpdates);
   const atomicObject = updated.toAtomicObject();
 
   try {
@@ -277,6 +283,25 @@ export async function findSimilarObjects(
     console.error('[objectService] Failed to find similar objects:', error);
     throw new Error('Failed to find similar objects');
   }
+}
+
+/**
+ * Bulk move: assign a category (or null) to the user's own objects and lock them
+ * so keyword rules won't override the manual choice.
+ */
+export async function bulkMoveObjects(
+  userId: string,
+  ids: string[],
+  categoryId: string | null
+): Promise<{ moved: number }> {
+  if (!ids || ids.length === 0) return { moved: 0 };
+  const result = await query(
+    `UPDATE hub.atomic_objects
+     SET category_id = $1, category_locked = true
+     WHERE user_id = $2 AND id = ANY($3) AND deleted_at IS NULL`,
+    [categoryId, userId, ids]
+  );
+  return { moved: result.rowCount ?? 0 };
 }
 
 /**

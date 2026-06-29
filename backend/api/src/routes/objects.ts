@@ -12,6 +12,7 @@ import {
   deleteObject,
   findSimilarObjects,
   bulkDeleteObjects,
+  bulkMoveObjects,
 } from '../services/objectService';
 import { authenticate } from '../auth/middleware';
 import { z } from 'zod';
@@ -252,6 +253,12 @@ router.post('/bulk', async (req: Request, res: Response) => {
 
     if (action === 'delete') {
       const result = await bulkDeleteObjects(req.user.id, ids);
+      return res.json(result);
+    }
+
+    if (action === 'move') {
+      const { categoryId } = req.body as { categoryId?: string | null };
+      const result = await bulkMoveObjects(req.user.id, ids, categoryId ?? null);
       return res.json(result);
     }
 

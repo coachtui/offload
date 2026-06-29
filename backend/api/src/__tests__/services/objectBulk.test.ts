@@ -1,4 +1,4 @@
-import { bulkDeleteObjects } from '../../services/objectService';
+import { bulkDeleteObjects, bulkMoveObjects } from '../../services/objectService';
 import * as queries from '../../db/queries';
 
 jest.mock('../../db/queries');
@@ -26,5 +26,26 @@ describe('bulkDeleteObjects', () => {
     const result = await bulkDeleteObjects('u1', []);
     expect(result).toEqual({ deleted: 0 });
     expect(mockQueries.query).not.toHaveBeenCalled();
+  });
+});
+
+describe('bulkMoveObjects', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sets category_id and locks the rows, returns moved count', async () => {
+    (queries.query as jest.Mock).mockResolvedValueOnce({ rowCount: 2, rows: [] } as any);
+    const result = await bulkMoveObjects('u1', ['a', 'b'], 'cat1');
+    expect(result).toEqual({ moved: 2 });
+    const [sql, params] = (queries.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/SET category_id = \$1, category_locked = true/i);
+    expect(sql).toMatch(/user_id = \$2/);
+    expect(sql).toMatch(/id = ANY\(\$3\)/);
+    expect(params).toEqual(['cat1', 'u1', ['a', 'b']]);
+  });
+
+  it('returns moved: 0 for an empty id list without querying', async () => {
+    const result = await bulkMoveObjects('u1', [], 'cat1');
+    expect(result).toEqual({ moved: 0 });
+    expect(queries.query).not.toHaveBeenCalled();
   });
 });
