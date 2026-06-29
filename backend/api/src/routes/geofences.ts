@@ -9,6 +9,7 @@ import {
   listGeofences,
   checkLocation,
   getGeofenceObjects,
+  getGeofenceNotifyPayload,
   setGeofenceLinkedObjects,
   addGeofenceLinkedObject,
   removeGeofenceLinkedObject,
@@ -75,6 +76,45 @@ router.get('/:id/objects', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to get geofence objects',
+    });
+  }
+});
+
+/**
+ * POST /api/v1/geofences/:id/notify
+ * Called by the mobile geofence monitoring background task on manual-geofence entry.
+ * Checks the re-fire cooldown and returns open linked objects (empty if cooling down).
+ */
+router.post('/:id/notify', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const payload = await getGeofenceNotifyPayload(req.user.id, req.params.id);
+
+    if (!payload) {
+      // In cooldown — mobile should suppress the notification
+      res.json({ cooldown: true, objects: [], geofenceName: null });
+      return;
+    }
+
+    res.json({ cooldown: false, objects: payload.objects, geofenceName: payload.geofenceName });
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'Geofence not found') {
+        res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+        return;
+      }
+      if (error.message === 'Unauthorized') {
+        res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+        return;
+      }
+    }
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get geofence notify payload',
     });
   }
 });
@@ -279,7 +319,7 @@ router.post('/check', async (req: Request, res: Response) => {
     });
 
     const { location } = locationSchema.parse(req.body);
-    const result = await checkLocation(req.user.id, location);
+    const result = await checkLocation(req.user.id, location as any);
     res.json(result);
   } catch (error) {
     if (error instanceof z.ZodError) {
