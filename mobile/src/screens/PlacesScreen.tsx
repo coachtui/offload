@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, SectionList, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, SectionList, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -31,6 +31,26 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     { title: 'Your places', data: items.filter((i) => i.labeled) },
     { title: 'Detected places', data: items.filter((i) => !i.labeled) },
   ].filter((s) => s.data.length > 0);
+
+  const toggleBell = async (item: PlaceOverviewItem) => {
+    const prev = items;
+    try {
+      if (item.kind === 'geofence') {
+        const next = !item.enabled;
+        setItems((cur) => cur.map((i) =>
+          i.kind === item.kind && i.id === item.id ? { ...i, enabled: next } : i));
+        await apiService.setGeofenceEnabled(item.id, next);
+      } else {
+        // detected place → promote to a reminder
+        await apiService.promotePlace(item.id);
+      }
+      await load();
+    } catch (e) {
+      console.warn('[PlacesScreen] toggle failed', e);
+      setItems(prev); // rollback
+      Alert.alert('Could not update reminder', 'Please try again.');
+    }
+  };
 
   const openPlace = (item: PlaceOverviewItem) => {
     navigation.navigate('PlaceSummary',
@@ -70,19 +90,34 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
         renderSectionHeader={({ section }) => (
           <Text style={styles.sectionHeader}>{section.title}</Text>
         )}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.card} onPress={() => openPlace(item)} activeOpacity={0.7}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.count}>{item.openCount} {item.openCount === 1 ? 'note' : 'notes'}</Text>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const bellOn = item.kind === 'geofence' && item.enabled;
+          return (
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.cardMain} onPress={() => openPlace(item)} activeOpacity={0.7}>
+                <Text style={styles.name}>{item.name}</Text>
+                <Text style={styles.count}>
+                  {item.openCount} {item.openCount === 1 ? 'note' : 'notes'}
+                  {item.kind === 'place' ? ' · detected' : ''}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => toggleBell(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons
+                  name={bellOn ? 'notifications' : 'notifications-off-outline'}
+                  size={22}
+                  color={bellOn ? '#0284C7' : '#9CA3AF'}
+                />
+              </TouchableOpacity>
+            </View>
+          );
+        }}
         ListEmptyComponent={
-          <Text style={styles.empty}>No places yet. Create one under "Place reminders."</Text>
+          <Text style={styles.empty}>No places yet. Tap "+ Add a place" to create one.</Text>
         }
         contentContainerStyle={{ padding: 16 }}
       />
-      <TouchableOpacity style={styles.manage} onPress={() => navigation.navigate('Reminders')}>
-        <Text style={styles.manageText}>Manage / add a place</Text>
+      <TouchableOpacity style={styles.manage} onPress={() => navigation.navigate('CreateGeofence')}>
+        <Text style={styles.manageText}>+ Add a place</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -112,6 +147,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: { color: '#6B7280', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
   card: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardMain: { flex: 1, marginRight: 12 },
   name: { color: '#111827', fontSize: 16, fontWeight: '600' },
   count: { color: '#6B7280', fontSize: 13 },
   empty: { color: '#6B7280', textAlign: 'center', marginTop: 40 },
