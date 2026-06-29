@@ -5,6 +5,7 @@ import {
   RegisterRequest,
   VoiceSession,
   AtomicObject,
+  UserCategory,
 } from '../types';
 
 // Synthesis types
@@ -442,6 +443,39 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ ids, action: 'delete' }),
     });
+  }
+
+  async bulkMoveObjects(ids: string[], categoryId: string | null): Promise<{ moved: number }> {
+    return this.request<{ moved: number }>(`/api/v1/objects/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, action: 'move', categoryId }),
+    });
+  }
+
+  async getCategories(): Promise<{ categories: UserCategory[] }> {
+    return this.request<{ categories: UserCategory[] }>(`/api/v1/categories`);
+  }
+
+  async createCategory(input: {
+    name: string; color?: string; icon?: string | null; keywords?: string[];
+  }): Promise<{ category: UserCategory }> {
+    return this.request<{ category: UserCategory }>(`/api/v1/categories`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  async updateCategory(id: string, updates: Partial<{
+    name: string; color: string; icon: string | null; keywords: string[]; sortOrder: number;
+  }>): Promise<{ category: UserCategory }> {
+    return this.request<{ category: UserCategory }>(`/api/v1/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteCategory(id: string): Promise<void> {
+    await this.request<void>(`/api/v1/categories/${id}`, { method: 'DELETE' });
   }
 
   async getStaleActionables(): Promise<{ objects: AtomicObject[] }> {

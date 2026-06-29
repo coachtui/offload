@@ -158,6 +158,18 @@ export interface TranscriptionPayload {
   chunkIndex?: number;
 }
 
+export interface UserCategory {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  keywords: string[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // API Response Types
 
 export interface ApiResponse<T> {
