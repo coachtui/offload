@@ -35,6 +35,8 @@ export interface WeeklySynthesis {
   periodEnd: string;
   objectCount: number;
   domainBreakdown: Record<string, number>;
+  accomplished: string[];      // notes resolved during the period (deterministic, from DB)
+  accomplishedCount: number;
   narrative: string;           // paragraphs separated by \n\n
   patterns: string[];
   openThreads: string[];
@@ -62,6 +64,7 @@ function buildCorpus(objects: AtomicObject[]): { corpus: string; refsIndex: Refs
     const action = obj.actionability?.isActionable && obj.actionability.nextAction
       ? ` [Next: ${obj.actionability.nextAction.slice(0, 80)}]`
       : '';
+    const status = (obj.state === 'resolved' || obj.state === 'archived') ? ' [DONE]' : '';
     refsIndex.push({
       refNum,
       id: obj.id,
@@ -69,7 +72,7 @@ function buildCorpus(objects: AtomicObject[]): { corpus: string; refsIndex: Refs
       objectType: type,
       domain,
     });
-    return `[${date}] ${type}/${domain} — ${titleStr}${text}${action} [ref_${refNum}]`;
+    return `[${date}] ${type}/${domain} — ${titleStr}${text}${action}${status} [ref_${refNum}]`;
   });
 
   return { corpus: lines.join('\n'), refsIndex };
@@ -98,10 +101,11 @@ RULES:
 3. Surface unresolved threads — open questions, pending decisions
 4. Identify genuine contradictions — changed positions, conflicting plans
 5. Extract concrete next actions from actionable items
-6. Write in second person ("You've been thinking about...", "You mentioned...")
-7. If there's not enough data, say so honestly — do not pad with generic advice
-8. In the narrative, separate each paragraph with a blank line (\\n\\n)
-9. Do NOT include inline citation markers like [1] or [ref_N] in the narrative text — write naturally, as if speaking directly to the person. Attribution is handled separately via cited_refs.
+6. Notes tagged [DONE] are already resolved — treat them as completed work, never as open threads.
+7. Write in second person ("You've been thinking about...", "You mentioned...")
+8. If there's not enough data, say so honestly — do not pad with generic advice
+9. In the narrative, separate each paragraph with a blank line (\\n\\n)
+10. Do NOT include inline citation markers like [1] or [ref_N] in the narrative text — write naturally, as if speaking directly to the person. Attribution is handled separately via cited_refs.
 
 RETURN valid JSON with this exact structure:
 {
@@ -291,6 +295,14 @@ Generate a weekly synthesis.`;
   const rawResponse = await callLLM(userMessage);
   const parsed = parseLLMResponse(rawResponse, refsIndex);
 
+  // Deterministic "Accomplished" — what the user actually resolved during the period,
+  // by resolution time (state_updated_at), independent of the created-this-week corpus.
+  const resolvedModels = await AtomicObjectModel.findResolvedInPeriod(userId, periodStart, periodEnd);
+  const accomplished = resolvedModels
+    .map((m) => m.toAtomicObject())
+    .map((o) => o.title || (o.cleanedText ?? o.content).slice(0, 80))
+    .filter(Boolean);
+
   const synthesis: WeeklySynthesis = {
     sessionId: '', // filled after save
     generatedAt: periodEnd.toISOString(),
@@ -298,6 +310,8 @@ Generate a weekly synthesis.`;
     periodEnd: periodEnd.toISOString(),
     objectCount: corpus.length,
     domainBreakdown: breakdown,
+    accomplished,
+    accomplishedCount: accomplished.length,
     ...parsed,
   };
 
