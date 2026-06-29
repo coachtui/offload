@@ -77,6 +77,7 @@ import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesi
 // API routes
 import authRoutes from './routes/auth';
 import objectRoutes from './routes/objects';
+import categoryRoutes from './routes/categories';
 import geofenceRoutes from './routes/geofences';
 import voiceRoutes from './routes/voice';
 import ragRoutes from './routes/rag';
@@ -88,6 +89,7 @@ import diagnosticsRoutes from './routes/diagnostics';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
+app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/geofences', geofenceRoutes);
 app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/rag', ragRoutes);
@@ -105,6 +107,7 @@ app.get('/api/v1', (req, res) => {
       health: '/health',
       auth: '/api/v1/auth',
       objects: '/api/v1/objects',
+      categories: '/api/v1/categories',
       geofences: '/api/v1/geofences',
       voice: '/api/v1/voice',
       rag: '/api/v1/rag',
