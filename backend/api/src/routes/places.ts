@@ -5,6 +5,7 @@
  * GET    /api/v1/places/overview                     — merged geofences + places overview
  * GET    /api/v1/places/:id/objects                  — get active linked objects
  * POST   /api/v1/places/:id/notify                   — check cooldown + return objects (called on geofence enter)
+ * POST   /api/v1/places/:id/promote                  — promote a detected place to a manual geofence reminder (migrates notes)
  * POST   /api/v1/places/:placeId/objects/:objectId/done     — mark done
  * POST   /api/v1/places/:placeId/objects/:objectId/dismiss  — dismiss for current visit
  * POST   /api/v1/places/:placeId/objects/:objectId/snooze   — snooze with { until: ISO string }

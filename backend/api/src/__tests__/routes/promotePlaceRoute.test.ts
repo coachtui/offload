@@ -35,4 +35,12 @@ describe('POST /api/v1/places/:id/promote', () => {
     const res = await request(appWithUser(null)).post('/api/v1/places/pl-1/promote');
     expect(res.status).toBe(401);
   });
+
+  it('forwards service error status (e.g. 404 Place not found)', async () => {
+    mockSvc.promotePlaceToGeofence.mockRejectedValue(
+      Object.assign(new Error('Place not found'), { status: 404 })
+    );
+    const res = await request(appWithUser('u-1')).post('/api/v1/places/pl-1/promote');
+    expect(res.status).toBe(404);
+  });
 });

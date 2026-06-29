@@ -259,6 +259,25 @@ export class PlaceModel {
   }
 
   /**
+   * Get active linked object IDs using the same filter as the overview open_count.
+   * Unlike getLinkedObjectIds, snoozed and dismissed links are included so
+   * promotePlaceToGeofence migrates every link that keeps the place visible.
+   */
+  static async getActiveLinkObjectIds(placeId: string): Promise<string[]> {
+    const rows = await queryMany<{ object_id: string }>(
+      `SELECT opl.object_id
+       FROM hub.object_place_links opl
+       JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+       WHERE opl.place_id = $1
+         AND opl.active = true
+         AND ao.deleted_at IS NULL
+         AND ao.state IN ('open','active')`,
+      [placeId]
+    );
+    return rows.map(r => r.object_id);
+  }
+
+  /**
    * Set a link as inactive (Done action)
    */
   static async setLinkInactive(placeId: string, objectId: string): Promise<void> {

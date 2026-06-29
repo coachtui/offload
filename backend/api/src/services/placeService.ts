@@ -349,7 +349,9 @@ export async function promotePlaceToGeofence(
     throw err;
   }
 
-  const geofence = await GeofenceModel.create(userId, {
+  const existingManual = (await GeofenceModel.findByUserAndName(userId, place.normalizedName))
+    .find(g => g.createdBy === 'manual');
+  const geofence = existingManual ?? await GeofenceModel.create(userId, {
     name: place.normalizedName,
     center: { latitude: place.lat, longitude: place.lng },
     radius: 200,
@@ -357,9 +359,9 @@ export async function promotePlaceToGeofence(
     notificationSettings: { enabled: true, onEnter: true, onExit: false },
     placeId,
     createdBy: 'manual',
-  } as any);
+  });
 
-  const objectIds = await PlaceModel.getLinkedObjectIds(placeId);
+  const objectIds = await PlaceModel.getActiveLinkObjectIds(placeId);
   for (const objectId of objectIds) {
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
     await PlaceModel.setLinkInactive(placeId, objectId);

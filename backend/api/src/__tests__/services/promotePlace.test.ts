@@ -18,7 +18,8 @@ describe('promotePlaceToGeofence', () => {
       id: PLACE_ID, userId: USER_ID, normalizedName: 'The Gym',
       lat: 1.23, lng: 4.56, radiusMeters: 150,
     } as any);
-    mockPlace.getLinkedObjectIds.mockResolvedValue(['obj-1', 'obj-2']);
+    mockPlace.getActiveLinkObjectIds.mockResolvedValue(['obj-1', 'obj-2']);
+    mockGeo.findByUserAndName.mockResolvedValue([]);
     mockGeo.create.mockResolvedValue({ id: 'gf-new' } as any);
     mockGeo.addLinkedObject.mockResolvedValue(undefined as any);
     mockPlace.setLinkInactive.mockResolvedValue(undefined as any);
@@ -43,6 +44,32 @@ describe('promotePlaceToGeofence', () => {
     expect(mockGeo.addLinkedObject).toHaveBeenCalledWith('gf-new', 'obj-2');
     expect(mockPlace.setLinkInactive).toHaveBeenCalledWith(PLACE_ID, 'obj-1');
     expect(mockPlace.setLinkInactive).toHaveBeenCalledWith(PLACE_ID, 'obj-2');
+  });
+
+  it('migrates snoozed-but-active notes (getActiveLinkObjectIds covers them)', async () => {
+    // Simulate a place with one normal note and one snoozed note.
+    // getActiveLinkObjectIds must return both; the old getLinkedObjectIds would
+    // have excluded 'obj-snoozed' — verify both are migrated and deactivated.
+    mockPlace.getActiveLinkObjectIds.mockResolvedValue(['obj-1', 'obj-snoozed']);
+    await promotePlaceToGeofence(USER_ID, PLACE_ID);
+    expect(mockGeo.addLinkedObject).toHaveBeenCalledWith('gf-new', 'obj-snoozed');
+    expect(mockPlace.setLinkInactive).toHaveBeenCalledWith(PLACE_ID, 'obj-snoozed');
+  });
+
+  it('reuses an existing manual geofence instead of creating a duplicate (idempotency)', async () => {
+    const existingGf = { id: 'gf-existing', createdBy: 'manual' } as any;
+    mockGeo.findByUserAndName.mockResolvedValue([existingGf]);
+    await promotePlaceToGeofence(USER_ID, PLACE_ID);
+    expect(mockGeo.create).not.toHaveBeenCalled();
+    expect(mockGeo.addLinkedObject).toHaveBeenCalledWith('gf-existing', 'obj-1');
+    expect(mockGeo.addLinkedObject).toHaveBeenCalledWith('gf-existing', 'obj-2');
+  });
+
+  it('creates a new geofence when the only name-match is inferred (not manual)', async () => {
+    const inferredGf = { id: 'gf-inferred', createdBy: 'inferred' } as any;
+    mockGeo.findByUserAndName.mockResolvedValue([inferredGf]);
+    await promotePlaceToGeofence(USER_ID, PLACE_ID);
+    expect(mockGeo.create).toHaveBeenCalled();
   });
 
   it('throws 404 when the place does not belong to the user', async () => {
