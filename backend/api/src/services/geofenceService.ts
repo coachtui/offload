@@ -261,6 +261,7 @@ export interface PlaceOverviewItem {
   name: string;
   openCount: number;
   labeled: boolean;
+  enabled: boolean;
 }
 
 /**
@@ -268,14 +269,14 @@ export interface PlaceOverviewItem {
  * inferred place that still has >=1 open note. Labeled first, then by open count.
  */
 export async function getPlacesOverview(userId: string): Promise<PlaceOverviewItem[]> {
-  const geofences = await queryMany<{ id: string; name: string; open_count: string }>(
-    `SELECT g.id, g.name,
+  const geofences = await queryMany<{ id: string; name: string; open_count: string; notification_enabled: boolean }>(
+    `SELECT g.id, g.name, g.notification_enabled,
             COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count
      FROM hub.geofences g
      LEFT JOIN hub.geofence_objects go ON go.geofence_id = g.id
      LEFT JOIN hub.atomic_objects ao ON ao.id = go.object_id
      WHERE g.user_id = $1 AND g.created_by = 'manual'
-     GROUP BY g.id, g.name
+     GROUP BY g.id, g.name, g.notification_enabled
      ORDER BY open_count DESC, g.created_at DESC`,
     [userId]
   );
@@ -297,10 +298,12 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
     ...geofences.map((g) => ({
       kind: 'geofence' as const, id: g.id, name: g.name,
       openCount: parseInt(g.open_count, 10), labeled: true,
+      enabled: g.notification_enabled,
     })),
     ...places.map((p) => ({
       kind: 'place' as const, id: p.id, name: p.name,
       openCount: parseInt(p.open_count, 10), labeled: false,
+      enabled: false,
     })),
   ];
 }
