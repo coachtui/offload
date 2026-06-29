@@ -107,6 +107,41 @@ export async function checkLocation(
   };
 }
 
+// Anti-spam window for manual geofences: one ping per visit, genuine later return re-fires (1 hour).
+const GEOFENCE_COOLDOWN_MS = 60 * 60 * 1000;
+
+/**
+ * Called when a manual geofence fires. Checks the re-fire cooldown, updates trigger
+ * state, and returns open linked objects. Returns null when in cooldown (suppress).
+ */
+export async function getGeofenceNotifyPayload(
+  userId: string,
+  geofenceId: string
+): Promise<{ objects: AtomicObject[]; geofenceName: string } | null> {
+  const geofence = await GeofenceModel.findById(geofenceId);
+  if (!geofence) throw new Error('Geofence not found');
+  if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  const now = new Date();
+
+  const state = await GeofenceModel.getTriggerState(userId, geofenceId);
+  if (state?.cooldownUntil && state.cooldownUntil > now) {
+    console.log(`[geofenceService] Geofence ${geofenceId} in cooldown until ${state.cooldownUntil.toISOString()}`);
+    return null;
+  }
+
+  const cooldownUntil = new Date(now.getTime() + GEOFENCE_COOLDOWN_MS);
+  await GeofenceModel.upsertTriggerState(userId, geofenceId, {
+    lastEnteredAt: now,
+    lastNotifiedAt: now,
+    cooldownUntil,
+    incrementVisit: true,
+  });
+
+  const objects = await getGeofenceObjects(userId, geofenceId, true);
+  return { objects, geofenceName: geofence.name };
+}
+
 /**
  * Get atomic objects explicitly linked to a geofence (join table only).
  *
