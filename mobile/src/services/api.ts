@@ -480,6 +480,10 @@ class ApiService {
     await this.request<void>(`/api/v1/categories/${id}`, { method: 'DELETE' });
   }
 
+  async applyCategory(id: string): Promise<{ filed: number }> {
+    return this.request<{ filed: number }>(`/api/v1/categories/${id}/apply`, { method: 'POST' });
+  }
+
   async getStaleActionables(): Promise<{ objects: AtomicObject[] }> {
     return this.request<{ objects: AtomicObject[] }>('/api/v1/objects/stale-actionables');
   }

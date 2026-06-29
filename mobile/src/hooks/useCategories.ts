@@ -37,7 +37,11 @@ export function useCategories() {
     setCategories((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
+  const applyCategory = useCallback(async (id: string) => {
+    return apiService.applyCategory(id);
+  }, []);
+
   useEffect(() => { refresh(); }, [refresh]);
 
-  return { categories, isLoading, error, refresh, createCategory, updateCategory, deleteCategory };
+  return { categories, isLoading, error, refresh, createCategory, updateCategory, deleteCategory, applyCategory };
 }
