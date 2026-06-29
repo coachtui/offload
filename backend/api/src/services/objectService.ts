@@ -18,6 +18,7 @@ import {
   type SemanticSearchResult,
 } from './vectorService';
 import { updateObjectRelationships } from './relationshipService';
+import { query } from '../db/queries';
 
 // Validation schema for createObject input
 export const createObjectSchema = z.object({
@@ -276,4 +277,21 @@ export async function findSimilarObjects(
     console.error('[objectService] Failed to find similar objects:', error);
     throw new Error('Failed to find similar objects');
   }
+}
+
+/**
+ * Bulk soft-delete: only affects the user's own, non-deleted objects.
+ */
+export async function bulkDeleteObjects(
+  userId: string,
+  ids: string[]
+): Promise<{ deleted: number }> {
+  if (!ids || ids.length === 0) return { deleted: 0 };
+  const result = await query(
+    `UPDATE hub.atomic_objects
+     SET deleted_at = NOW()
+     WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL`,
+    [userId, ids]
+  );
+  return { deleted: result.rowCount ?? 0 };
 }
