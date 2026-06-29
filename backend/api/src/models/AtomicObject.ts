@@ -526,6 +526,28 @@ export class AtomicObjectModel {
   }
 
   /**
+   * Objects the user resolved within [from, to] — by resolution time (state_updated_at),
+   * independent of when they were created. Powers the weekly recap "Accomplished" section.
+   */
+  static async findResolvedInPeriod(
+    userId: string,
+    from: Date,
+    to: Date
+  ): Promise<AtomicObjectModel[]> {
+    const rows = await queryMany<AtomicObjectRow>(
+      `SELECT * FROM hub.atomic_objects
+       WHERE user_id = $1
+         AND state = 'resolved'
+         AND state_updated_at >= $2
+         AND state_updated_at <= $3
+         AND deleted_at IS NULL
+       ORDER BY state_updated_at DESC`,
+      [userId, from, to]
+    );
+    return rows.map((row) => new AtomicObjectModel(row));
+  }
+
+  /**
    * Soft-delete: marks deleted_at, immediately excluded from all queries.
    * Hard delete + Weaviate purge happens via retention job after 30 days.
    */
