@@ -53,6 +53,8 @@ export interface AtomicObject {
     contradictions: string[]; // IDs of objects that contradict this
     references: string[]; // IDs of objects this references
   };
+  categoryId?: string | null;
+  categoryLocked?: boolean;
   createdAt: Date;
   updatedAt: Date;
   vectorEmbedding?: number[]; // Stored in vector DB

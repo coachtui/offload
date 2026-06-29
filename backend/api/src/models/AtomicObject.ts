@@ -61,6 +61,8 @@ export interface AtomicObjectRow {
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
+  category_id: string | null;
+  category_locked: boolean;
 }
 
 export class AtomicObjectModel {
@@ -102,6 +104,8 @@ export class AtomicObjectModel {
   state: 'open' | 'active' | 'resolved' | 'archived';
   stateUpdatedAt: Date | null;
   evolvedFromId: string | null;
+  categoryId: string | null;
+  categoryLocked: boolean;
   createdAt: Date;
   updatedAt: Date;
 
@@ -165,6 +169,8 @@ export class AtomicObjectModel {
     this.state = row.state ?? 'open';
     this.stateUpdatedAt = row.state_updated_at ?? null;
     this.evolvedFromId = row.evolved_from_id ?? null;
+    this.categoryId = row.category_id ?? null;
+    this.categoryLocked = row.category_locked ?? false;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
   }
@@ -207,6 +213,7 @@ export class AtomicObjectModel {
       objectType?: string[];
       dateFrom?: Date;
       dateTo?: Date;
+      categoryId?: string;
     }
   ): Promise<{ objects: AtomicObjectModel[]; total: number }> {
     let queryText = 'SELECT * FROM hub.atomic_objects WHERE user_id = $1 AND deleted_at IS NULL';
@@ -236,6 +243,11 @@ export class AtomicObjectModel {
     if (options?.dateTo) {
       queryText += ` AND created_at <= $${paramIndex++}`;
       params.push(options.dateTo);
+    }
+
+    if (options?.categoryId) {
+      queryText += ` AND category_id = $${paramIndex++}`;
+      params.push(options.categoryId);
     }
 
     const countQuery = queryText.replace('SELECT *', 'SELECT COUNT(*) as count');
@@ -338,6 +350,19 @@ export class AtomicObjectModel {
   }
 
   /**
+   * Assign a category via a keyword rule. No-op on rows the user has manually
+   * locked, so manual choices always win.
+   */
+  static async assignCategoryByRule(objectId: string, categoryId: string): Promise<void> {
+    await query(
+      `UPDATE hub.atomic_objects
+       SET category_id = $1
+       WHERE id = $2 AND category_locked = false AND deleted_at IS NULL`,
+      [categoryId, objectId]
+    );
+  }
+
+  /**
    * Update embedding status
    */
   static async updateEmbeddingStatus(
@@ -361,6 +386,8 @@ export class AtomicObjectModel {
       metadata: Partial<AtomicObjectModel['metadata']>;
       relationships: Partial<AtomicObjectModel['relationships']>;
       embeddingStatus: EmbeddingStatus;
+      categoryId: string | null;
+      categoryLocked: boolean;
     }>
   ): Promise<AtomicObjectModel> {
     const updatesList: string[] = [];
@@ -385,6 +412,16 @@ export class AtomicObjectModel {
     if (updates.embeddingStatus !== undefined) {
       updatesList.push(`embedding_status = $${paramIndex++}`);
       values.push(updates.embeddingStatus);
+    }
+
+    if (updates.categoryId !== undefined) {
+      updatesList.push(`category_id = $${paramIndex++}`);
+      values.push(updates.categoryId);
+    }
+
+    if (updates.categoryLocked !== undefined) {
+      updatesList.push(`category_locked = $${paramIndex++}`);
+      values.push(updates.categoryLocked);
     }
 
     if (updates.metadata) {
@@ -564,6 +601,8 @@ export class AtomicObjectModel {
       state: this.state,
       stateUpdatedAt: this.stateUpdatedAt,
       evolvedFromId: this.evolvedFromId,
+      categoryId: this.categoryId,
+      categoryLocked: this.categoryLocked,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

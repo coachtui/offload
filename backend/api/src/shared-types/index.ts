@@ -109,6 +109,8 @@ export interface AtomicObject {
   state?: 'open' | 'active' | 'resolved' | 'archived';
   stateUpdatedAt?: Date | null;
   evolvedFromId?: string | null;
+  categoryId?: string | null;
+  categoryLocked?: boolean;
 
   createdAt: Date;
   updatedAt: Date;
