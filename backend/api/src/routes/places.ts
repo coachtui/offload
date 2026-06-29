@@ -22,6 +22,7 @@ import {
   dismissPlaceObject,
   snoozePlaceObject,
   unlinkPlaceObject,
+  promotePlaceToGeofence,
 } from '../services/placeService';
 import { getPlacesOverview } from '../services/geofenceService';
 
@@ -147,6 +148,22 @@ router.post('/:placeId/objects/:objectId/snooze', async (req: Request, res: Resp
   } catch (error: any) {
     const status = error.status ?? 500;
     res.status(status).json({ error: error.message || 'Failed to snooze' });
+  }
+});
+
+// ─── POST /api/v1/places/:id/promote ──────────────────────────────────────
+// Promote a detected place into a manual geofence reminder (migrates notes).
+
+router.post('/:id/promote', async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const geofence = await promotePlaceToGeofence(userId, req.params.id);
+    res.json({ geofence });
+  } catch (error: any) {
+    const status = error.status ?? 500;
+    res.status(status).json({ error: error.message || 'Failed to promote place' });
   }
 });
 
