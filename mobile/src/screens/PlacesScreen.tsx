@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { View, Text, SectionList, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Places'>;
 export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   const [items, setItems] = useState<PlaceOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const inFlight = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,7 +34,11 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   ].filter((s) => s.data.length > 0);
 
   const toggleBell = async (item: PlaceOverviewItem) => {
+    const key = `${item.kind}:${item.id}`;
+    if (inFlight.current.has(key)) return;
+    inFlight.current.add(key);
     const prev = items;
+    let success = false;
     try {
       if (item.kind === 'geofence') {
         const next = !item.enabled;
@@ -44,11 +49,17 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
         // detected place → promote to a reminder
         await apiService.promotePlace(item.id);
       }
-      await load();
+      success = true;
     } catch (e) {
       console.warn('[PlacesScreen] toggle failed', e);
       setItems(prev); // rollback
       Alert.alert('Could not update reminder', 'Please try again.');
+    } finally {
+      inFlight.current.delete(key);
+    }
+    // load() is outside the mutation try — a refresh blip won't roll back or alert
+    if (success) {
+      try { await load(); } catch { /* server state is correct; ignore refresh failure */ }
     }
   };
 
@@ -101,7 +112,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
                   {item.kind === 'place' ? ' · detected' : ''}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => toggleBell(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity onPress={() => toggleBell(item)} activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons
                   name={bellOn ? 'notifications' : 'notifications-off-outline'}
                   size={22}
