@@ -26,14 +26,22 @@ async function checkForUpdate() {
   }
 }
 
-function handleNotificationData(data: any) {
-  if (!navigationRef.isReady()) return;
+function handleNotificationData(data: any, attempt = 0) {
+  // On cold start the navigation tree may not be mounted yet when the tapped
+  // notification resolves. Retry briefly (max ~3s) until the ref is ready,
+  // otherwise the deep-link is silently dropped and the app lands on the
+  // default screen instead of the place summary.
+  if (!navigationRef.isReady()) {
+    if (attempt < 20) setTimeout(() => handleNotificationData(data, attempt + 1), 150);
+    return;
+  }
 
-  if (data?.screen === 'PlaceSummary' && data?.placeId) {
-    console.log('[App] Navigating to PlaceSummary:', data.placeId);
+  if (data?.screen === 'PlaceSummary' && (data?.placeId || data?.geofenceId)) {
+    console.log('[App] Navigating to PlaceSummary:', data.placeId || data.geofenceId);
     navigationRef.navigate('PlaceSummary', {
       placeId: data.placeId,
-      placeName: data.placeName || 'This place',
+      geofenceId: data.geofenceId,
+      placeName: data.placeName || data.geofenceName || 'This place',
       eventType: data.eventType === 'exit' ? 'exit' : 'enter',
     });
   } else if (data?.screen === 'Objects' && data?.geofenceId) {
