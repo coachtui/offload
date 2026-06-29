@@ -480,6 +480,38 @@ class GeofenceMonitoringService {
     return response.json();
   }
 
+  private async fetchGeofenceNotify(geofenceId: string): Promise<any | null> {
+    let token = await SecureStore.getItemAsync('accessToken');
+    if (!token) {
+      token = await refreshAuthToken();
+      if (!token) {
+        console.warn('[GeofenceMonitoring] No access token and refresh failed');
+        return null;
+      }
+    }
+
+    const doFetch = (t: string) =>
+      fetch(`${API_BASE_URL}/api/v1/geofences/${geofenceId}/notify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+    let response = await doFetch(token);
+    if (response.status === 401) {
+      console.log('[GeofenceMonitoring] geofence notify 401 — refreshing token and retrying');
+      const newToken = await refreshAuthToken();
+      if (!newToken) return null;
+      response = await doFetch(newToken);
+    }
+
+    if (!response.ok) {
+      console.warn(`[GeofenceMonitoring] Geofence notify API failed (${response.status})`);
+      return null;
+    }
+    return response.json();
+  }
+
   /**
    * Schedule the local "you've arrived" notification that deep-links into
    * PlaceSummary. Shared by the normal and fallback paths.
@@ -510,119 +542,35 @@ class GeofenceMonitoringService {
     console.log(`[GeofenceMonitoring] Place notification scheduled: ${title} (id: ${notifId})`);
   }
 
-  /**
-   * Notification for a manual geofence — original behaviour.
-   */
   private async showManualGeofenceNotification(event: GeofenceEvent): Promise<void> {
-    const { ok, count, titles } = await this.getLinkedObjectsSummary(event.region.identifier);
-    console.log(`[GeofenceMonitoring] Manual geofence linked objects: ok=${ok}, count=${count}`);
-
+    const geofenceId = event.region.identifier;
+    const geofenceName = event.region.name;
     const title = event.type === 'enter'
-      ? `📍 Arrived at ${event.region.name}`
-      : `👋 Left ${event.region.name}`;
+      ? `📍 Arrived at ${geofenceName}`
+      : `👋 Left ${geofenceName}`;
 
-    if (!ok) {
-      // Backend was unreachable or auth failed — fire a generic arrival notification
-      // so the user is never silently dropped. Mirrors showPlaceNotification's null-data branch.
-      console.log(`[GeofenceMonitoring] Geofence ${event.region.identifier} summary fetch failed — firing generic notification`);
-      const notifId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body: 'Tap to view your notes',
-          data: {
-            geofenceId: event.region.identifier,
-            geofenceName: event.region.name,
-            eventType: event.type,
-            screen: 'PlaceSummary',
-          },
-          sound: true,
-        },
-        trigger: null,
-      });
-      console.log(`[GeofenceMonitoring] Generic fallback notification scheduled (id: ${notifId})`);
-      return;
-    }
-
-    if (count === 0) {
-      console.log(`[GeofenceMonitoring] Geofence ${event.region.identifier} has no open notes — suppressing notification`);
-      return;
-    }
-
-    let body: string;
-    if (count <= 3) {
-      body = titles.join(', ');
-    } else {
-      body = `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
-    }
-
-    console.log('[GeofenceMonitoring] Scheduling manual geofence notification:', title, '|', body);
-    const notifId = await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        data: {
-          geofenceId: event.region.identifier,
-          geofenceName: event.region.name,
-          eventType: event.type,
-          screen: 'PlaceSummary',
-        },
-        sound: true,
-      },
-      trigger: null,
-    });
-
-    console.log(`[GeofenceMonitoring] Notification scheduled: ${title} (id: ${notifId})`);
-  }
-
-  /**
-   * Fetch the linked objects for a geofence and return count + top-3 truncated titles.
-   *
-   * Returns { ok: true, count, titles } on a successful authenticated response.
-   * Returns { ok: false, count: 0, titles: [] } when the token is missing/expired,
-   * the backend is unreachable, or any other error occurs — callers MUST treat !ok
-   * as "unknown" rather than "confirmed empty" and fire a fallback notification.
-   *
-   * Retries once with a fresh token on a 401, mirroring fetchPlaceNotify.
-   */
-  private async getLinkedObjectsSummary(
-    geofenceId: string
-  ): Promise<{ ok: boolean; count: number; titles: string[] }> {
-    const FAIL = { ok: false, count: 0, titles: [] as string[] };
     try {
-      let token = await SecureStore.getItemAsync('accessToken');
-      if (!token) {
-        console.warn('[GeofenceMonitoring] No access token — attempting refresh before linked objects fetch');
-        token = await refreshAuthToken();
-        if (!token) {
-          console.warn('[GeofenceMonitoring] Token refresh failed — cannot fetch linked objects');
-          return FAIL;
-        }
+      const data = await this.fetchGeofenceNotify(geofenceId);
+
+      // Backend unreachable / auth failed even after refresh. Never stay silent.
+      if (data === null) {
+        await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, 'Tap to view your notes');
+        return;
       }
 
-      const doFetch = (t: string) =>
-        fetch(`${API_BASE_URL}/api/v1/geofences/${geofenceId}/objects?openOnly=true`, {
-          headers: { Authorization: `Bearer ${t}` },
-        });
-
-      let response = await doFetch(token);
-
-      if (response.status === 401) {
-        console.log('[GeofenceMonitoring] linked-objects 401 — refreshing token and retrying');
-        const newToken = await refreshAuthToken();
-        if (!newToken) return FAIL;
-        response = await doFetch(newToken);
+      if (data.cooldown) {
+        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} in cooldown — suppressing notification`);
+        return;
       }
 
-      if (!response.ok) {
-        console.warn(`[GeofenceMonitoring] linked-objects API failed (status ${response.status})`);
-        return FAIL;
-      }
-
-      const data = await response.json();
       const objects: any[] = data.objects || [];
       const count = objects.length;
 
-      // Extract top-3 titles, truncated to 35 chars each so the notification stays readable
+      if (count === 0) {
+        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} has no open notes — suppressing notification`);
+        return;
+      }
+
       const titles = objects
         .slice(0, 3)
         .map((o: any) => {
@@ -631,12 +579,41 @@ class GeofenceMonitoringService {
         })
         .filter(Boolean);
 
-      console.log(`[GeofenceMonitoring] getLinkedObjectsSummary: geofence ${geofenceId} → count=${count}`);
-      return { ok: true, count, titles };
+      const body = count <= 3 ? titles.join(', ') : `${titles.slice(0, 2).join(', ')} +${count - 2} more`;
+
+      await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, body);
     } catch (error) {
-      console.warn('[GeofenceMonitoring] Error fetching linked objects summary:', error);
-      return FAIL;
+      console.warn('[GeofenceMonitoring] Error in showManualGeofenceNotification:', error);
+      try {
+        await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, 'Tap to view your notes');
+      } catch {
+        /* nothing more we can do */
+      }
     }
+  }
+
+  private async scheduleManualGeofenceNotification(
+    event: GeofenceEvent,
+    geofenceId: string,
+    geofenceName: string,
+    title: string,
+    body: string
+  ): Promise<void> {
+    const notifId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: {
+          geofenceId,
+          geofenceName,
+          eventType: event.type,
+          screen: 'PlaceSummary',
+        },
+        sound: true,
+      },
+      trigger: null,
+    });
+    console.log(`[GeofenceMonitoring] Manual geofence notification scheduled: ${title} (id: ${notifId})`);
   }
 
   /**
