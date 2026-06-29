@@ -8,7 +8,10 @@
  */
 
 const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
-const USER_AGENT = 'BrainDump/1.0 (brain-dump-app; contact: hello@example.com)';
+// Nominatim's usage policy requires a genuine, identifiable User-Agent with a real
+// contact. Placeholder domains (e.g. example.com) are on their blocklist and get a
+// 403 — which silently broke ALL place resolution in production (see git history).
+const USER_AGENT = 'Offload/1.0 (https://tuialailima.com; tui@tuialailima.com)';
 
 // Radius defaults by OSM place type
 const RADIUS_BY_TYPE: Record<string, number> = {
