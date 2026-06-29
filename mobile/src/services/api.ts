@@ -704,6 +704,29 @@ class ApiService {
     const qs = months ? `?months=${months}` : '';
     return this.request(`/api/v1/synthesis/trends${qs}`);
   }
+
+  async promotePlace(placeId: string): Promise<{ geofence: any }> {
+    const res = await this.request<{ geofence: any }>(`/api/v1/places/${placeId}/promote`, {
+      method: 'POST',
+    });
+    return { geofence: this.toMobileGeofence(res.geofence) };
+  }
+
+  /**
+   * Toggle notification_enabled on a geofence without touching onEnter/onExit.
+   * Bypasses toBackendGeofence intentionally: that helper defaults onEnter=true
+   * and onExit=false whenever those fields are absent, which would clobber the
+   * user's existing enter/exit settings when we only want to flip `enabled`.
+   * Sending a minimal { notificationSettings: { enabled } } body lets the
+   * backend partial-update only notification_enabled at the model layer.
+   */
+  async setGeofenceEnabled(geofenceId: string, enabled: boolean): Promise<{ geofence: any }> {
+    const res = await this.request<{ geofence: any }>(`/api/v1/geofences/${geofenceId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ notificationSettings: { enabled } }),
+    });
+    return { geofence: this.toMobileGeofence(res.geofence) };
+  }
 }
 
 export const apiService = new ApiService();
