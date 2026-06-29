@@ -51,4 +51,10 @@ describe('getGeofenceNotifyPayload — cooldown', () => {
 
     await expect(getGeofenceNotifyPayload(USER, GF)).rejects.toThrow('Unauthorized');
   });
+
+  it('throws Geofence not found when findById returns null', async () => {
+    mockGeo.findById.mockResolvedValue(null as any);
+
+    await expect(getGeofenceNotifyPayload(USER, GF)).rejects.toThrow('Geofence not found');
+  });
 });
