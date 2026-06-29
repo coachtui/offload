@@ -2,7 +2,7 @@
  * PlaceSummaryScreen
  *
  * Shown when the user taps a place-based geofence notification.
- * Displays linked atomic objects with Done / Dismiss / Snooze / Unlink actions.
+ * Displays linked atomic objects with Done / Delete actions.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -14,7 +14,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,12 +29,6 @@ type PlaceSummaryNav = NativeStackNavigationProp<RootStackParamList, 'PlaceSumma
 interface Props {
   navigation: PlaceSummaryNav;
 }
-
-const SNOOZE_OPTIONS = [
-  { label: '1 hour', hours: 1 },
-  { label: '4 hours', hours: 4 },
-  { label: 'Tomorrow', hours: 24 },
-];
 
 /** "When did I take this note?" — short date, with year if it's not this year. */
 function formatNoteDate(value: Date | string): string {
@@ -56,7 +49,6 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const [objects, setObjects] = useState<AtomicObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null); // objectId being actioned
-  const [snoozeTarget, setSnoozeTarget] = useState<string | null>(null); // objectId for snooze modal
   const [editLoading, setEditLoading] = useState(false);
 
   // ─── Load objects ───────────────────────────────────────────────────────────
@@ -84,13 +76,9 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
   const handleDone = async (objectId: string) => {
     setActionLoading(objectId);
     try {
-      if (geofenceId) {
-        await apiService.updateObjectState(objectId, 'resolved');
-        await loadObjects();
-      } else {
-        await apiService.markPlaceObjectDone(placeId!, objectId);
-        setObjects(prev => prev.filter(o => o.id !== objectId));
-      }
+      // Done = resolve the underlying object globally (gone from every place it's linked to)
+      await apiService.updateObjectState(objectId, 'resolved');
+      setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
       Alert.alert('Error', 'Failed to mark as done.');
     } finally {
@@ -98,48 +86,22 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     }
   };
 
-  const handleDismiss = async (objectId: string) => {
-    setActionLoading(objectId);
-    try {
-      await apiService.dismissPlaceObject(placeId!, objectId);
-      setObjects(prev => prev.filter(o => o.id !== objectId));
-    } catch (err: any) {
-      Alert.alert('Error', 'Failed to dismiss.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleSnooze = async (objectId: string, hours: number) => {
-    setSnoozeTarget(null);
-    setActionLoading(objectId);
-    try {
-      const until = new Date(Date.now() + hours * 60 * 60 * 1000);
-      await apiService.snoozePlaceObject(placeId!, objectId, until);
-      setObjects(prev => prev.filter(o => o.id !== objectId));
-    } catch (err: any) {
-      Alert.alert('Error', 'Failed to snooze.');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  const handleUnlink = (objectId: string) => {
+  const handleDelete = (objectId: string) => {
     Alert.alert(
-      'Unlink from place',
-      'This note will no longer appear when you visit this place.',
+      'Delete note',
+      'This note will be removed everywhere. You can recover it within 30 days.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Unlink',
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             setActionLoading(objectId);
             try {
-              await apiService.unlinkPlaceObject(placeId!, objectId);
+              await apiService.deleteObject(objectId);
               setObjects(prev => prev.filter(o => o.id !== objectId));
             } catch (err: any) {
-              Alert.alert('Error', 'Failed to unlink.');
+              Alert.alert('Error', 'Failed to delete.');
             } finally {
               setActionLoading(null);
             }
@@ -214,33 +176,13 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
               <Text style={[styles.actionBtnText, { color: '#22c55e' }]}>Done</Text>
             </TouchableOpacity>
 
-            {!geofenceId && (
-              <>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleDismiss(item.id)}
-                >
-                  <Ionicons name="eye-off-outline" size={14} color="#94a3b8" />
-                  <Text style={styles.actionBtnText}>Dismiss</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => setSnoozeTarget(item.id)}
-                >
-                  <Ionicons name="time-outline" size={14} color="#94a3b8" />
-                  <Text style={styles.actionBtnText}>Snooze</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleUnlink(item.id)}
-                >
-                  <Ionicons name="unlink-outline" size={14} color="#94a3b8" />
-                  <Text style={styles.actionBtnText}>Unlink</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.deleteBtn]}
+              onPress={() => handleDelete(item.id)}
+            >
+              <Ionicons name="trash-outline" size={14} color="#ef4444" />
+              <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Delete</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -303,38 +245,6 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
         />
       )}
 
-      {/* Snooze modal */}
-      <Modal
-        visible={snoozeTarget !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSnoozeTarget(null)}
-      >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setSnoozeTarget(null)}
-        >
-          <View style={styles.snoozeSheet}>
-            <Text style={styles.snoozeTitle}>Snooze until…</Text>
-            {SNOOZE_OPTIONS.map(opt => (
-              <TouchableOpacity
-                key={opt.label}
-                style={styles.snoozeOption}
-                onPress={() => snoozeTarget && handleSnooze(snoozeTarget, opt.hours)}
-              >
-                <Text style={styles.snoozeOptionText}>{opt.label}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.snoozeCancelBtn}
-              onPress={() => setSnoozeTarget(null)}
-            >
-              <Text style={styles.snoozeCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -442,48 +352,13 @@ const styles = StyleSheet.create({
   doneBtn: {
     backgroundColor: '#052e16',
   },
+  deleteBtn: {
+    backgroundColor: '#2e0a0a',
+  },
   actionBtnText: {
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '500',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  snoozeSheet: {
-    backgroundColor: '#111827',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    paddingBottom: 32,
-  },
-  snoozeTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#e2e8f0',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  snoozeOption: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-    alignItems: 'center',
-  },
-  snoozeOptionText: {
-    fontSize: 16,
-    color: '#e2e8f0',
-  },
-  snoozeCancelBtn: {
-    marginTop: 12,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  snoozeCancelText: {
-    fontSize: 15,
-    color: '#64748b',
   },
   editReminderRow: {
     flexDirection: 'row',
