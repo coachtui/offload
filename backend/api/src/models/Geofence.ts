@@ -27,6 +27,38 @@ export interface GeofenceRow {
   updated_at: Date;
 }
 
+export interface GeofenceTriggerStateRow {
+  id: string;
+  user_id: string;
+  geofence_id: string;
+  last_entered_at: Date | null;
+  last_notified_at: Date | null;
+  cooldown_until: Date | null;
+  visit_count: number;
+}
+
+export interface GeofenceTriggerState {
+  id: string;
+  userId: string;
+  geofenceId: string;
+  lastEnteredAt: Date | null;
+  lastNotifiedAt: Date | null;
+  cooldownUntil: Date | null;
+  visitCount: number;
+}
+
+function rowToGeofenceTriggerState(row: GeofenceTriggerStateRow): GeofenceTriggerState {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    geofenceId: row.geofence_id,
+    lastEnteredAt: row.last_entered_at,
+    lastNotifiedAt: row.last_notified_at,
+    cooldownUntil: row.cooldown_until,
+    visitCount: row.visit_count,
+  };
+}
+
 export class GeofenceModel {
   id: string;
   userId: string;
@@ -342,6 +374,54 @@ export class GeofenceModel {
       [geofenceId]
     );
     return rows.map((r) => r.object_id);
+  }
+
+  // ─── Trigger state (manual-geofence re-fire cooldown) ──────────────────────
+
+  static async getTriggerState(
+    userId: string,
+    geofenceId: string
+  ): Promise<GeofenceTriggerState | null> {
+    const row = await queryOne<GeofenceTriggerStateRow>(
+      `SELECT * FROM hub.geofence_trigger_state WHERE user_id = $1 AND geofence_id = $2`,
+      [userId, geofenceId]
+    );
+    return row ? rowToGeofenceTriggerState(row) : null;
+  }
+
+  static async upsertTriggerState(
+    userId: string,
+    geofenceId: string,
+    updates: {
+      lastEnteredAt?: Date;
+      lastNotifiedAt?: Date;
+      cooldownUntil?: Date;
+      incrementVisit?: boolean;
+    }
+  ): Promise<GeofenceTriggerState> {
+    const row = await queryOne<GeofenceTriggerStateRow>(
+      `INSERT INTO hub.geofence_trigger_state
+         (user_id, geofence_id, last_entered_at, last_notified_at, cooldown_until, visit_count)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id, geofence_id) DO UPDATE SET
+         last_entered_at  = COALESCE($3, geofence_trigger_state.last_entered_at),
+         last_notified_at = COALESCE($4, geofence_trigger_state.last_notified_at),
+         cooldown_until   = COALESCE($5, geofence_trigger_state.cooldown_until),
+         visit_count      = CASE WHEN $7 THEN geofence_trigger_state.visit_count + 1
+                                 ELSE geofence_trigger_state.visit_count END
+       RETURNING *`,
+      [
+        userId,
+        geofenceId,
+        updates.lastEnteredAt ?? null,
+        updates.lastNotifiedAt ?? null,
+        updates.cooldownUntil ?? null,
+        updates.incrementVisit ? 1 : 0,
+        updates.incrementVisit ?? false,
+      ]
+    );
+    if (!row) throw new Error('Failed to upsert geofence trigger state');
+    return rowToGeofenceTriggerState(row);
   }
 
   /**
