@@ -437,6 +437,13 @@ class ApiService {
     });
   }
 
+  async bulkDeleteObjects(ids: string[]): Promise<{ deleted: number }> {
+    return this.request<{ deleted: number }>(`/api/v1/objects/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, action: 'delete' }),
+    });
+  }
+
   async getStaleActionables(): Promise<{ objects: AtomicObject[] }> {
     return this.request<{ objects: AtomicObject[] }>('/api/v1/objects/stale-actionables');
   }
