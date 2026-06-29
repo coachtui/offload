@@ -156,12 +156,15 @@ export class PlaceModel {
   ): Promise<Place[]> {
     const degLat = radiusMeters / 111000;
     const degLng = radiusMeters / (111000 * Math.cos((lat * Math.PI) / 180));
+    // Compute bounds in JS — doing arithmetic on bind params in SQL ($2 - $3)
+    // makes Postgres treat them as untyped and fail with
+    // "operator is not unique: unknown - unknown".
     const rows = await queryMany<PlaceRow>(
       `SELECT * FROM hub.places
        WHERE user_id = $1
-         AND lat BETWEEN $2 - $3 AND $2 + $3
-         AND lng BETWEEN $4 - $5 AND $4 + $5`,
-      [userId, lat, degLat, lng, degLng]
+         AND lat BETWEEN $2 AND $3
+         AND lng BETWEEN $4 AND $5`,
+      [userId, lat - degLat, lat + degLat, lng - degLng, lng + degLng]
     );
     return rows
       .map(rowToPlace)
