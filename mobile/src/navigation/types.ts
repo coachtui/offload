@@ -23,6 +23,7 @@ export type RootStackParamList = {
   AskOffload: { initialQuery?: string } | undefined;
   Insights: undefined;
   PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
+  Categories: undefined;
 };
 
 declare global {

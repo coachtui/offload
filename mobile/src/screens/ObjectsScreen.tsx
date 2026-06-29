@@ -990,9 +990,14 @@ export function ObjectsScreen({ navigation }: Props) {
           </TouchableOpacity>
         }
         right={
-          <TouchableOpacity onPress={() => selectionMode ? exitSelection() : setSelectionMode(true)}>
-            <Text style={styles.headerActionText}>{selectionMode ? 'Cancel' : 'Select'}</Text>
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate('Categories')}>
+              <Ionicons name="pricetags-outline" size={22} color="#111827" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => selectionMode ? exitSelection() : setSelectionMode(true)}>
+              <Text style={styles.headerActionText}>{selectionMode ? 'Cancel' : 'Select'}</Text>
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -1565,7 +1570,8 @@ const styles = StyleSheet.create({
   },
   capitalizeText: { textTransform: 'capitalize' },
 
-  // Header action (Select / Cancel toggle)
+  // Header action (Select / Cancel toggle + Categories icon)
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerActionText: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
 
   // Selection mode card layout
