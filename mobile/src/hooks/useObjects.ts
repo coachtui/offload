@@ -14,6 +14,7 @@ interface ObjectsState {
 interface ObjectFilters {
   domain?: string[];
   objectType?: string[];
+  categoryId?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -33,6 +34,9 @@ interface UseObjectsReturn extends ObjectsState, ObjectDetailState {
   setFilters: (filters: ObjectFilters) => void;
   fetchObjectDetail: (objectId: string) => Promise<void>;
   updateObject: (objectId: string, data: Partial<AtomicObject>) => Promise<boolean>;
+  deleteObject: (objectId: string) => Promise<boolean>;
+  bulkDeleteObjects: (ids: string[]) => Promise<boolean>;
+  bulkMoveObjects: (ids: string[], categoryId: string | null) => Promise<boolean>;
   clearDetail: () => void;
 }
 
@@ -67,6 +71,7 @@ export function useObjects(): UseObjectsReturn {
         offset: 0,
         domain: filters.domain,
         objectType: filters.objectType,
+        categoryId: filters.categoryId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });
@@ -101,6 +106,7 @@ export function useObjects(): UseObjectsReturn {
         offset,
         domain: filters.domain,
         objectType: filters.objectType,
+        categoryId: filters.categoryId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });
@@ -181,6 +187,57 @@ export function useObjects(): UseObjectsReturn {
     }
   }, []);
 
+  const deleteObject = useCallback(async (objectId: string): Promise<boolean> => {
+    try {
+      await apiService.deleteObject(objectId);
+      setState((prev) => ({
+        ...prev,
+        objects: prev.objects.filter((obj) => obj.id !== objectId),
+        total: Math.max(0, prev.total - 1),
+      }));
+      setDetailState((prev) =>
+        prev.object?.id === objectId
+          ? { object: null, isLoadingDetail: false, isUpdating: false, updateError: null }
+          : prev
+      );
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }, []);
+
+  const bulkDeleteObjects = useCallback(async (ids: string[]): Promise<boolean> => {
+    if (ids.length === 0) return true;
+    try {
+      await apiService.bulkDeleteObjects(ids);
+      const idSet = new Set(ids);
+      setState((prev) => ({
+        ...prev,
+        objects: prev.objects.filter((obj) => !idSet.has(obj.id)),
+        total: Math.max(0, prev.total - ids.length),
+      }));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }, []);
+
+  const bulkMoveObjects = useCallback(async (ids: string[], categoryId: string | null): Promise<boolean> => {
+    if (ids.length === 0) return true;
+    try {
+      await apiService.bulkMoveObjects(ids, categoryId);
+      setState((prev) => ({
+        ...prev,
+        objects: prev.objects.map((obj) =>
+          ids.includes(obj.id) ? { ...obj, categoryId, categoryLocked: true } : obj
+        ),
+      }));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }, []);
+
   const clearDetail = useCallback(() => {
     setDetailState({
       object: null,
@@ -204,6 +261,9 @@ export function useObjects(): UseObjectsReturn {
     setFilters,
     fetchObjectDetail,
     updateObject,
+    deleteObject,
+    bulkDeleteObjects,
+    bulkMoveObjects,
     clearDetail,
   };
 }

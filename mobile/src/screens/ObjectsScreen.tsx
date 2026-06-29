@@ -18,10 +18,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
 import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
+import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
@@ -197,8 +198,10 @@ export function ObjectsScreen({ navigation }: Props) {
   const {
     objects, isLoading, isRefreshing, error, hasMore,
     object: selectedObject, isLoadingDetail, isUpdating, updateError,
-    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail,
+    filters, refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects, bulkMoveObjects,
   } = useObjects();
+
+  const { categories, refresh: refreshCategories } = useCategories();
 
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
 
@@ -220,6 +223,44 @@ export function ObjectsScreen({ navigation }: Props) {
   const [pendingDomains, setPendingDomains] = useState<string[]>([]);
   const [pendingTypes, setPendingTypes] = useState<string[]>([]);
 
+  // Selection state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleBulkDelete = useCallback(() => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    Alert.alert(
+      `Delete ${ids.length} note${ids.length === 1 ? '' : 's'}?`,
+      "This can't be undone from the app.",
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await bulkDeleteObjects(ids);
+            if (ok) exitSelection();
+            else Alert.alert("Couldn't delete", 'Please try again.');
+          },
+        },
+      ]
+    );
+  }, [selectedIds, bulkDeleteObjects, exitSelection]);
+
   const isSearchMode = searchText.trim().length > 0;
   const hasActiveFilters = selectedDomains.length > 0 || selectedTypes.length > 0;
 
@@ -229,6 +270,10 @@ export function ObjectsScreen({ navigation }: Props) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
+
+  useFocusEffect(
+    useCallback(() => { refreshCategories(); }, [refreshCategories])
+  );
 
   useEffect(() => {
     apiService.getStaleActionables()
@@ -315,6 +360,35 @@ export function ObjectsScreen({ navigation }: Props) {
     setFilters({});
   }, [setFilters, clearResults]);
 
+  const renderCategoryChips = useCallback(() => {
+    if (categories.length === 0) return null;
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterChipsRow}
+        contentContainerStyle={styles.filterChipsContent}
+      >
+        <TouchableOpacity
+          style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
+          onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
+        >
+          <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
+        </TouchableOpacity>
+        {categories.map((c) => (
+          <TouchableOpacity
+            key={c.id}
+            style={[styles.filterChip, filters.categoryId === c.id && styles.filterChipActive]}
+            onPress={() => setFilters({ ...filters, categoryId: c.id })}
+          >
+            <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+            <Text style={[styles.filterChipText, filters.categoryId === c.id && styles.filterChipTextActive]}>{c.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    );
+  }, [categories, filters, setFilters]);
+
   // ─── Modal / detail actions ───────────────────────────────────────────────
 
   const openDetail = useCallback(async (id: string) => {
@@ -370,6 +444,31 @@ export function ObjectsScreen({ navigation }: Props) {
       handleStatusChange(selectedObject.id, 'resolved');
     }
   }, [selectedObject, handleStatusChange]);
+
+  const handleDeleteNote = useCallback(
+    (objectId: string) => {
+      Alert.alert(
+        'Delete note?',
+        "This note will be removed. You can't undo this from the app.",
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const ok = await deleteObject(objectId);
+              if (ok) {
+                handleCloseModal();
+              } else {
+                Alert.alert("Couldn't delete", 'Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    },
+    [deleteObject, handleCloseModal]
+  );
 
   // ─── Renders: list screen ─────────────────────────────────────────────────
 
@@ -527,38 +626,49 @@ export function ObjectsScreen({ navigation }: Props) {
     const showUrgency = urgency === 'high' || urgency === 'medium';
     const currentState = (item as any).state ?? 'open';
     const isDone = currentState === 'resolved' || currentState === 'archived';
+    const isSelected = selectedIds.has(item.id);
 
     return (
       <TouchableOpacity
-        style={[styles.noteRow, isDone && styles.noteRowDone]}
-        onPress={() => handleObjectPress(item)}
+        style={[styles.noteRow, isDone && styles.noteRowDone, selectionMode && styles.noteRowSelecting]}
+        onPress={() => selectionMode ? toggleSelected(item.id) : handleObjectPress(item)}
         activeOpacity={0.7}
       >
-        <Text style={[styles.noteTitle, isDone && styles.noteTitleDone]} numberOfLines={2}>
-          {title}
-        </Text>
-        <View style={styles.noteMeta}>
-          <Text style={styles.noteSubtitle}>{subtitle}</Text>
-          <Text style={styles.noteDot}> · </Text>
-          <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
-          {showUrgency && (
-            <>
-              <Text style={styles.noteDot}> · </Text>
-              <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
-              <Text style={[styles.noteUrgency, { color: URGENCY_COLORS[urgency!] }]}>
-                {urgency === 'high' ? 'Urgent' : 'Medium priority'}
-              </Text>
-            </>
+        {selectionMode && (
+          <Ionicons
+            name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+            size={22}
+            color={isSelected ? Colors.accent : '#9ca3af'}
+            style={styles.noteCheckbox}
+          />
+        )}
+        <View style={selectionMode ? styles.noteRowBody : undefined}>
+          <Text style={[styles.noteTitle, isDone && styles.noteTitleDone]} numberOfLines={2}>
+            {title}
+          </Text>
+          <View style={styles.noteMeta}>
+            <Text style={styles.noteSubtitle}>{subtitle}</Text>
+            <Text style={styles.noteDot}> · </Text>
+            <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
+            {showUrgency && (
+              <>
+                <Text style={styles.noteDot}> · </Text>
+                <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
+                <Text style={[styles.noteUrgency, { color: URGENCY_COLORS[urgency!] }]}>
+                  {urgency === 'high' ? 'Urgent' : 'Medium priority'}
+                </Text>
+              </>
+            )}
+          </View>
+          {item.actionability?.nextAction && !isDone && (
+            <Text style={styles.noteNextAction} numberOfLines={1}>
+              → {item.actionability.nextAction}
+            </Text>
           )}
         </View>
-        {item.actionability?.nextAction && !isDone && (
-          <Text style={styles.noteNextAction} numberOfLines={1}>
-            → {item.actionability.nextAction}
-          </Text>
-        )}
       </TouchableOpacity>
     );
-  }, [handleObjectPress]);
+  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress]);
 
   const renderSearchResultCard = useCallback(({ item }: { item: RagSearchResult }) => {
     const subtitle = buildCardSubtitle(item.type, item.domain);
@@ -813,6 +923,14 @@ export function ObjectsScreen({ navigation }: Props) {
                       label="Edit"
                       onPress={handleEditPress}
                     />
+                    <TouchableOpacity
+                      style={styles.quickAction}
+                      onPress={() => selectedObject && handleDeleteNote(selectedObject.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                      <Text style={[styles.quickActionLabel, { color: '#ef4444' }]}>Delete</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* ··· Details toggle */}
@@ -830,6 +948,30 @@ export function ObjectsScreen({ navigation }: Props) {
 
                   {detailsExpanded && (
                     <>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.categoryPickerRow}
+                        style={{ marginBottom: Spacing.lg }}
+                      >
+                        <TouchableOpacity
+                          style={[styles.categoryChip, !selectedObject?.categoryId && styles.categoryChipActive]}
+                          onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: null } as any)}
+                        >
+                          <Text style={[styles.categoryChipText, !selectedObject?.categoryId && styles.categoryChipTextActive]}>None</Text>
+                        </TouchableOpacity>
+                        {categories.map((c) => (
+                          <TouchableOpacity
+                            key={c.id}
+                            style={[styles.categoryChip, selectedObject?.categoryId === c.id && styles.categoryChipActive, { borderColor: c.color }]}
+                            onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: c.id } as any)}
+                          >
+                            <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+                            <Text style={[styles.categoryChipText, selectedObject?.categoryId === c.id && styles.categoryChipTextActive]}>{c.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+
                       <View style={styles.detailsCard}>
                         {selectedObject.objectType && (
                           <DetailRow
@@ -907,6 +1049,16 @@ export function ObjectsScreen({ navigation }: Props) {
             <Ionicons name="arrow-back" size={24} color={Colors.textSecondary} />
           </TouchableOpacity>
         }
+        right={
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate('Categories')}>
+              <Ionicons name="pricetags-outline" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => selectionMode ? exitSelection() : setSelectionMode(true)}>
+              <Text style={styles.headerActionText}>{selectionMode ? 'Cancel' : 'Select'}</Text>
+            </TouchableOpacity>
+          </View>
+        }
       />
 
       <View style={styles.searchContainer}>
@@ -920,6 +1072,7 @@ export function ObjectsScreen({ navigation }: Props) {
       </View>
 
       {renderPrimaryFilters()}
+      {renderCategoryChips()}
       {renderGeofenceContext()}
       {renderDashboardCard()}
       {renderStaleBanner()}
@@ -966,6 +1119,40 @@ export function ObjectsScreen({ navigation }: Props) {
           }
           showsVerticalScrollIndicator={false}
         />
+      )}
+
+      {selectionMode && (
+        <View style={styles.selectionBar}>
+          <Text style={styles.selectionCount}>{selectedIds.size} selected</Text>
+          <View style={styles.selectionActions}>
+            <TouchableOpacity
+              style={[styles.selectionMoveBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
+              disabled={selectedIds.size === 0}
+              onPress={() => {
+                const ids = Array.from(selectedIds);
+                Alert.alert('Move to category', undefined, [
+                  { text: 'None (uncategorize)', onPress: async () => { if (await bulkMoveObjects(ids, null)) exitSelection(); } },
+                  ...categories.map((c) => ({
+                    text: c.name,
+                    onPress: async () => { if (await bulkMoveObjects(ids, c.id)) exitSelection(); },
+                  })),
+                  { text: 'Cancel', style: 'cancel' as const },
+                ]);
+              }}
+            >
+              <Ionicons name="pricetag-outline" size={20} color="#3b82f6" />
+              <Text style={styles.selectionMoveText}>Move</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectionDeleteBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
+              disabled={selectedIds.size === 0}
+              onPress={handleBulkDelete}
+            >
+              <Ionicons name="trash-outline" size={20} color="#fff" />
+              <Text style={styles.selectionDeleteText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       {renderDetailModal()}
@@ -1463,6 +1650,109 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   capitalizeText: { textTransform: 'capitalize' },
+
+  // Header action (Select / Cancel toggle + Categories icon)
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  headerActionText: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
+
+  // Selection mode card layout
+  noteRowSelecting: { flexDirection: 'row', alignItems: 'flex-start' },
+  noteCheckbox: { marginRight: Spacing.sm, marginTop: 2 },
+  noteRowBody: { flex: 1 },
+
+  // Selection action bar
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e5e7eb',
+    backgroundColor: '#fff',
+  },
+  selectionCount: { fontSize: 15, color: '#374151', fontWeight: '600' },
+  selectionActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  selectionMoveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  selectionMoveText: { color: '#3b82f6', fontWeight: '600' },
+  selectionDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ef4444',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    gap: 6,
+  },
+  selectionDeleteText: { color: '#fff', fontWeight: '600' },
+
+  // Category filter chips (list screen)
+  filterChipsRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+    backgroundColor: Colors.bg,
+  },
+  filterChipsContent: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    gap: 5,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Category picker (in detail modal)
+  categoryPickerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 0 },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgMuted,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 5,
+  },
+  categoryChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  categoryChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  categoryChipTextActive: { color: '#FFFFFF' },
+  swatchSm: { width: 10, height: 10, borderRadius: 5 },
 
   // Status picker
   statusPicker: { flexDirection: 'row', gap: 6 },

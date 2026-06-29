@@ -18,6 +18,7 @@ import {
   type SemanticSearchResult,
 } from './vectorService';
 import { updateObjectRelationships } from './relationshipService';
+import { query } from '../db/queries';
 
 // Validation schema for createObject input
 export const createObjectSchema = z.object({
@@ -83,6 +84,7 @@ export interface ListObjectsOptions {
   category?: Category[];
   domain?: string[];
   objectType?: string[];
+  categoryId?: string;
   dateFrom?: Date;
   dateTo?: Date;
   search?: string;
@@ -115,6 +117,20 @@ export async function createObject(
       // Best-effort status update
     }
     atomicObject.embeddingStatus = 'failed';
+  }
+
+  // Best-effort keyword rule classification (non-fatal)
+  try {
+    const ruleText = `${atomicObject.title ?? ''} ${atomicObject.content ?? ''}`;
+    const { applyRulesToObject } = await import('./categoryService');
+    await applyRulesToObject(userId, atomicObject.id, ruleText);
+    const refreshed = await AtomicObjectModel.findById(atomicObject.id);
+    if (refreshed) {
+      atomicObject.categoryId = refreshed.categoryId;
+      atomicObject.categoryLocked = refreshed.categoryLocked;
+    }
+  } catch (err) {
+    console.warn('[objectService] Category rule application failed (non-fatal):', err);
   }
 
   // Detect and persist relationships (fire-and-forget, never blocks response)
@@ -169,12 +185,16 @@ export async function listObjects(
         category: options.category,
         domain: options.domain,
         objectType: options.objectType,
+        categoryId: options.categoryId,
         dateFrom: options.dateFrom,
         dateTo: options.dateTo,
       });
 
       const objectIds = searchResults.map((r) => r.objectId);
-      const objects = await AtomicObjectModel.findByIds(objectIds);
+      const allObjects = await AtomicObjectModel.findByIds(objectIds);
+      const objects = options.categoryId
+        ? allObjects.filter((obj) => obj.categoryId === options.categoryId)
+        : allObjects;
 
       return {
         objects: objects.map((obj) => obj.toAtomicObject()),
@@ -192,6 +212,7 @@ export async function listObjects(
     category: options.category,
     domain: options.domain,
     objectType: options.objectType,
+    categoryId: options.categoryId,
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     limit,
@@ -218,13 +239,19 @@ export async function updateObject(
     confidence: number;
     metadata: Partial<AtomicObjectModel['metadata']>;
     relationships: Partial<AtomicObjectModel['relationships']>;
+    categoryId: string | null;
   }>
 ): Promise<AtomicObject> {
   const object = await AtomicObjectModel.findById(objectId);
   if (!object) throw new Error('Object not found');
   if (object.userId !== userId) throw new Error('Unauthorized');
 
-  const updated = await object.update(updates);
+  const modelUpdates: any = { ...updates };
+  if (updates.categoryId !== undefined) {
+    modelUpdates.categoryId = updates.categoryId;
+    modelUpdates.categoryLocked = true;
+  }
+  const updated = await object.update(modelUpdates);
   const atomicObject = updated.toAtomicObject();
 
   try {
@@ -276,4 +303,40 @@ export async function findSimilarObjects(
     console.error('[objectService] Failed to find similar objects:', error);
     throw new Error('Failed to find similar objects');
   }
+}
+
+/**
+ * Bulk move: assign a category (or null) to the user's own objects and lock them
+ * so keyword rules won't override the manual choice.
+ */
+export async function bulkMoveObjects(
+  userId: string,
+  ids: string[],
+  categoryId: string | null
+): Promise<{ moved: number }> {
+  if (!ids || ids.length === 0) return { moved: 0 };
+  const result = await query(
+    `UPDATE hub.atomic_objects
+     SET category_id = $1, category_locked = true
+     WHERE user_id = $2 AND id = ANY($3) AND deleted_at IS NULL`,
+    [categoryId, userId, ids]
+  );
+  return { moved: result.rowCount ?? 0 };
+}
+
+/**
+ * Bulk soft-delete: only affects the user's own, non-deleted objects.
+ */
+export async function bulkDeleteObjects(
+  userId: string,
+  ids: string[]
+): Promise<{ deleted: number }> {
+  if (!ids || ids.length === 0) return { deleted: 0 };
+  const result = await query(
+    `UPDATE hub.atomic_objects
+     SET deleted_at = NOW()
+     WHERE user_id = $1 AND id = ANY($2) AND deleted_at IS NULL`,
+    [userId, ids]
+  );
+  return { deleted: result.rowCount ?? 0 };
 }

@@ -19,6 +19,7 @@ import ManageGeofenceObjectsScreen from '../screens/ManageGeofenceObjectsScreen'
 import EditGeofenceScreen from '../screens/EditGeofenceScreen';
 import PlaceSummaryScreen from '../screens/PlaceSummaryScreen';
 import PlacesScreen from '../screens/PlacesScreen';
+import CategoriesScreen from '../screens/CategoriesScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -75,6 +76,7 @@ function MainStack() {
         component={PlaceSummaryScreen}
         options={{ headerShown: false }}
       />
+      <Stack.Screen name="Categories" component={CategoriesScreen} />
     </Stack.Navigator>
   );
 }

@@ -71,6 +71,8 @@ export interface AtomicObject {
   state?: 'open' | 'active' | 'resolved' | 'archived';
   stateUpdatedAt?: Date | null;
   evolvedFromId?: string | null;
+  categoryId?: string | null;
+  categoryLocked?: boolean;
   createdAt: Date;
   updatedAt: Date;
   vectorEmbedding?: number[];
@@ -154,6 +156,18 @@ export interface TranscriptionPayload {
   text: string;
   partial: boolean;
   chunkIndex?: number;
+}
+
+export interface UserCategory {
+  id: string;
+  userId: string;
+  name: string;
+  color: string;
+  icon: string | null;
+  keywords: string[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // API Response Types
