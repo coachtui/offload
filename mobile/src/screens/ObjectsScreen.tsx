@@ -18,7 +18,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RouteProp, useRoute } from '@react-navigation/native';
+import { RouteProp, useRoute, useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
 import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
@@ -201,7 +201,7 @@ export function ObjectsScreen({ navigation }: Props) {
     filters, refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects, bulkMoveObjects,
   } = useObjects();
 
-  const { categories } = useCategories();
+  const { categories, refresh: refreshCategories } = useCategories();
 
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
 
@@ -270,6 +270,10 @@ export function ObjectsScreen({ navigation }: Props) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
+
+  useFocusEffect(
+    useCallback(() => { refreshCategories(); }, [refreshCategories])
+  );
 
   useEffect(() => {
     apiService.getStaleActionables()
@@ -634,7 +638,7 @@ export function ObjectsScreen({ navigation }: Props) {
           <Ionicons
             name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
             size={22}
-            color={isSelected ? Colors.primary : '#9ca3af'}
+            color={isSelected ? Colors.accent : '#9ca3af'}
             style={styles.noteCheckbox}
           />
         )}
