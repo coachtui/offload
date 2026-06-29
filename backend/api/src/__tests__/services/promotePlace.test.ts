@@ -45,8 +45,15 @@ describe('promotePlaceToGeofence', () => {
     expect(mockPlace.setLinkInactive).toHaveBeenCalledWith(PLACE_ID, 'obj-2');
   });
 
-  it('throws when the place does not belong to the user', async () => {
+  it('throws 404 when the place does not belong to the user', async () => {
     mockPlace.findById.mockResolvedValue({ id: PLACE_ID, userId: 'someone-else' } as any);
-    await expect(promotePlaceToGeofence(USER_ID, PLACE_ID)).rejects.toThrow();
+    await expect(promotePlaceToGeofence(USER_ID, PLACE_ID))
+      .rejects.toMatchObject({ status: 404 });
+  });
+
+  it('throws 404 when the place does not exist', async () => {
+    mockPlace.findById.mockResolvedValue(null);
+    await expect(promotePlaceToGeofence(USER_ID, PLACE_ID))
+      .rejects.toMatchObject({ status: 404 });
   });
 });
