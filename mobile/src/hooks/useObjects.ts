@@ -35,6 +35,7 @@ interface UseObjectsReturn extends ObjectsState, ObjectDetailState {
   updateObject: (objectId: string, data: Partial<AtomicObject>) => Promise<boolean>;
   deleteObject: (objectId: string) => Promise<boolean>;
   bulkDeleteObjects: (ids: string[]) => Promise<boolean>;
+  bulkMoveObjects: (ids: string[], categoryId: string | null) => Promise<boolean>;
   clearDetail: () => void;
 }
 
@@ -218,6 +219,22 @@ export function useObjects(): UseObjectsReturn {
     }
   }, []);
 
+  const bulkMoveObjects = useCallback(async (ids: string[], categoryId: string | null): Promise<boolean> => {
+    if (ids.length === 0) return true;
+    try {
+      await apiService.bulkMoveObjects(ids, categoryId);
+      setState((prev) => ({
+        ...prev,
+        objects: prev.objects.map((obj) =>
+          ids.includes(obj.id) ? { ...obj, categoryId, categoryLocked: true } : obj
+        ),
+      }));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }, []);
+
   const clearDetail = useCallback(() => {
     setDetailState({
       object: null,
@@ -243,6 +260,7 @@ export function useObjects(): UseObjectsReturn {
     updateObject,
     deleteObject,
     bulkDeleteObjects,
+    bulkMoveObjects,
     clearDetail,
   };
 }

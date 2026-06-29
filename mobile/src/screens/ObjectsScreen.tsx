@@ -22,6 +22,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useObjects } from '../hooks/useObjects';
 import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
+import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
@@ -197,8 +198,10 @@ export function ObjectsScreen({ navigation }: Props) {
   const {
     objects, isLoading, isRefreshing, error, hasMore,
     object: selectedObject, isLoadingDetail, isUpdating, updateError,
-    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects,
+    refresh, loadMore, setFilters, fetchObjectDetail, updateObject, clearDetail, deleteObject, bulkDeleteObjects, bulkMoveObjects,
   } = useObjects();
+
+  const { categories } = useCategories();
 
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
 
@@ -912,6 +915,30 @@ export function ObjectsScreen({ navigation }: Props) {
 
                   {detailsExpanded && (
                     <>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.categoryPickerRow}
+                        style={{ marginBottom: Spacing.lg }}
+                      >
+                        <TouchableOpacity
+                          style={[styles.categoryChip, !selectedObject?.categoryId && styles.categoryChipActive]}
+                          onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: null } as any)}
+                        >
+                          <Text style={styles.categoryChipText}>None</Text>
+                        </TouchableOpacity>
+                        {categories.map((c) => (
+                          <TouchableOpacity
+                            key={c.id}
+                            style={[styles.categoryChip, selectedObject?.categoryId === c.id && styles.categoryChipActive, { borderColor: c.color }]}
+                            onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: c.id } as any)}
+                          >
+                            <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+                            <Text style={styles.categoryChipText}>{c.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+
                       <View style={styles.detailsCard}>
                         {selectedObject.objectType && (
                           <DetailRow
@@ -1063,14 +1090,34 @@ export function ObjectsScreen({ navigation }: Props) {
       {selectionMode && (
         <View style={styles.selectionBar}>
           <Text style={styles.selectionCount}>{selectedIds.size} selected</Text>
-          <TouchableOpacity
-            style={[styles.selectionDeleteBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
-            disabled={selectedIds.size === 0}
-            onPress={handleBulkDelete}
-          >
-            <Ionicons name="trash-outline" size={20} color="#fff" />
-            <Text style={styles.selectionDeleteText}>Delete</Text>
-          </TouchableOpacity>
+          <View style={styles.selectionActions}>
+            <TouchableOpacity
+              style={[styles.selectionMoveBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
+              disabled={selectedIds.size === 0}
+              onPress={() => {
+                const ids = Array.from(selectedIds);
+                Alert.alert('Move to category', undefined, [
+                  { text: 'None (uncategorize)', onPress: async () => { if (await bulkMoveObjects(ids, null)) exitSelection(); } },
+                  ...categories.map((c) => ({
+                    text: c.name,
+                    onPress: async () => { if (await bulkMoveObjects(ids, c.id)) exitSelection(); },
+                  })),
+                  { text: 'Cancel', style: 'cancel' as const },
+                ]);
+              }}
+            >
+              <Ionicons name="pricetag-outline" size={20} color="#3b82f6" />
+              <Text style={styles.selectionMoveText}>Move</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectionDeleteBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
+              disabled={selectedIds.size === 0}
+              onPress={handleBulkDelete}
+            >
+              <Ionicons name="trash-outline" size={20} color="#fff" />
+              <Text style={styles.selectionDeleteText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -1591,6 +1638,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   selectionCount: { fontSize: 15, color: '#374151', fontWeight: '600' },
+  selectionActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  selectionMoveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+  },
+  selectionMoveText: { color: '#3b82f6', fontWeight: '600' },
   selectionDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1601,6 +1661,26 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   selectionDeleteText: { color: '#fff', fontWeight: '600' },
+
+  // Category picker (in detail modal)
+  categoryPickerRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 0 },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgMuted,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 5,
+  },
+  categoryChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  categoryChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  swatchSm: { width: 10, height: 10, borderRadius: 5 },
 
   // Status picker
   statusPicker: { flexDirection: 'row', gap: 6 },
