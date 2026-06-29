@@ -310,9 +310,12 @@ Generate a weekly synthesis.`;
     periodEnd: periodEnd.toISOString(),
     objectCount: corpus.length,
     domainBreakdown: breakdown,
+    ...parsed,
+    // Deterministic (from findResolvedInPeriod) — placed AFTER ...parsed so the
+    // LLM response can never overwrite these, even if parseLLMResponse later
+    // gains an `accomplished` key.
     accomplished,
     accomplishedCount: accomplished.length,
-    ...parsed,
   };
 
   // Persist as a session
