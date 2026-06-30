@@ -1,12 +1,15 @@
 import { getGeofenceObjects } from '../../services/geofenceService';
 import { GeofenceModel } from '../../models/Geofence';
 import { AtomicObjectModel } from '../../models/AtomicObject';
+import { PlaceModel } from '../../models/Place';
 
 jest.mock('../../models/Geofence');
 jest.mock('../../models/AtomicObject');
+jest.mock('../../models/Place');
 
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
 const mockObj = AtomicObjectModel as jest.Mocked<typeof AtomicObjectModel>;
+const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 
 const GEOFENCE_ID = 'gf-1';
 const USER_ID = 'u-1';
@@ -37,5 +40,37 @@ describe('getGeofenceObjects — openOnly branching', () => {
 
     expect(mockGeo.getOpenLinkedObjectIds).toHaveBeenCalledWith(GEOFENCE_ID);
     expect(mockGeo.getLinkedObjectIds).not.toHaveBeenCalled();
+  });
+});
+
+describe('getGeofenceObjects — inferred geofence resolves via its place', () => {
+  const PLACE_ID = 'pl-9';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGeo.findById.mockResolvedValue({
+      userId: USER_ID,
+      notificationSettings: { enabled: true },
+      createdBy: 'inferred',
+      placeId: PLACE_ID,
+    } as any);
+    mockPlace.getLinkedObjectIds.mockResolvedValue(['note-1']);
+    mockObj.findByIds.mockResolvedValue([{ toAtomicObject: () => ({ id: 'note-1' }) } as any]);
+  });
+
+  it('fetches notes via the place links, NOT the geofence_objects join', async () => {
+    const result = await getGeofenceObjects(USER_ID, GEOFENCE_ID);
+
+    expect(mockPlace.getLinkedObjectIds).toHaveBeenCalledWith(PLACE_ID);
+    expect(mockGeo.getLinkedObjectIds).not.toHaveBeenCalled();
+    expect(mockGeo.getOpenLinkedObjectIds).not.toHaveBeenCalled();
+    expect(result).toEqual([{ id: 'note-1' }]);
+  });
+
+  it('returns empty when the place has no active linked notes', async () => {
+    mockPlace.getLinkedObjectIds.mockResolvedValue([]);
+    const result = await getGeofenceObjects(USER_ID, GEOFENCE_ID);
+    expect(result).toEqual([]);
+    expect(mockObj.findByIds).not.toHaveBeenCalled();
   });
 });

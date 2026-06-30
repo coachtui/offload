@@ -4,6 +4,7 @@
 
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
+import { PlaceModel } from '../models/Place';
 import type { Geofence, GeofenceCreateRequest, GeoPoint, AtomicObject } from '@shared/types';
 import { z } from 'zod';
 import { queryMany } from '../db/queries';
@@ -161,6 +162,19 @@ export async function getGeofenceObjects(
   if (!geofence.notificationSettings.enabled) {
     console.log(`[geofenceService] getGeofenceObjects: geofence ${geofenceId} is disabled — returning empty`);
     return [];
+  }
+
+  // Inferred geofences link their notes via the backing place (object_place_links),
+  // NOT the geofence_objects join table. Resolve through the place so the detail
+  // view matches the overview open-count and the on-arrival notification (which
+  // both read place links). Without this, an inferred geofence detail shows zero
+  // notes even though the overview says it has one.
+  if (geofence.createdBy === 'inferred' && geofence.placeId) {
+    const placeLinkedIds = await PlaceModel.getLinkedObjectIds(geofence.placeId);
+    console.log(`[geofenceService] getGeofenceObjects: inferred geofence ${geofenceId} → ${placeLinkedIds.length} place-linked object(s) via place ${geofence.placeId}`);
+    if (placeLinkedIds.length === 0) return [];
+    const placeObjects = await AtomicObjectModel.findByIds(placeLinkedIds);
+    return placeObjects.map((o) => o.toAtomicObject());
   }
 
   const linkedIds = openOnly
