@@ -221,9 +221,15 @@ export async function resolvePlaceNameMulti(
     const params = new URLSearchParams({
       q: placeName,
       format: 'json',
-      // Fetch a wider candidate pool so we can pick the geographically nearest
-      // few (Nominatim orders by importance, not distance).
-      limit: '10',
+      // Fetch a BROAD candidate pool (Nominatim's max) so we can pick the
+      // geographically nearest few ourselves. Nominatim orders by importance,
+      // not distance, and a user's closest branch of a chain often has LOWER
+      // importance than busier branches in town — with a small limit it never
+      // enters the pool, so the distance sort below would pick a far branch
+      // (e.g. a McDon's 15km away instead of the one 0.6km away). 40 is the
+      // Nominatim /search maximum and comfortably covers all branches in the
+      // ~50km viewbox.
+      limit: '40',
       addressdetails: '1',
     });
 
