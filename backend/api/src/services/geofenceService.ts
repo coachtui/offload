@@ -300,11 +300,21 @@ export interface PlaceOverviewItem {
 }
 
 /**
- * Merged browse list: every manually-labeled geofence (always shown) plus every
- * inferred place that still has >=1 open note. Labeled first, then by open count.
+ * Merged browse list, in three tiers:
+ *  1. Manually-labeled geofences — always shown; open notes via geofence_objects.
+ *  2. Inferred geofences (auto-created from a note) that still have >=1 open
+ *     note — shown as real, toggleable reminders with their actual enabled
+ *     state; open notes come via the linked place's active object_place_links.
+ *  3. Detected places that have NO geofence yet (e.g. resolution below the
+ *     geofence-confidence threshold) — promotable suggestions, bell off.
+ *
+ * Inferred geofences appear directly (tier 2) rather than as "detected places",
+ * so each of N nearby branches of a chain (e.g. 3 McDonald's) is independently
+ * toggleable by its own geofence id. A place is only listed in tier 3 when it
+ * has no geofence, so it never double-lists alongside its own geofence.
  */
 export async function getPlacesOverview(userId: string): Promise<PlaceOverviewItem[]> {
-  const geofences = await queryMany<{ id: string; name: string; open_count: string; notification_enabled: boolean }>(
+  const manualGeofences = await queryMany<{ id: string; name: string; open_count: string; notification_enabled: boolean }>(
     `SELECT g.id, g.name, g.notification_enabled,
             COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count
      FROM hub.geofences g
@@ -316,6 +326,19 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
     [userId]
   );
 
+  const inferredGeofences = await queryMany<{ id: string; name: string; open_count: string; notification_enabled: boolean }>(
+    `SELECT g.id, g.name, g.notification_enabled,
+            COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count
+     FROM hub.geofences g
+     JOIN hub.object_place_links opl ON opl.place_id = g.place_id
+     JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+     WHERE g.user_id = $1 AND g.created_by = 'inferred'
+     GROUP BY g.id, g.name, g.notification_enabled
+     HAVING COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) >= 1
+     ORDER BY open_count DESC, g.created_at DESC`,
+    [userId]
+  );
+
   const places = await queryMany<{ id: string; name: string; open_count: string }>(
     `SELECT p.id, p.normalized_name AS name,
             COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count
@@ -323,6 +346,7 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
      JOIN hub.object_place_links opl ON opl.place_id = p.id
      JOIN hub.atomic_objects ao ON ao.id = opl.object_id
      WHERE p.user_id = $1
+       AND NOT EXISTS (SELECT 1 FROM hub.geofences g WHERE g.place_id = p.id)
      GROUP BY p.id, p.normalized_name
      HAVING COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) >= 1
      ORDER BY open_count DESC`,
@@ -330,9 +354,14 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
   );
 
   return [
-    ...geofences.map((g) => ({
+    ...manualGeofences.map((g) => ({
       kind: 'geofence' as const, id: g.id, name: g.name,
       openCount: parseInt(g.open_count, 10), labeled: true,
+      enabled: g.notification_enabled,
+    })),
+    ...inferredGeofences.map((g) => ({
+      kind: 'geofence' as const, id: g.id, name: g.name,
+      openCount: parseInt(g.open_count, 10), labeled: false,
       enabled: g.notification_enabled,
     })),
     ...places.map((p) => ({
