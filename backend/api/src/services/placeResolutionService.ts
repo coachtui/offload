@@ -113,6 +113,12 @@ function computeConfidence(
       confidence = Math.min(confidence + 0.15, 0.85);
     } else if (distKm < 20) {
       confidence = Math.min(confidence + 0.05, 0.75);
+    } else if (distKm > 100) {
+      // A match >100km from the user is almost certainly the wrong location
+      // (a same-name chain on another continent). Force it below the geofence
+      // threshold so it can never spawn a bogus geofence, even if the geocoder's
+      // viewbox bound was bypassed (e.g. no user location available).
+      confidence = Math.min(confidence, 0.3);
     }
   }
 
@@ -220,12 +226,18 @@ export async function resolvePlaceNameMulti(
     });
 
     if (userLocation) {
-      const delta = 0.2;
+      // ~0.45° ≈ 50km half-width box around the user.
+      const delta = 0.45;
       params.set(
         'viewbox',
         `${userLocation.lng - delta},${userLocation.lat + delta},${userLocation.lng + delta},${userLocation.lat - delta}`
       );
-      params.set('bounded', '0');
+      // bounded=1 HARD-restricts results to the viewbox. With bounded=0 a generic
+      // chain name like "McDonald's" returns the globally "most important" matches
+      // (Spain, Australia, Mexico…) and ignores the box entirely — producing
+      // geofences thousands of km away that never fire. Hard-bounding to the user's
+      // region returns the actual nearby locations.
+      params.set('bounded', '1');
     }
 
     const url = `${NOMINATIM_SEARCH}?${params.toString()}`;
