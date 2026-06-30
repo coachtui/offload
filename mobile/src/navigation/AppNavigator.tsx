@@ -22,6 +22,7 @@ import PlacesScreen from '../screens/PlacesScreen';
 import CategoriesScreen from '../screens/CategoriesScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
+import { ProximityBanner } from '../components/ProximityBanner';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -94,7 +95,14 @@ export function AppNavigator() {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      {isAuthenticated ? <MainStack /> : <AuthStack />}
+      {isAuthenticated ? (
+        <>
+          <MainStack />
+          <ProximityBanner />
+        </>
+      ) : (
+        <AuthStack />
+      )}
     </NavigationContainer>
   );
 }
