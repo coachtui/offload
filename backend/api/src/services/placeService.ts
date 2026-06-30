@@ -181,8 +181,13 @@ async function maybeCreateInferredGeofence(
   userId: string,
   place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null }
 ): Promise<void> {
-  // Never shadow a user's labeled place with an inferred duplicate.
-  const manualMatch = await GeofenceModel.findByUserAndName(userId, place.normalizedName);
+  // Never shadow a user's MANUALLY-labeled place with an inferred duplicate.
+  // We deliberately do NOT block on existing *inferred* same-name geofences:
+  // a chain like "McDonald's" has many branches, and we create a geofence for
+  // each of the nearest few. (Re-recording the same note is de-duped earlier at
+  // the place level via PlaceModel.findNearby, so this won't pile up duplicates.)
+  const sameName = await GeofenceModel.findByUserAndName(userId, place.normalizedName);
+  const manualMatch = sameName.filter(g => g.createdBy === 'manual');
   if (manualMatch.length > 0) {
     console.log(`[placeService] Manual geofence "${place.normalizedName}" exists — skipping inferred duplicate`);
     return;

@@ -221,7 +221,9 @@ export async function resolvePlaceNameMulti(
     const params = new URLSearchParams({
       q: placeName,
       format: 'json',
-      limit: '3',
+      // Fetch a wider candidate pool so we can pick the geographically nearest
+      // few (Nominatim orders by importance, not distance).
+      limit: '10',
       addressdetails: '1',
     });
 
@@ -270,8 +272,23 @@ export async function resolvePlaceNameMulti(
       confidence: computeConfidence(r, userLocation?.lat, userLocation?.lng, placeName),
     }));
 
-    console.log(`[PlaceResolution] Multi-resolved "${placeName}" → ${resolved.length} result(s): ${resolved.map(r => r.normalizedName).join(', ')}`);
-    return resolved;
+    // For a chain name we create a geofence per candidate, so return the 3
+    // NEAREST to the user (Nominatim's order is by importance, not distance).
+    // Without a user location, fall back to importance order.
+    const NEAREST_N = 3;
+    const selected = (userLocation
+      ? resolved
+          .slice()
+          .sort(
+            (a, b) =>
+              haversineKm(userLocation.lat, userLocation.lng, a.lat, a.lng) -
+              haversineKm(userLocation.lat, userLocation.lng, b.lat, b.lng)
+          )
+      : resolved
+    ).slice(0, NEAREST_N);
+
+    console.log(`[PlaceResolution] Multi-resolved "${placeName}" → ${selected.length} of ${resolved.length} candidate(s) (nearest): ${selected.map(r => r.normalizedName).join(', ')}`);
+    return selected;
   } catch (error) {
     console.warn(`[PlaceResolution] Error multi-resolving "${placeName}":`, error);
     return [];
