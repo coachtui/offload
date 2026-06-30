@@ -386,19 +386,13 @@ class GeofenceMonitoringService {
     const fallbackPlaceName = event.region.name;
 
     try {
-      const data = await this.fetchPlaceNotify(placeId);
+      const data = await this.fetchPlaceNotify(placeId, event.type);
 
-      // Backend unreachable / auth failed even after refresh. Never stay silent:
-      // still tell the user they arrived. Tapping opens PlaceSummary, which
-      // foregrounds the app and reloads the list with a fresh token.
+      // Backend unreachable / auth failed: we can't confirm there's an open note,
+      // so suppress rather than fire a noteless alert. The foreground proximity
+      // check surfaces the note next time the app is opened at the place.
       if (data === null) {
-        await this.schedulePlaceNotification(
-          event,
-          placeId,
-          fallbackPlaceName,
-          `📍 You're at ${fallbackPlaceName}`,
-          'Tap to view your notes'
-        );
+        console.log(`[GeofenceMonitoring] Place ${placeId} notify unavailable — suppressing (foreground check is the fallback)`);
         return;
       }
 
@@ -448,7 +442,7 @@ class GeofenceMonitoringService {
    * 401. Returns the parsed payload, or null if there's no usable token or the
    * call failed (so the caller can fall back to a generic arrival notification).
    */
-  private async fetchPlaceNotify(placeId: string): Promise<any | null> {
+  private async fetchPlaceNotify(placeId: string, eventType?: 'enter' | 'exit'): Promise<any | null> {
     let token = await SecureStore.getItemAsync('accessToken');
     if (!token) {
       token = await refreshAuthToken();
@@ -462,6 +456,7 @@ class GeofenceMonitoringService {
       fetch(`${API_BASE_URL}/api/v1/places/${placeId}/notify`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventType }),
         signal: AbortSignal.timeout(8000),
       });
 
@@ -480,7 +475,7 @@ class GeofenceMonitoringService {
     return response.json();
   }
 
-  private async fetchGeofenceNotify(geofenceId: string): Promise<any | null> {
+  private async fetchGeofenceNotify(geofenceId: string, eventType?: 'enter' | 'exit'): Promise<any | null> {
     let token = await SecureStore.getItemAsync('accessToken');
     if (!token) {
       token = await refreshAuthToken();
@@ -494,6 +489,7 @@ class GeofenceMonitoringService {
       fetch(`${API_BASE_URL}/api/v1/geofences/${geofenceId}/notify`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventType }),
         signal: AbortSignal.timeout(8000),
       });
 
@@ -550,16 +546,19 @@ class GeofenceMonitoringService {
       : `👋 Left ${geofenceName}`;
 
     try {
-      const data = await this.fetchGeofenceNotify(geofenceId);
+      const data = await this.fetchGeofenceNotify(geofenceId, event.type);
 
-      // Backend unreachable / auth failed even after refresh. Never stay silent.
+      // Backend unreachable / auth failed: we can't confirm there's an open note
+      // or that this event type is enabled, so suppress. The foreground proximity
+      // check surfaces the note next time the app is opened at the place.
       if (data === null) {
-        await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, 'Tap to view your notes');
+        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — suppressing (foreground check is the fallback)`);
         return;
       }
 
-      if (data.cooldown) {
-        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} in cooldown — suppressing notification`);
+      // Backend says don't notify (cooldown, disabled event type, or no open notes).
+      if (data.notify === false || data.cooldown) {
+        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} — backend says suppress`);
         return;
       }
 
@@ -690,8 +689,10 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }: any) => {
 
   if (!fullRegion) {
     console.warn('[GeofenceMonitoring] Region not found in persisted regions:', region.identifier);
-    console.warn('[GeofenceMonitoring] Falling back to bare region data (no notify prefs)');
-    // Fall back: use bare OS region data — treat as notify-on-both so user gets the alert
+    console.warn('[GeofenceMonitoring] Falling back to bare region data (enter-only, no exit)');
+    // Conservative fallback: enter-only. The backend notify call is the source of
+    // truth for whether this event type is enabled and whether there's an open
+    // note, so a missing persisted entry can't cause a spurious exit alert.
   }
 
   const resolvedRegion: GeofenceRegion = fullRegion ?? {
@@ -701,7 +702,7 @@ TaskManager.defineTask(GEOFENCE_TASK_NAME, async ({ data, error }: any) => {
     longitude: region.longitude,
     radius: region.radius,
     notifyOnEnter: true,
-    notifyOnExit: true,
+    notifyOnExit: false,
   };
 
   const event: GeofenceEvent = {

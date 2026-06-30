@@ -117,17 +117,38 @@ const GEOFENCE_COOLDOWN_MS = 60 * 60 * 1000;
  */
 export async function getGeofenceNotifyPayload(
   userId: string,
-  geofenceId: string
+  geofenceId: string,
+  eventType?: 'enter' | 'exit'
 ): Promise<{ objects: AtomicObject[]; geofenceName: string } | null> {
   const geofence = await GeofenceModel.findById(geofenceId);
   if (!geofence) throw new Error('Geofence not found');
   if (geofence.userId !== userId) throw new Error('Unauthorized');
+
+  // Respect the geofence's enter/exit rules. The DB is the source of truth, so a
+  // stale client-side region registration can't fire a disabled event type
+  // (onEnter defaults true; onExit is opt-in).
+  const ns: any = geofence.notificationSettings;
+  if (eventType === 'enter' && ns.onEnter === false) {
+    console.log(`[geofenceService] Geofence ${geofenceId}: onEnter disabled — not notifying`);
+    return null;
+  }
+  if (eventType === 'exit' && !ns.onExit) {
+    console.log(`[geofenceService] Geofence ${geofenceId}: onExit disabled — not notifying`);
+    return null;
+  }
 
   const now = new Date();
 
   const state = await GeofenceModel.getTriggerState(userId, geofenceId);
   if (state?.cooldownUntil && state.cooldownUntil > now) {
     console.log(`[geofenceService] Geofence ${geofenceId} in cooldown until ${state.cooldownUntil.toISOString()}`);
+    return null;
+  }
+
+  // Only notify — and only burn the cooldown — when there's an open note to show.
+  const objects = await getGeofenceObjects(userId, geofenceId, true);
+  if (objects.length === 0) {
+    console.log(`[geofenceService] Geofence ${geofenceId} has no open notes — not notifying`);
     return null;
   }
 
@@ -139,7 +160,6 @@ export async function getGeofenceNotifyPayload(
     incrementVisit: true,
   });
 
-  const objects = await getGeofenceObjects(userId, geofenceId, true);
   return { objects, geofenceName: geofence.name };
 }
 

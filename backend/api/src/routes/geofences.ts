@@ -92,15 +92,18 @@ router.post('/:id/notify', async (req: Request, res: Response) => {
       return;
     }
 
-    const payload = await getGeofenceNotifyPayload(req.user.id, req.params.id);
+    const eventType =
+      req.body?.eventType === 'exit' ? 'exit' : req.body?.eventType === 'enter' ? 'enter' : undefined;
+    const payload = await getGeofenceNotifyPayload(req.user.id, req.params.id, eventType);
 
     if (!payload) {
-      // In cooldown — mobile should suppress the notification
-      res.json({ cooldown: true, objects: [], geofenceName: null });
+      // Suppressed: cooldown, disabled event type, or no open notes.
+      // (cooldown kept for backwards compatibility with older clients.)
+      res.json({ notify: false, cooldown: true, objects: [], geofenceName: null });
       return;
     }
 
-    res.json({ cooldown: false, objects: payload.objects, geofenceName: payload.geofenceName });
+    res.json({ notify: true, cooldown: false, objects: payload.objects, geofenceName: payload.geofenceName });
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === 'Geofence not found') {

@@ -57,4 +57,41 @@ describe('getGeofenceNotifyPayload — cooldown', () => {
 
     await expect(getGeofenceNotifyPayload(USER, GF)).rejects.toThrow('Geofence not found');
   });
+
+  it('suppresses an exit event when onExit is off (no cooldown burned)', async () => {
+    mockGeo.findById.mockResolvedValue({
+      userId: USER, name: 'Jobsite',
+      notificationSettings: { enabled: true, onEnter: true, onExit: false },
+    } as any);
+    mockGeo.getTriggerState.mockResolvedValue(null as any);
+
+    const payload = await getGeofenceNotifyPayload(USER, GF, 'exit');
+
+    expect(payload).toBeNull();
+    expect(mockGeo.upsertTriggerState).not.toHaveBeenCalled();
+  });
+
+  it('allows an enter event when onEnter is on', async () => {
+    mockGeo.findById.mockResolvedValue({
+      userId: USER, name: 'Jobsite',
+      notificationSettings: { enabled: true, onEnter: true, onExit: false },
+    } as any);
+    mockGeo.getTriggerState.mockResolvedValue(null as any);
+
+    const payload = await getGeofenceNotifyPayload(USER, GF, 'enter');
+
+    expect(payload).toMatchObject({ geofenceName: 'Jobsite' });
+    expect(payload?.objects).toHaveLength(1);
+  });
+
+  it('suppresses (and burns no cooldown) when there are no open notes', async () => {
+    mockGeo.getTriggerState.mockResolvedValue(null as any);
+    mockGeo.getOpenLinkedObjectIds.mockResolvedValue([]); // no open linked notes
+    mockObj.findByIds.mockResolvedValue([]);
+
+    const payload = await getGeofenceNotifyPayload(USER, GF, 'enter');
+
+    expect(payload).toBeNull();
+    expect(mockGeo.upsertTriggerState).not.toHaveBeenCalled();
+  });
 });
