@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { AppState } from 'react-native';
 import { apiService } from '../services/api';
 import { geofenceMonitoringService, GeofenceRegion } from '../services/geofenceMonitoringService';
 import { locationService } from '../services/locationService';
@@ -394,6 +395,20 @@ export function useGeofences(): UseGeofencesResult {
   // Load geofences on mount
   useEffect(() => {
     fetchGeofences();
+  }, [fetchGeofences]);
+
+  // Re-sync whenever the app returns to the foreground. Geofences created on the
+  // server (e.g. inferred from a voice note) otherwise only get registered with
+  // the OS via a fragile post-record timer — if that misses, the geofence never
+  // fires. Re-registering on every foreground makes registration reliable.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        console.log('[useGeofences] App foregrounded — re-syncing geofences');
+        fetchGeofences();
+      }
+    });
+    return () => sub.remove();
   }, [fetchGeofences]);
 
   return {

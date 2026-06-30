@@ -21,8 +21,10 @@ const MAX_INFERRED_GEOFENCES = 15;
 // while still filtering out vague/ambiguous place names.
 const GEOFENCE_CONFIDENCE_THRESHOLD = 0.45;
 
-// Fixed radius for all inferred geofences (metres)
-const INFERRED_RADIUS_METERS = 100;
+// Fixed radius for all inferred geofences (metres). 150m (not 100m) because iOS
+// region monitoring is coarse — a 100m radius is often missed, especially when
+// arriving by car. 150m trades a little precision for reliable entry detection.
+const INFERRED_RADIUS_METERS = 150;
 
 // Anti-spam window: one ping per visit, but a genuine later return re-fires (1 hour)
 const COOLDOWN_MS = 60 * 60 * 1000;
