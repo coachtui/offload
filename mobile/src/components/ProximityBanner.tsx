@@ -4,14 +4,16 @@
  * the place's notes; the ✕ dismisses it for this visit.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useProximityAlerts } from '../hooks/useProximityAlerts';
 import { navigationRef } from '../navigation/navigationRef';
 
+// Fixed top offset to clear the status bar / notch. Avoids useSafeAreaInsets,
+// which requires a SafeAreaProvider in the tree above this component.
+const TOP_OFFSET = Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 8;
+
 export function ProximityBanner() {
-  const insets = useSafeAreaInsets();
   const { match, dismiss } = useProximityAlerts();
 
   if (!match) return null;
@@ -27,7 +29,7 @@ export function ProximityBanner() {
   };
 
   return (
-    <View style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
+    <View style={[styles.wrap, { top: TOP_OFFSET }]} pointerEvents="box-none">
       <TouchableOpacity style={styles.banner} onPress={open} activeOpacity={0.85}>
         <Ionicons name="location" size={22} color="#FFFFFF" style={styles.icon} />
         <View style={styles.textCol}>
