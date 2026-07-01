@@ -39,3 +39,45 @@ describe('pushService.sendToUser return value', () => {
     await expect(sendToUser('u1', MSG)).resolves.toBe(false);
   });
 });
+
+describe('pushService.sendToUser delivery behavior', () => {
+  beforeEach(() => jest.clearAllMocks());
+  afterEach(() => { (global.fetch as any) = undefined; });
+
+  it('POSTs one Expo message per token with title/body/data', async () => {
+    mockTokens.findTokensByUser.mockResolvedValue(['TokA', 'TokB']);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ status: 'ok' }, { status: 'ok' }] }),
+    }) as any;
+
+    await sendToUser('u1', { title: 'T', body: 'B', data: { screen: 'Insights' } });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('https://exp.host/--/api/v2/push/send');
+    const sent = JSON.parse(opts.body);
+    expect(sent).toEqual([
+      { to: 'TokA', title: 'T', body: 'B', data: { screen: 'Insights' }, sound: 'default' },
+      { to: 'TokB', title: 'T', body: 'B', data: { screen: 'Insights' }, sound: 'default' },
+    ]);
+  });
+
+  it('deletes a token that Expo reports as DeviceNotRegistered', async () => {
+    mockTokens.findTokensByUser.mockResolvedValue(['GoodTok', 'DeadTok']);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { status: 'ok' },
+          { status: 'error', message: 'not registered', details: { error: 'DeviceNotRegistered' } },
+        ],
+      }),
+    }) as any;
+
+    await sendToUser('u1', { title: 'T', body: 'B' });
+
+    expect(mockTokens.deleteToken).toHaveBeenCalledWith('DeadTok');
+    expect(mockTokens.deleteToken).not.toHaveBeenCalledWith('GoodTok');
+  });
+});
