@@ -52,7 +52,7 @@ export const createObjectSchema = z.object({
   cleanedText: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
   objectType: z
-    .enum(['task', 'reminder', 'idea', 'observation', 'question', 'decision', 'journal', 'reference'])
+    .enum(['task', 'reminder', 'idea', 'observation', 'question', 'decision', 'journal', 'reference', 'commitment', 'preference', 'concern'])
     .nullable()
     .optional(),
   domain: z
