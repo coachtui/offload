@@ -73,6 +73,7 @@ import { startEmbeddingRetryJob } from './jobs/embeddingRetry';
 import { startRetentionJob } from './jobs/retentionJob';
 import { startImportanceScoreJob } from './jobs/importanceScoreJob';
 import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesisJob';
+import { startWeeklySynthesisJob } from './jobs/weeklySynthesisJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -199,4 +200,5 @@ server.listen(PORT, async () => {
   startRetentionJob();
   startImportanceScoreJob();
   startMonthlyLongTermSynthesisJob();
+  startWeeklySynthesisJob();
 });
