@@ -28,9 +28,9 @@ function isoWeekKey(nowUtc: Date): string {
   const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const dayNum = (date.getUTCDay() + 6) % 7; // Mon=0
   date.setUTCDate(date.getUTCDate() - dayNum + 3); // nearest Thursday
-  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const jan4 = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
   const week = 1 + Math.round(
-    ((date.getTime() - firstThursday.getTime()) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7
+    ((date.getTime() - jan4.getTime()) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7
   );
   return `${date.getUTCFullYear()}-W${week}`;
 }

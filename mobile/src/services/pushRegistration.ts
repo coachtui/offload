@@ -26,7 +26,7 @@ export async function registerPushTokenWithBackend(): Promise<void> {
 
     const tokenData = await Notifications.getExpoPushTokenAsync({ projectId: EAS_PROJECT_ID });
     const token = tokenData.data;
-    const platform = Platform.OS; // 'ios' | 'android'
+    const platform: 'ios' | 'android' = Platform.OS === 'android' ? 'android' : 'ios';
 
     console.log('[pushRegistration] registering push token with backend, platform:', platform);
     await apiService.registerPushToken(token, platform);

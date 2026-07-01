@@ -17,8 +17,12 @@ describe('shouldFireWeekly', () => {
   it('does not fire on a non-Sunday', () => {
     expect(shouldFireWeekly(SAT_18_HST, null)).toBe(false);
   });
+  it('does not fire on a weekday at 18:00 HST', () => {
+    const wed18Hst = new Date('2026-06-25T04:00:00Z');
+    expect(shouldFireWeekly(wed18Hst, null)).toBe(false);
+  });
   it('does not re-fire if already run this ISO week', () => {
-    const earlierSameHour = new Date('2026-06-29T04:00:00Z');
+    const earlierSameHour = new Date('2026-06-24T20:00:00Z');
     expect(shouldFireWeekly(SUN_18_HST, earlierSameHour)).toBe(false);
   });
   it('fires again once a new ISO week has started', () => {

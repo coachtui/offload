@@ -56,7 +56,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     if (state.isAuthenticated) {
-      registerPushTokenWithBackend();
+      void registerPushTokenWithBackend();
     }
   }, [state.isAuthenticated]);
 
