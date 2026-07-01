@@ -18,7 +18,7 @@ export async function sendToUser(userId: string, msg: PushMessage): Promise<bool
     const tokens = await PushTokenModel.findTokensByUser(userId);
     if (tokens.length === 0) {
       console.log(`[pushService] No push tokens for user ${userId} — nothing to send`);
-      return true;
+      return true; // nothing to deliver; callers must not retry forever
     }
 
     const messages = tokens.map((to) => ({

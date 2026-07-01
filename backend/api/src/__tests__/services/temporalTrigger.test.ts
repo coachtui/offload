@@ -1,4 +1,5 @@
 import { deriveRemindAt } from '../../services/temporalTrigger';
+import * as chrono from 'chrono-node';
 
 // Reference instant: Tuesday 2026-06-30 10:00 HST == 2026-06-30T20:00:00Z
 // (2026-06-29 is a Monday — same anchor the weeklySynthesisTiming test uses.)
@@ -40,5 +41,16 @@ describe('deriveRemindAt', () => {
   it('returns null for missing dateText', () => {
     expect(deriveRemindAt({ dateText: null, objectType: 'task', createdAt: TUE_10AM_HST })).toBeNull();
     expect(deriveRemindAt({ dateText: '', objectType: 'task', createdAt: TUE_10AM_HST })).toBeNull();
+  });
+
+  it('returns null (not throw) when chrono parse throws unexpectedly', () => {
+    const spy = jest.spyOn(chrono, 'parse').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    try {
+      expect(deriveRemindAt({ dateText: 'Friday', objectType: 'task', createdAt: TUE_10AM_HST })).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

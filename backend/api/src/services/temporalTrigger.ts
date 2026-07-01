@@ -18,27 +18,34 @@ export function deriveRemindAt(input: {
   if (!input.objectType || !ACTIONABLE_TYPES.has(input.objectType)) return null;
   if (!input.dateText) return null;
 
-  const results = chrono.parse(
-    input.dateText,
-    { instant: input.createdAt, timezone: HST_OFFSET_MINUTES },
-    { forwardDate: true } // "Friday" = the coming Friday, never last week's
-  );
-  if (results.length === 0) return null;
+  try {
+    const results = chrono.parse(
+      input.dateText,
+      { instant: input.createdAt, timezone: HST_OFFSET_MINUTES },
+      { forwardDate: true } // "Friday" = the coming Friday, never last week's
+    );
+    if (results.length === 0) return null;
 
-  const start = results[0].start;
-  let remindAt: Date;
-  if (start.isCertain('hour')) {
-    remindAt = start.date();
-  } else {
-    // Date-only: build 09:00 HST as a UTC instant (9 + 10 = 19:00 UTC).
-    remindAt = new Date(Date.UTC(
-      start.get('year')!,
-      start.get('month')! - 1,
-      start.get('day')!,
-      DEFAULT_HOUR_HST - HST_OFFSET_MINUTES / 60,
-      0, 0
-    ));
+    // First date mention wins; later mentions in the same text are ignored.
+    const start = results[0].start;
+    let remindAt: Date;
+    if (start.isCertain('hour')) {
+      remindAt = start.date();
+    } else {
+      // Implied hours ("tomorrow morning") are not certain — they take the 9am default too.
+      // Date-only: build 09:00 HST as a UTC instant (9 + 10 = 19:00 UTC).
+      remindAt = new Date(Date.UTC(
+        start.get('year')!,
+        start.get('month')! - 1,
+        start.get('day')!,
+        DEFAULT_HOUR_HST - HST_OFFSET_MINUTES / 60,
+        0, 0
+      ));
+    }
+
+    return remindAt.getTime() > input.createdAt.getTime() ? remindAt : null;
+  } catch (err) {
+    console.warn('[temporalTrigger] parse failed (treated as no date):', err);
+    return null;
   }
-
-  return remindAt.getTime() > input.createdAt.getTime() ? remindAt : null;
 }
