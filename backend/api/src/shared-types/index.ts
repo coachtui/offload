@@ -105,6 +105,8 @@ export interface AtomicObject {
   whyItMatters?: string | null;
   retentionPolicy?: string | null;
   triggerContext?: string | null;
+  remindAt?: Date | string | null;
+  reminderFiredAt?: Date | string | null;
   domain?: ObjectDomain;
   temporalHints?: TemporalHints;
   locationHints?: LocationHints;

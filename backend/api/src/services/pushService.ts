@@ -1,7 +1,7 @@
 /**
- * Reusable server→device push via the Expo Push API. First consumer is the
- * weekly digest; Phase 8 contextual resurfacing will reuse it. Never throws —
- * a failed push must not crash a caller (e.g. the cron).
+ * Reusable server→device push via the Expo Push API. Never throws; returns
+ * whether delivery was handed off (false → caller may retry). Consumers: weekly
+ * digest, time reminders.
  */
 import { PushTokenModel } from '../models/PushToken';
 
@@ -13,12 +13,12 @@ interface PushMessage {
   data?: Record<string, unknown>;
 }
 
-export async function sendToUser(userId: string, msg: PushMessage): Promise<void> {
+export async function sendToUser(userId: string, msg: PushMessage): Promise<boolean> {
   try {
     const tokens = await PushTokenModel.findTokensByUser(userId);
     if (tokens.length === 0) {
       console.log(`[pushService] No push tokens for user ${userId} — nothing to send`);
-      return;
+      return true; // nothing to deliver; callers must not retry forever
     }
 
     const messages = tokens.map((to) => ({
@@ -37,7 +37,7 @@ export async function sendToUser(userId: string, msg: PushMessage): Promise<void
 
     if (!response.ok) {
       console.warn(`[pushService] Expo push responded ${response.status}`);
-      return;
+      return false;
     }
 
     const json = (await response.json()) as { data?: Array<{ status: string; details?: { error?: string } }> };
@@ -50,7 +50,9 @@ export async function sendToUser(userId: string, msg: PushMessage): Promise<void
         }
       })
     );
+    return true;
   } catch (err) {
     console.warn('[pushService] sendToUser failed (swallowed):', err);
+    return false;
   }
 }

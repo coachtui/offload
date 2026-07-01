@@ -5,6 +5,7 @@
 import { query, queryOne, queryMany } from '../db/queries';
 import { deleteFromVector } from '../services/vectorService';
 import { retentionPolicyFor, triggerContextFor } from '../services/memoryIntent';
+import { deriveRemindAt } from '../services/temporalTrigger';
 import type {
   AtomicObject,
   Category,
@@ -59,6 +60,8 @@ export interface AtomicObjectRow {
   why_it_matters: string | null;
   retention_policy: string | null;
   trigger_context: string | null;
+  remind_at: Date | null;
+  reminder_fired_at: Date | null;
   state: 'open' | 'active' | 'resolved' | 'archived' | null;
   state_updated_at: Date | null;
   evolved_from_id: string | null;
@@ -108,6 +111,8 @@ export class AtomicObjectModel {
   whyItMatters: string | null;
   retentionPolicy: string | null;
   triggerContext: string | null;
+  remindAt: Date | null;
+  reminderFiredAt: Date | null;
   state: 'open' | 'active' | 'resolved' | 'archived';
   stateUpdatedAt: Date | null;
   evolvedFromId: string | null;
@@ -176,6 +181,8 @@ export class AtomicObjectModel {
     this.whyItMatters = row.why_it_matters ?? null;
     this.retentionPolicy = row.retention_policy ?? null;
     this.triggerContext = row.trigger_context ?? null;
+    this.remindAt = row.remind_at ?? null;
+    this.reminderFiredAt = row.reminder_fired_at ?? null;
     this.state = row.state ?? 'open';
     this.stateUpdatedAt = row.state_updated_at ?? null;
     this.evolvedFromId = row.evolved_from_id ?? null;
@@ -301,6 +308,11 @@ export class AtomicObjectModel {
       geofenceCandidate: input.locationHints?.geofenceCandidate,
       hasDate: input.temporalHints?.hasDate,
     });
+    const remindAt = deriveRemindAt({
+      dateText: input.temporalHints?.dateText,
+      objectType: input.objectType,
+      createdAt: new Date(),
+    });
 
     const row = await queryOne<AtomicObjectRow>(
       `INSERT INTO hub.atomic_objects (
@@ -315,11 +327,11 @@ export class AtomicObjectModel {
         location_places, location_geofence_candidate,
         is_actionable, next_action,
         linked_object_ids, sequence_index, embedding_status,
-        why_it_matters, retention_policy, trigger_context
+        why_it_matters, retention_policy, trigger_context, remind_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
         $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33,
-        $34, $35, $36
+        $34, $35, $36, $37
       )
       RETURNING *`,
       [
@@ -361,6 +373,7 @@ export class AtomicObjectModel {
         input.whyItMatters ?? null,                                       // $34 why_it_matters
         retentionPolicy,                                                  // $35 retention_policy
         triggerContext,                                                   // $36 trigger_context
+        remindAt,                                                         // $37 remind_at
       ]
     );
 
@@ -638,6 +651,8 @@ export class AtomicObjectModel {
       whyItMatters: this.whyItMatters,
       retentionPolicy: this.retentionPolicy,
       triggerContext: this.triggerContext,
+      remindAt: this.remindAt,
+      reminderFiredAt: this.reminderFiredAt,
       domain: this.domain,
       temporalHints: this.temporalHints,
       locationHints: this.locationHints,

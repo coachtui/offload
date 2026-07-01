@@ -47,6 +47,9 @@ function handleNotificationData(data: any, attempt = 0) {
   } else if (data?.screen === 'Objects' && data?.geofenceId) {
     console.log('[App] Navigating to Objects with geofenceId:', data.geofenceId);
     navigationRef.navigate('Objects', { geofenceId: data.geofenceId });
+  } else if (data?.screen === 'Objects' && data?.objectId) {
+    console.log('[App] Navigating to Objects with objectId:', data.objectId);
+    navigationRef.navigate('Objects', { objectId: data.objectId });
   } else if (data?.screen === 'Insights') {
     navigationRef.navigate('Insights');
   }
