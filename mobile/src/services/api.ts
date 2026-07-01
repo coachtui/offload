@@ -327,6 +327,11 @@ class ApiService {
       throw new Error(errorMessage);
     }
 
+    // DELETE routes reply 204 No Content — an empty body isn't JSON, and
+    // parsing it throws, making successful deletes look like failures.
+    if (response.status === 204) {
+      return undefined as T;
+    }
     return response.json();
   }
 
