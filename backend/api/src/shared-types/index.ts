@@ -30,7 +30,10 @@ export type ObjectType =
   | 'question'
   | 'decision'
   | 'journal'
-  | 'reference';
+  | 'reference'
+  | 'commitment'
+  | 'preference'
+  | 'concern';
 
 export type ObjectDomain =
   | 'work'
@@ -99,6 +102,9 @@ export interface AtomicObject {
   cleanedText?: string | null;
   title?: string | null;
   objectType?: ObjectType | null;
+  whyItMatters?: string | null;
+  retentionPolicy?: string | null;
+  triggerContext?: string | null;
   domain?: ObjectDomain;
   temporalHints?: TemporalHints;
   locationHints?: LocationHints;
@@ -187,6 +193,7 @@ export interface AtomicObjectCreateRequest {
   cleanedText?: string | null;
   title?: string | null;
   objectType?: ObjectType | null;
+  whyItMatters?: string | null;
   domain?: ObjectDomain;
   temporalHints?: TemporalHints;
   locationHints?: LocationHints;
