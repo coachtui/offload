@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { LoginRequest, RegisterRequest, AuthResponse } from '../types';
 import { apiService, AuthError } from '../services/api';
+import { registerPushTokenWithBackend } from '../services/pushRegistration';
 
 interface AuthState {
   user: AuthResponse['user'] | null;
@@ -52,6 +53,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     checkAuthStatus();
   }, []);
+
+  useEffect(() => {
+    if (state.isAuthenticated) {
+      registerPushTokenWithBackend();
+    }
+  }, [state.isAuthenticated]);
 
   async function checkAuthStatus() {
     try {
