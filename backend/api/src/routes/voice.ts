@@ -193,6 +193,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
               rawText: parsedObject.rawText,
               cleanedText: parsedObject.cleanedText,
               title: parsedObject.title,
+              whyItMatters: parsedObject.whyItMatters,
               objectType: parsedObject.type,
               domain: parsedObject.domain,
               temporalHints: parsedObject.temporalHints,
