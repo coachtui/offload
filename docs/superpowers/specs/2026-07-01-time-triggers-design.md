@@ -77,7 +77,7 @@ Mirrors the existing `setInterval` job pattern (registered alongside `weeklySynt
   SELECT ... FROM hub.atomic_objects
   WHERE remind_at <= now()
     AND reminder_fired_at IS NULL
-    AND status IN ('open', 'active')
+    AND state IN ('open', 'active')
     AND object_type IN ('task', 'reminder', 'commitment')
     AND deleted_at IS NULL
   ```
