@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
+import { notifySaveResult } from '../services/saveNotification';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
 
@@ -26,9 +28,11 @@ interface TranscriptionState {
 
 interface UseDeepgramTranscriptionReturn extends TranscriptionState {
   startRecording: (location?: GeoPoint) => Promise<void>;
-  stopRecording: () => Promise<void>;
+  stopRecording: (opts?: { onGeofencesNeeded?: () => void }) => Promise<void>;
   reset: () => void;
 }
+
+const KEEP_AWAKE_TAG = 'offload-recording';
 
 // Convert base64 to ArrayBuffer
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -84,6 +88,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
       }
+      try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
     };
   }, []);
 
@@ -234,6 +239,8 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         }));
       }, 1000);
 
+      activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+
       setState(prev => ({
         ...prev,
         status: 'recording',
@@ -244,6 +251,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
       console.log('[Recording] recording started successfully');
     } catch (error) {
+      try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
       console.error('[Recording] startRecording failed:', error instanceof Error ? error.message : error);
       handleAuthError(error);
       setState(prev => ({
@@ -254,8 +262,9 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     }
   }, [handleAuthError]);
 
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback(async (opts?: { onGeofencesNeeded?: () => void }) => {
     console.log('[Recording] stopRecording called');
+    try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
 
     // Stop duration timer
     if (durationIntervalRef.current) {
@@ -301,8 +310,11 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       : partial;
     console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
 
-    // Enhancement runs whenever we captured audio for the gpt-4o pass.
-    const willEnhance = audioChunksRef.current.length > 0;
+    // Snapshot audio chunks before launching background work so the IIFE has a
+    // stable reference even if audioChunksRef is cleared by reset().
+    const audioChunks = audioChunksRef.current.slice();
+    const willEnhance = audioChunks.length > 0;
+
     setState(prev => ({
       ...prev,
       status: 'processing',
@@ -313,43 +325,52 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       transcriptionMethod: 'deepgram',
     }));
 
-    // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
-    // Deepgram's result is shown as the preview above. Now send the captured
-    // raw audio for a more accurate transcript and swap it in when it returns.
-    // Any failure (network, empty audio, API error) keeps the Deepgram text.
-    let transcriptToSave = transcript;
-    let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
-    if (willEnhance) {
-      try {
-        console.log('[Recording] requesting gpt-4o transcription —',
-          audioChunksRef.current.length, 'chunks');
-        const { transcript: gpt4oTranscript } = await apiService.transcribeAudio(
-          audioChunksRef.current,
-          { sampleRate: 16000, channels: 1 }
-        );
-        if (gpt4oTranscript && gpt4oTranscript.trim()) {
-          transcriptToSave = gpt4oTranscript.trim();
-          transcriptionMethod = 'gpt-4o';
-          console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
-            '— swapping in for saved note');
-          setState(prev => ({
-            ...prev,
-            finalTranscript: transcriptToSave,
-            transcriptionMethod: 'gpt-4o',
-          }));
-        } else {
-          console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
+    // ── Background: enhance → save → hint → notify ───────────────────────
+    // stopRecording returns to the caller here. The save pipeline continues
+    // asynchronously so the caller (RecordScreen) can navigate to Home immediately.
+    void (async () => {
+      // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
+      // Deepgram's result is shown as the preview above. Now send the captured
+      // raw audio for a more accurate transcript and swap it in when it returns.
+      // Any failure (network, empty audio, API error) keeps the Deepgram text.
+      let transcriptToSave = transcript;
+      let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
+      if (willEnhance) {
+        try {
+          console.log('[Recording] requesting gpt-4o transcription —',
+            audioChunks.length, 'chunks');
+          const { transcript: gpt4oTranscript } = await apiService.transcribeAudio(
+            audioChunks,
+            { sampleRate: 16000, channels: 1 }
+          );
+          if (gpt4oTranscript && gpt4oTranscript.trim()) {
+            transcriptToSave = gpt4oTranscript.trim();
+            transcriptionMethod = 'gpt-4o';
+            console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
+              '— swapping in for saved note');
+            setState(prev => ({
+              ...prev,
+              finalTranscript: transcriptToSave,
+              transcriptionMethod: 'gpt-4o',
+            }));
+          } else {
+            console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
+          }
+        } catch (error) {
+          console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
+            error instanceof Error ? error.message : error);
+        } finally {
+          setState(prev => ({ ...prev, isEnhancing: false }));
         }
-      } catch (error) {
-        console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
-          error instanceof Error ? error.message : error);
-      } finally {
-        setState(prev => ({ ...prev, isEnhancing: false }));
       }
-    }
 
-    // ── 6b. Save transcript to backend ─────────────────────────────────
-    if (transcriptToSave.trim()) {
+      // ── 6b. Save transcript to backend ─────────────────────────────────
+      if (!transcriptToSave.trim()) {
+        console.log('[Recording] empty transcript — skipping save');
+        setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
+        return;
+      }
+
       try {
         console.log('[Recording] saving transcript to backend...');
         const result = await apiService.saveTranscript({
@@ -364,6 +385,13 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
         const sessionId = ++sessionIdRef.current;
 
+        // Trigger geofence re-sync if the saved note has location-triggered reminders.
+        // Called here (after save, in the background) so it fires regardless of whether
+        // RecordScreen is still mounted.
+        if (result.hasGeofenceCandidates) {
+          opts?.onGeofencesNeeded?.();
+        }
+
         setState(prev => ({
           ...prev,
           status: 'done',
@@ -373,34 +401,39 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           hasGeofenceCandidates: result.hasGeofenceCandidates ?? false,
         }));
 
-        // ── Background: related notes ──────────────────────────────────
-        if (transcriptToSave.trim().length > 50) {
-          void (async () => {
-            try {
-              const searchResp = await apiService.ragSearch(transcriptToSave, { topK: 5 });
-              const related = (searchResp.results ?? [])
-                .filter((r) => !result.objectIds.includes(r.objectId))
-                .slice(0, 3);
-              if (sessionIdRef.current === sessionId && related.length > 0) {
-                setState((prev) => ({ ...prev, relatedNotes: related }));
-              }
-            } catch {
-              // non-critical — silent
-            }
-          })();
+        // ── Hint computation: contradiction check + related notes ──────
+        // Run both in parallel for speed; apply contradiction hint first
+        // (it takes priority over the related-notes hint).
+        let hint: string | undefined;
 
-          // ── Background: contradiction check ────────────────────────
-          void (async () => {
-            try {
-              const contr = await apiService.ragCheckContradictions(transcriptToSave, result.objectIds);
-              if (sessionIdRef.current === sessionId && contr.hasConflict) {
-                setState((prev) => ({ ...prev, contradictions: contr.conflicts }));
-              }
-            } catch {
-              // non-critical — silent
+        if (transcriptToSave.trim().length > 50) {
+          const [contrSettled, ragSettled] = await Promise.allSettled([
+            apiService.ragCheckContradictions(transcriptToSave, result.objectIds),
+            apiService.ragSearch(transcriptToSave, { topK: 5, minScore: 0.6 }),
+          ]);
+
+          if (contrSettled.status === 'fulfilled' && contrSettled.value.hasConflict) {
+            if (sessionIdRef.current === sessionId) {
+              setState(prev => ({ ...prev, contradictions: contrSettled.value.conflicts }));
             }
-          })();
+            hint = '⚠️ may conflict with an earlier note';
+          }
+
+          if (!hint && ragSettled.status === 'fulfilled') {
+            const related = (ragSettled.value.results ?? [])
+              .filter((r) => !result.objectIds.includes(r.objectId))
+              .slice(0, 3);
+            if (related.length > 0) {
+              if (sessionIdRef.current === sessionId) {
+                setState(prev => ({ ...prev, relatedNotes: related }));
+              }
+              hint = `relates to ${related.length} earlier note${related.length === 1 ? '' : 's'}`;
+            }
+          }
         }
+
+        await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim(), hint });
+
       } catch (error) {
         console.error('[Recording] saveTranscript failed:', error instanceof Error ? error.message : error);
         handleAuthError(error);
@@ -409,15 +442,9 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           status: 'error',
           error: error instanceof Error ? error.message : 'Failed to save transcript',
         }));
+        await notifySaveResult({ ok: false });
       }
-    } else {
-      console.log('[Recording] empty transcript — skipping save');
-      setState(prev => ({
-        ...prev,
-        status: 'done',
-        savedObjectIds: [],
-      }));
-    }
+    })();
   }, [handleAuthError]);
 
   const reset = useCallback(() => {

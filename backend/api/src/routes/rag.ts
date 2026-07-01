@@ -12,6 +12,7 @@ import { authenticate } from '../auth/middleware';
 import { semanticSearch } from '../services/vectorService';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { buildContextPack, sparWithContext, detectContradictions } from '../services/sparringService';
+import { applyMinScore } from '../services/ragScore';
 import { pool } from '../db/connection';
 
 const router = Router();
@@ -23,6 +24,7 @@ router.use(authenticate);
 const searchSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   topK: z.number().int().min(1).max(50).optional().default(10),
+  minScore: z.number().min(0).max(1).optional(),
   filters: z
     .object({
       objectType: z
@@ -73,7 +75,7 @@ router.post('/search', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Validation failed', details: validation.error.errors });
     }
 
-    const { query, topK, filters } = validation.data;
+    const { query, topK, filters, minScore } = validation.data;
     console.log(`[RAG] search — userId: ${userId}, queryLen: ${query.length}, topK: ${topK}`);
 
     let searchResults;
@@ -106,9 +108,7 @@ router.post('/search', async (req: Request, res: Response) => {
     const scoreMap = new Map(searchResults.map((r) => [r.objectId, r.score]));
     const fullObjects = await AtomicObjectModel.findByIds(objectIds);
 
-    const SCORE_THRESHOLD = 0.4;
-
-    const results = fullObjects
+    const scored = fullObjects
       .map((obj) => {
         const atom = obj.toAtomicObject();
         return {
@@ -126,8 +126,8 @@ router.post('/search', async (req: Request, res: Response) => {
           sourceTranscriptId: atom.source?.recordingId ?? null,
         };
       })
-      .filter((r) => r.score >= SCORE_THRESHOLD)
       .sort((a, b) => b.score - a.score);
+    const results = applyMinScore(scored, minScore);
 
     console.log(`[RAG] search returned ${results.length} results`);
     return res.json({ results, total: results.length, query });

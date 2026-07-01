@@ -584,6 +584,7 @@ class ApiService {
   // RAG methods
   async ragSearch(query: string, options?: {
     topK?: number;
+    minScore?: number;
     filters?: {
       objectType?: string[];
       domain?: string[];
