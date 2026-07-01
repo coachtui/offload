@@ -73,6 +73,7 @@ import { startEmbeddingRetryJob } from './jobs/embeddingRetry';
 import { startRetentionJob } from './jobs/retentionJob';
 import { startImportanceScoreJob } from './jobs/importanceScoreJob';
 import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesisJob';
+import { startWeeklySynthesisJob } from './jobs/weeklySynthesisJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -86,6 +87,7 @@ import placesRoutes from './routes/places';
 import dashboardRoutes from './routes/dashboard';
 import ideasRoutes from './routes/ideas';
 import diagnosticsRoutes from './routes/diagnostics';
+import pushRoutes from './routes/push';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
@@ -98,6 +100,7 @@ app.use('/api/v1/places', placesRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/ideas', ideasRoutes);
 app.use('/api/v1/diagnostics', diagnosticsRoutes);
+app.use('/api/v1/push', pushRoutes);
 
 app.get('/api/v1', (req, res) => {
   res.json({
@@ -197,4 +200,5 @@ server.listen(PORT, async () => {
   startRetentionJob();
   startImportanceScoreJob();
   startMonthlyLongTermSynthesisJob();
+  startWeeklySynthesisJob();
 });

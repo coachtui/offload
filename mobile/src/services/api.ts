@@ -776,6 +776,14 @@ class ApiService {
     });
     return { geofence: this.toMobileGeofence(res.geofence) };
   }
+
+  // Push notification methods
+  async registerPushToken(token: string, platform: 'ios' | 'android'): Promise<void> {
+    await this.request<void>('/api/v1/push/register', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
+  }
 }
 
 export const apiService = new ApiService();
