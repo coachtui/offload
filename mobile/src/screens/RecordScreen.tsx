@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -35,39 +35,13 @@ export function RecordScreen({ navigation }: Props) {
     duration,
     error,
     savedObjectIds,
-    relatedNotes,
-    contradictions,
-    hasGeofenceCandidates,
     isEnhancing,
-    transcriptionMethod,
     startRecording,
     stopRecording,
     reset,
   } = useDeepgramTranscription();
 
   const { fetchGeofences } = useGeofences();
-  const geofenceSyncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // After saving a note with location-triggered reminders, re-fetch geofences after a
-  // short delay. This allows the server's async place resolution + geofence creation to
-  // complete before the client syncs with the OS, ensuring the new geofence gets registered.
-  //
-  // NOTE: The timeout is intentionally NOT cancelled on unmount. If the user navigates
-  // away before the 6s window closes, the sync still needs to run so the new inferred
-  // geofence gets registered with the OS. The only downside is a harmless React warning
-  // about state updates on an unmounted component — the OS registration is what matters.
-  useEffect(() => {
-    if (hasGeofenceCandidates && status === 'done') {
-      console.log('[RecordScreen] Geofence candidates detected — scheduling re-sync in 6s (persists through navigation)');
-      if (geofenceSyncTimeoutRef.current) {
-        clearTimeout(geofenceSyncTimeoutRef.current);
-      }
-      geofenceSyncTimeoutRef.current = setTimeout(() => {
-        console.log('[RecordScreen] Re-fetching geofences to pick up inferred places');
-        fetchGeofences();
-      }, 6000);
-    }
-  }, [hasGeofenceCandidates, status, fetchGeofences]);
 
   const isRecording = status === 'recording';
   const isConnecting = status === 'connecting';
@@ -77,7 +51,19 @@ export function RecordScreen({ navigation }: Props) {
 
   async function handleRecordPress() {
     if (isRecording) {
-      await stopRecording();
+      await stopRecording({
+        // Geofence re-sync: schedule here (inside the background save callback) so it
+        // fires even after RecordScreen has been popped from the stack on navigation.
+        onGeofencesNeeded: () => {
+          console.log('[RecordScreen] Geofence candidates detected — scheduling re-sync in 6s (persists through navigation)');
+          setTimeout(() => {
+            console.log('[RecordScreen] Re-fetching geofences to pick up inferred places');
+            fetchGeofences();
+          }, 6000);
+        },
+      });
+      navigation.navigate('Home');
+      return;
     } else if (status === 'idle' || status === 'done' || status === 'error') {
       const loc = await locationService.getCurrentLocation();
       const geoPoint = loc
@@ -159,12 +145,6 @@ export function RecordScreen({ navigation }: Props) {
           </View>
         ) : (
           <View>
-            {isDone && transcriptionMethod === 'gpt-4o' && finalTranscript ? (
-              <View style={styles.enhancedBadge}>
-                <Ionicons name="sparkles" size={12} color="#7c3aed" />
-                <Text style={styles.enhancedBadgeText}>Enhanced transcript</Text>
-              </View>
-            ) : null}
             {finalTranscript ? (
               <Text style={styles.transcriptText}>{finalTranscript}</Text>
             ) : null}
@@ -187,37 +167,6 @@ export function RecordScreen({ navigation }: Props) {
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color="#f59e0b" />
                 <Text style={styles.processingText}>Saving transcript...</Text>
-              </View>
-            )}
-
-            {/* Contradiction warning */}
-            {isDone && contradictions.length > 0 && (
-              <ContraDetailBanner contradictions={contradictions} navigation={navigation} />
-            )}
-
-            {/* Related notes */}
-            {isDone && relatedNotes.length > 0 && (
-              <View style={styles.relatedSection}>
-                <Text style={styles.relatedTitle}>Related to your notes</Text>
-                {relatedNotes.map((note) => (
-                  <TouchableOpacity
-                    key={note.objectId}
-                    style={styles.relatedCard}
-                    onPress={() => navigation.navigate('Objects', { objectId: note.objectId })}
-                  >
-                    <View style={styles.relatedCardHeader}>
-                      <Text style={styles.relatedType}>{note.type}</Text>
-                      <Text style={styles.relatedScore}>{Math.round(note.score * 100)}%</Text>
-                    </View>
-                    {note.mentionCount !== undefined && note.mentionCount >= 3 && (
-                      <Text style={styles.mentionBadge}>Mentioned {note.mentionCount}× before</Text>
-                    )}
-                    {note.title ? (
-                      <Text style={styles.relatedNoteTitle} numberOfLines={1}>{note.title}</Text>
-                    ) : null}
-                    <Text style={styles.relatedNoteText} numberOfLines={2}>{note.cleanedText}</Text>
-                  </TouchableOpacity>
-                ))}
               </View>
             )}
           </View>
@@ -261,50 +210,6 @@ export function RecordScreen({ navigation }: Props) {
   );
 }
 
-function ContraDetailBanner({
-  contradictions,
-  navigation,
-}: {
-  contradictions: import('../services/api').ConflictItem[];
-  navigation: any;
-}) {
-  const [expandedIdx, setExpandedIdx] = React.useState<number | null>(null);
-  return (
-    <View style={styles.contradictionBanner}>
-      <Text style={styles.contradictionTitle}>⚠ Possible contradiction</Text>
-      {contradictions.slice(0, 2).map((c, i) => (
-        <View key={i}>
-          <TouchableOpacity onPress={() => setExpandedIdx(expandedIdx === i ? null : i)}>
-            <Text style={styles.contradictionText}>{c.description}</Text>
-          </TouchableOpacity>
-          {expandedIdx === i && (
-            <View style={styles.contradictionDetail}>
-              <Text style={styles.contradictionConfidence}>
-                Confidence: {Math.round(c.confidence * 100)}%
-              </Text>
-              <View style={styles.contradictionActions}>
-                <TouchableOpacity
-                  style={styles.contradictionActionBtn}
-                  onPress={() => navigation.navigate('Objects', { objectId: c.objectId })}
-                >
-                  <Text style={styles.contradictionActionText}>View note</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.contradictionActionBtn, styles.contradictionActionBtnPrimary]}
-                  onPress={() => setExpandedIdx(null)}
-                >
-                  <Text style={[styles.contradictionActionText, { color: '#fff' }]}>
-                    Changed my mind
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-      ))}
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   clearButton: {
