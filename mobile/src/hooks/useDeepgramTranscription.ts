@@ -88,6 +88,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
       }
+      try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
     };
   }, []);
 
@@ -431,7 +432,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           }
         }
 
-        await notifySaveResult({ ok: true, hint });
+        await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim(), hint });
 
       } catch (error) {
         console.error('[Recording] saveTranscript failed:', error instanceof Error ? error.message : error);
