@@ -414,6 +414,94 @@ EXAMPLE_5_OUTPUT = """{
 }"""
 
 
+# ---------------------------------------------------------------------------
+# Few-shot example 6 — new memory types (commitment / preference / concern),
+# each with why_it_matters. Teaches the model to use the new types and to
+# populate why_it_matters (non-actionable preference/concern too).
+# ---------------------------------------------------------------------------
+EXAMPLE_6_INPUT = """I told Justin I'd send him the quote by next week. Oh, and my daughter responded really well to that new AAC layout. Honestly though, I'm a little worried we priced the Bedrock job too low."""
+
+EXAMPLE_6_OUTPUT = """{
+  "atomic_objects": [
+    {
+      "raw_text": "I told Justin I'd send him the quote by next week",
+      "cleaned_text": "Send Justin the quote by next week (promised)",
+      "title": "Send Justin the quote by next week",
+      "type": "commitment",
+      "why_it_matters": "Promised directly to Justin — a dropped commitment hurts the client relationship, and it's due next week",
+      "domain": "work",
+      "tags": ["Justin", "quote", "client", "deadline"],
+      "entities": ["Justin"],
+      "confidence": 0.92,
+      "temporal_hints": {
+        "has_date": true,
+        "date_text": "next week",
+        "urgency": "medium"
+      },
+      "location_hints": {
+        "places": [],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": true,
+        "next_action": "Send Justin the quote"
+      },
+      "context_inherited_from": null
+    },
+    {
+      "raw_text": "my daughter responded really well to that new AAC layout",
+      "cleaned_text": "Daughter responded well to the new AAC layout",
+      "title": "Daughter responds well to new AAC layout",
+      "type": "preference",
+      "why_it_matters": "A care insight worth reusing when setting up future AAC sessions for her",
+      "domain": "family",
+      "tags": ["daughter", "AAC", "care"],
+      "entities": [],
+      "confidence": 0.9,
+      "temporal_hints": {
+        "has_date": false,
+        "date_text": null,
+        "urgency": "low"
+      },
+      "location_hints": {
+        "places": [],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": false,
+        "next_action": null
+      },
+      "context_inherited_from": null
+    },
+    {
+      "raw_text": "I'm a little worried we priced the Bedrock job too low",
+      "cleaned_text": "Worried the Bedrock job was priced too low",
+      "title": "Concern: Bedrock job may be priced too low",
+      "type": "concern",
+      "why_it_matters": "A recurring pricing worry — revisit before the next bid so margins hold",
+      "domain": "finance",
+      "tags": ["Bedrock", "pricing", "margin"],
+      "entities": ["Bedrock"],
+      "confidence": 0.85,
+      "temporal_hints": {
+        "has_date": false,
+        "date_text": null,
+        "urgency": "medium"
+      },
+      "location_hints": {
+        "places": [],
+        "geofence_candidate": false
+      },
+      "actionability": {
+        "is_actionable": false,
+        "next_action": null
+      },
+      "context_inherited_from": null
+    }
+  ]
+}"""
+
+
 def create_user_prompt(transcript: str, context: dict = None) -> str:
     """Create user prompt with transcript and optional context"""
     prompt = f"Parse this transcript:\n\n{transcript}\n\n"
@@ -481,5 +569,13 @@ def create_few_shot_examples() -> List[dict]:
         {
             "role": "assistant",
             "content": EXAMPLE_5_OUTPUT
+        },
+        {
+            "role": "user",
+            "content": f"Parse this transcript:\n\n{EXAMPLE_6_INPUT}\n\nReturn the parsed atomic objects as {{\"atomic_objects\": [...]}}."
+        },
+        {
+            "role": "assistant",
+            "content": EXAMPLE_6_OUTPUT
         },
     ]
