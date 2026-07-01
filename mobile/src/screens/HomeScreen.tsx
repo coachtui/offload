@@ -74,7 +74,8 @@ function formatRelativeTime(date: Date | string): string {
 }
 
 export function HomeScreen({ navigation }: Props) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const firstName = user?.name ? user.name.trim().split(' ')[0] : '';
   const [searchQuery, setSearchQuery] = useState('');
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
   const { items: forYouItems } = useForYou();
@@ -145,6 +146,11 @@ export function HomeScreen({ navigation }: Props) {
           <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Greeting */}
+      <Text style={styles.greeting}>
+        What are you thinking today{firstName ? `, ${firstName}` : ''}?
+      </Text>
 
       {/* Search bar — always visible */}
       <View style={styles.searchWrap}>
@@ -322,6 +328,13 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 14,
     color: '#9CA3AF',
+  },
+  greeting: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#111827',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
   },
   // Search
   searchWrap: {
