@@ -35,6 +35,7 @@ export interface ParsedAtomicObject {
     nextAction: string | null;
   };
   sequenceIndex: number;
+  whyItMatters: string | null;
 }
 
 /**
@@ -71,7 +72,7 @@ export interface ParseTranscriptResponse {
 /**
  * Map a raw ML response object (snake_case) to ParsedAtomicObject (camelCase)
  */
-function mapParsedObject(obj: any, fallbackIndex: number): ParsedAtomicObject {
+export function mapParsedObject(obj: any, fallbackIndex: number): ParsedAtomicObject {
   return {
     rawText: obj.raw_text ?? obj.content ?? '',
     cleanedText: obj.cleaned_text ?? obj.content ?? '',
@@ -95,6 +96,7 @@ function mapParsedObject(obj: any, fallbackIndex: number): ParsedAtomicObject {
       nextAction: obj.actionability?.next_action ?? null,
     },
     sequenceIndex: obj.sequence_index ?? fallbackIndex,
+    whyItMatters: obj.why_it_matters ?? null,
   };
 }
 

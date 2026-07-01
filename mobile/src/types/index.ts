@@ -73,6 +73,7 @@ export interface AtomicObject {
   evolvedFromId?: string | null;
   categoryId?: string | null;
   categoryLocked?: boolean;
+  whyItMatters?: string | null;
   createdAt: Date;
   updatedAt: Date;
   vectorEmbedding?: number[];

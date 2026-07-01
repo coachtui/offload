@@ -4,6 +4,7 @@
 
 import { query, queryOne, queryMany } from '../db/queries';
 import { deleteFromVector } from '../services/vectorService';
+import { retentionPolicyFor, triggerContextFor } from '../services/memoryIntent';
 import type {
   AtomicObject,
   Category,
@@ -55,6 +56,9 @@ export interface AtomicObjectRow {
   linked_object_ids: string[];
   sequence_index: number;
   embedding_status: EmbeddingStatus;
+  why_it_matters: string | null;
+  retention_policy: string | null;
+  trigger_context: string | null;
   state: 'open' | 'active' | 'resolved' | 'archived' | null;
   state_updated_at: Date | null;
   evolved_from_id: string | null;
@@ -101,6 +105,9 @@ export class AtomicObjectModel {
   linkedObjectIds: string[];
   sequenceIndex: number;
   embeddingStatus: EmbeddingStatus;
+  whyItMatters: string | null;
+  retentionPolicy: string | null;
+  triggerContext: string | null;
   state: 'open' | 'active' | 'resolved' | 'archived';
   stateUpdatedAt: Date | null;
   evolvedFromId: string | null;
@@ -166,6 +173,9 @@ export class AtomicObjectModel {
     this.linkedObjectIds = row.linked_object_ids ?? [];
     this.sequenceIndex = row.sequence_index ?? 0;
     this.embeddingStatus = row.embedding_status ?? 'pending';
+    this.whyItMatters = row.why_it_matters ?? null;
+    this.retentionPolicy = row.retention_policy ?? null;
+    this.triggerContext = row.trigger_context ?? null;
     this.state = row.state ?? 'open';
     this.stateUpdatedAt = row.state_updated_at ?? null;
     this.evolvedFromId = row.evolved_from_id ?? null;
@@ -285,6 +295,13 @@ export class AtomicObjectModel {
       ? (input.metadata!.entities as Entity[])
       : [];
 
+    const retentionPolicy = retentionPolicyFor(input.objectType);
+    const triggerContext = triggerContextFor({
+      places: input.locationHints?.places,
+      geofenceCandidate: input.locationHints?.geofenceCandidate,
+      hasDate: input.temporalHints?.hasDate,
+    });
+
     const row = await queryOne<AtomicObjectRow>(
       `INSERT INTO hub.atomic_objects (
         user_id, content, category, confidence,
@@ -297,10 +314,12 @@ export class AtomicObjectModel {
         temporal_has_date, temporal_date_text, temporal_urgency,
         location_places, location_geofence_candidate,
         is_actionable, next_action,
-        linked_object_ids, sequence_index, embedding_status
+        linked_object_ids, sequence_index, embedding_status,
+        why_it_matters, retention_policy, trigger_context
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-        $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33
+        $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33,
+        $34, $35, $36
       )
       RETURNING *`,
       [
@@ -339,6 +358,9 @@ export class AtomicObjectModel {
         [],                                                               // $31 linked_object_ids
         input.sequenceIndex ?? 0,                                         // $32
         'pending',                                                        // $33 embedding_status
+        input.whyItMatters ?? null,                                       // $34 why_it_matters
+        retentionPolicy,                                                  // $35 retention_policy
+        triggerContext,                                                   // $36 trigger_context
       ]
     );
 
@@ -613,6 +635,9 @@ export class AtomicObjectModel {
       cleanedText: this.cleanedText,
       title: this.title,
       objectType: this.objectType,
+      whyItMatters: this.whyItMatters,
+      retentionPolicy: this.retentionPolicy,
+      triggerContext: this.triggerContext,
       domain: this.domain,
       temporalHints: this.temporalHints,
       locationHints: this.locationHints,

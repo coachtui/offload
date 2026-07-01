@@ -126,6 +126,53 @@ def test_full_few_shot_set_has_five_examples():
 
 
 # ---------------------------------------------------------------------------
+# C1 / C2 contract tests — would have caught the schema gaps
+# ---------------------------------------------------------------------------
+
+_BASE_FIELDS = dict(
+    raw_text="I will send the quote to Justin",
+    cleaned_text="Send quote to Justin",
+    confidence=0.9,
+    title="Send quote to Justin",
+)
+
+
+def test_commitment_type_is_valid():
+    """C1: commitment must be accepted without ValidationError."""
+    obj = AtomicObjectParsed(**_BASE_FIELDS, type="commitment")
+    assert obj.type == "commitment"
+
+
+def test_preference_type_is_valid():
+    """C1: preference must be accepted without ValidationError."""
+    obj = AtomicObjectParsed(**_BASE_FIELDS, type="preference")
+    assert obj.type == "preference"
+
+
+def test_concern_type_is_valid():
+    """C1: concern must be accepted without ValidationError."""
+    obj = AtomicObjectParsed(**_BASE_FIELDS, type="concern")
+    assert obj.type == "concern"
+
+
+def test_why_it_matters_field_roundtrips():
+    """C2: why_it_matters persists through construction and model_dump."""
+    reason = "Promised to client; need to follow up"
+    obj = AtomicObjectParsed(**_BASE_FIELDS, type="commitment", why_it_matters=reason)
+    assert obj.why_it_matters == reason
+    dumped = obj.model_dump()
+    assert dumped["why_it_matters"] == reason
+
+
+def test_why_it_matters_defaults_to_none():
+    """C2: why_it_matters is optional and defaults to None."""
+    obj = AtomicObjectParsed(**_BASE_FIELDS, type="task")
+    assert obj.why_it_matters is None
+    dumped = obj.model_dump()
+    assert dumped["why_it_matters"] is None
+
+
+# ---------------------------------------------------------------------------
 # Gated integration test — auto-skips without a live LLM API key
 # ---------------------------------------------------------------------------
 

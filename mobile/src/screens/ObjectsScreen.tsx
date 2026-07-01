@@ -81,6 +81,9 @@ const TYPE_LABELS: Record<string, string> = {
   observation: 'Note',
   journal: 'Journal',
   reference: 'Reference',
+  commitment: 'Commitment',
+  preference: 'Preference',
+  concern: 'Concern',
 };
 
 const STATUS_LABELS: Record<NoteStatus, string> = {
@@ -660,6 +663,9 @@ export function ObjectsScreen({ navigation }: Props) {
               </>
             )}
           </View>
+          {item.whyItMatters ? (
+            <Text style={styles.noteWhy} numberOfLines={2}>Why: {item.whyItMatters}</Text>
+          ) : null}
           {item.actionability?.nextAction && !isDone && (
             <Text style={styles.noteNextAction} numberOfLines={1}>
               → {item.actionability.nextAction}
@@ -1401,6 +1407,7 @@ const styles = StyleSheet.create({
   noteDate: { fontSize: 12, color: Colors.textFaint },
   urgencyDot: { width: 6, height: 6, borderRadius: 3, marginRight: 3 },
   noteUrgency: { fontSize: 11, fontWeight: '500' },
+  noteWhy: { color: '#6B7280', fontSize: 12, fontStyle: 'italic', marginTop: 2 },
   noteNextAction: { fontSize: 12, color: Colors.accent, marginTop: 5 },
   matchScore: { fontSize: 12, color: Colors.accent, fontWeight: '500' },
 

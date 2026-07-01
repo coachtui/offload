@@ -43,6 +43,9 @@ OBJECT TYPES (pick the best fit):
 - decision: a choice made or being considered ("I'm going to switch to React Native")
 - journal: personal reflection, feeling, emotion, mood ("I'm feeling burnt out this week")
 - reference: a link, name, number, or resource worth saving ("the contact is john@acme.com")
+- commitment: something promised to another person ("I told Justin I'd send the quote next week")
+- preference: a stable fact about how someone likes things ("Zyrus likes strawberry cake", "Chris prefers text over email")
+- concern: an unresolved worry, not yet an action ("I'm worried we priced Bedrock too low")
 
 DOMAIN (pick the best fit for life area):
 - work: job, employer, career, professional tasks
@@ -79,6 +82,7 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
       "cleaned_text": "clean, readable rewrite of the thread — place names + field shorthand preserved verbatim",
       "title": "Short, specific title — max 8 words — ALWAYS set, never null",
       "type": "task",
+      "why_it_matters": "one short sentence: why this is worth remembering / when it'd be useful again — or null if purely transient",
       "domain": "work",
       "tags": ["tag1", "tag2"],
       "entities": ["Person Name", "Place Name", "Org Name"],
@@ -126,6 +130,7 @@ FIELD RULES:
 - actionability.next_action: the single clearest next physical action, stated cleanly
 - context_inherited_from: if this object's location/time/project context was inferred from an ADJACENT object (not stated explicitly), set this to that object's sequence_index (0-based). If context is self-contained, set null.
 - confidence: be honest — if you are guessing domain, type, or context, lower this score. Objects below 0.75 will be flagged for user review. Do not round up.
+- why_it_matters: the future situation that makes this worth resurfacing (a person, a place visit, a decision later). Null for throwaway thoughts.
 
 RETURN ONLY VALID JSON. No markdown fences, no explanation, no prefix text."""
 
@@ -143,6 +148,7 @@ EXAMPLE_1_OUTPUT = """{
       "cleaned_text": "Call the pump supplier tomorrow morning about pricing — their quote was too high",
       "title": "Call pump supplier about pricing",
       "type": "task",
+      "why_it_matters": "Needed before the next supplier order",
       "domain": "work",
       "tags": ["supplier", "pricing", "call", "negotiation"],
       "entities": ["pump supplier"],
@@ -167,6 +173,7 @@ EXAMPLE_1_OUTPUT = """{
       "cleaned_text": "The app dashboard is too cluttered — simplify the main view",
       "title": "App dashboard needs simplification",
       "type": "idea",
+      "why_it_matters": "Important for improving user experience in the next sprint",
       "domain": "work",
       "tags": ["app", "dashboard", "ux", "simplification"],
       "entities": [],
@@ -227,6 +234,7 @@ EXAMPLE_2_OUTPUT = """{
       "cleaned_text": "Clear drainage inlets from Middle Street to Puʻuhale today, and set up traffic control out there",
       "title": "Drains + traffic control: Middle St to Puʻuhale",
       "type": "task",
+      "why_it_matters": "Critical for today's jobsite operations and crew safety",
       "domain": "work",
       "tags": ["drainage", "traffic control", "crew", "Middle Street", "Puuhale", "today"],
       "entities": ["Middle Street", "Puʻuhale"],
