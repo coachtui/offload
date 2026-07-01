@@ -362,6 +362,10 @@ class ApiService {
     return response;
   }
 
+  async getMe(): Promise<{ user: AuthResponse['user'] }> {
+    return this.request<{ user: AuthResponse['user'] }>('/api/v1/auth/me');
+  }
+
   async logout(): Promise<void> {
     await this.clearToken();
   }

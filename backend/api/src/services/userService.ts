@@ -11,6 +11,7 @@ import { z } from 'zod';
 export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  name: z.string().trim().max(100).optional(),
 });
 
 export const loginSchema = z.object({
@@ -21,6 +22,7 @@ export const loginSchema = z.object({
 export interface RegisterInput {
   email: string;
   password: string;
+  name?: string;
 }
 
 export interface LoginInput {
@@ -32,6 +34,7 @@ export interface AuthResponse {
   user: {
     id: string;
     email: string;
+    name: string | null;
   };
   accessToken: string;
   refreshToken: string;
@@ -61,6 +64,7 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
     user: {
       id: user.id,
       email: user.email,
+      name: user.name,
     },
     accessToken,
     refreshToken,
@@ -93,6 +97,7 @@ export async function refreshSession(refreshToken: string): Promise<AuthResponse
     user: {
       id: user.id,
       email: user.email,
+      name: user.name,
     },
     accessToken,
     refreshToken: newRefreshToken,
@@ -126,6 +131,7 @@ export async function login(input: LoginInput): Promise<AuthResponse> {
     user: {
       id: user.id,
       email: user.email,
+      name: user.name,
     },
     accessToken,
     refreshToken,

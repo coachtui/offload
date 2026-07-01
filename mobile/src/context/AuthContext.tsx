@@ -80,7 +80,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       console.log('[AuthContext] token looks valid — marking authenticated');
-      setState({ user: null, isAuthenticated: true, isLoading: false });
+      // Rehydrate the user (incl. display name) so the greeting survives restart.
+      let user: AuthState['user'] = null;
+      try {
+        const me = await apiService.getMe();
+        user = me.user;
+      } catch (err) {
+        console.warn('[AuthContext] getMe on restore failed (non-fatal):', err);
+      }
+      setState({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('[AuthContext] checkAuthStatus failed:', error);
       setState({ user: null, isAuthenticated: false, isLoading: false });
