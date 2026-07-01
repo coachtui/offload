@@ -421,19 +421,11 @@ class GeofenceMonitoringService {
 
       await this.schedulePlaceNotification(event, placeId, placeName, title, body);
     } catch (error) {
-      console.warn('[GeofenceMonitoring] Error in showPlaceNotification:', error);
-      // Last-resort fallback so an unexpected error never eats the reminder.
-      try {
-        await this.schedulePlaceNotification(
-          event,
-          placeId,
-          fallbackPlaceName,
-          `📍 You're at ${fallbackPlaceName}`,
-          'Tap to view your notes'
-        );
-      } catch {
-        /* nothing more we can do */
-      }
+      // Do NOT fire a fallback notification here: we can't confirm there's an
+      // open note, and a noteless "Tap to view your notes" alert (when the
+      // background notify call times out/errors) is worse than a missed one.
+      // The foreground proximity check surfaces the note next time the app opens.
+      console.warn('[GeofenceMonitoring] showPlaceNotification failed — suppressing (foreground check is the fallback):', error);
     }
   }
 
@@ -582,12 +574,9 @@ class GeofenceMonitoringService {
 
       await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, body);
     } catch (error) {
-      console.warn('[GeofenceMonitoring] Error in showManualGeofenceNotification:', error);
-      try {
-        await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, 'Tap to view your notes');
-      } catch {
-        /* nothing more we can do */
-      }
+      // Do NOT fire a noteless fallback (see showPlaceNotification): suppress on
+      // error rather than alert with no content; the foreground check is the net.
+      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — suppressing:', error);
     }
   }
 
