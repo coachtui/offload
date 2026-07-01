@@ -8,6 +8,9 @@ const mockQ = queries as jest.Mocked<typeof queries>;
 function rowFrom(params: any[]) {
   return {
     id: 'o1', user_id: 'u1', content: params[1], category: [],
+    confidence: 0.5,
+    source_type: 'voice' as const,
+    source_timestamp: new Date(),
     created_at: new Date(), updated_at: new Date(),
     object_type: params[21],
     why_it_matters: params[33], retention_policy: params[34], trigger_context: params[35],

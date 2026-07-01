@@ -28,9 +28,12 @@ class AtomicObjectParsed(BaseModel):
     raw_text: str = Field(..., description="Verbatim or near-verbatim excerpt from transcript")
     cleaned_text: str = Field(..., description="Cleaned, normalized version suitable for display")
     title: Optional[str] = Field(None, description="Short title max 8 words, or null if text is already concise")
+    # Keep this Literal in sync with: TS ObjectType union (backend/api shared-types)
+    # and the DB object_type CHECK constraint (migration 014).
     type: Literal[
         "task", "reminder", "idea", "observation",
-        "question", "decision", "journal", "reference"
+        "question", "decision", "journal", "reference",
+        "commitment", "preference", "concern"
     ] = Field(..., description="Type of thought unit")
     domain: Literal[
         "work", "personal", "health", "family",
@@ -50,6 +53,7 @@ class AtomicObjectParsed(BaseModel):
         None,
         description="sequence_index of the adjacent object whose context was inherited, or null if self-contained"
     )
+    why_it_matters: Optional[str] = Field(None, description="Why this is worth remembering / when it'd be useful again; null if transient")
     needs_review: bool = Field(False, description="True when confidence < 0.75 — flagged for user review")
 
 

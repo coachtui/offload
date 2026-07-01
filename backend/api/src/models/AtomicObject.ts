@@ -121,7 +121,7 @@ export class AtomicObjectModel {
     this.userId = row.user_id;
     this.content = row.content;
     this.category = row.category as Category[];
-    this.confidence = row.confidence != null ? parseFloat(row.confidence.toString()) : 0.5;
+    this.confidence = parseFloat(row.confidence.toString());
     this.source = {
       type: row.source_type,
       recordingId: row.source_recording_id || undefined,
@@ -620,7 +620,7 @@ export class AtomicObjectModel {
       source: {
         type: this.source.type,
         recordingId: this.source.recordingId,
-        timestamp: this.source.timestamp?.getTime() ?? 0,
+        timestamp: this.source.timestamp.getTime(),
         location: this.source.location,
       },
       metadata: {
