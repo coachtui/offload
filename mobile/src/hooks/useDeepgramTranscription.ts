@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
@@ -29,6 +30,8 @@ interface UseDeepgramTranscriptionReturn extends TranscriptionState {
   stopRecording: () => Promise<void>;
   reset: () => void;
 }
+
+const KEEP_AWAKE_TAG = 'offload-recording';
 
 // Convert base64 to ArrayBuffer
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -234,6 +237,8 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         }));
       }, 1000);
 
+      activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+
       setState(prev => ({
         ...prev,
         status: 'recording',
@@ -244,6 +249,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
       console.log('[Recording] recording started successfully');
     } catch (error) {
+      try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
       console.error('[Recording] startRecording failed:', error instanceof Error ? error.message : error);
       handleAuthError(error);
       setState(prev => ({
@@ -256,6 +262,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
   const stopRecording = useCallback(async () => {
     console.log('[Recording] stopRecording called');
+    try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
 
     // Stop duration timer
     if (durationIntervalRef.current) {
