@@ -27,7 +27,7 @@ const searchSchema = z.object({
     .object({
       objectType: z
         .array(
-          z.enum(['task', 'reminder', 'idea', 'observation', 'question', 'decision', 'journal', 'reference'])
+          z.enum(['task', 'reminder', 'idea', 'observation', 'question', 'decision', 'journal', 'reference', 'commitment', 'preference', 'concern'])
         )
         .optional(),
       domain: z
