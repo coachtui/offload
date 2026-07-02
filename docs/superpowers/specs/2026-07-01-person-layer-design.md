@@ -27,7 +27,7 @@ The roadmap assumed "the parser can type `person` but ingest flattens it" — in
 
 ### 1. Parser — additive `people` field (ml-service)
 
-`backend/ml-service/app/models/transcript.py` — `AtomicObjectData` gains:
+`backend/ml-service/app/models/transcript.py` — `AtomicObjectParsed` gains:
 
 ```python
 people: List[str] = Field(
@@ -61,7 +61,7 @@ const entityObjects = parsedObject.entities.map((name) => ({
 
 ### 3. Retrieval — person-aware AI context (sparringService)
 
-- `RetrievedNote` (shared-types) gains `people: string[]`.
+- `RetrievedNote` (defined in `sparringService.ts`) gains `people: string[]`.
 - `buildContextPack` populates it from the hydrated object's `metadata.entities.filter(e => e.type === 'person').map(e => e.value)`.
 - The corpus rendering that feeds the spar LLM adds a `People: <names>` line for notes that have any (same style as existing type/domain/tags lines).
 
@@ -69,7 +69,7 @@ Semantic search already surfaces notes containing a spoken name; this makes attr
 
 ### 4. Backfill — one-shot script
 
-New `backend/api/scripts/backfill-person-entities.ts` (creates the scripts dir; run locally with prod `DATABASE_URL`, never deployed):
+New `backend/api/src/scripts/backfill-person-entities.ts` (alongside `generate-embeddings.ts`, run via tsx locally with prod `DATABASE_URL`, never deployed):
 
 1. `SELECT` all non-deleted objects with non-empty `metadata_entities`.
 2. Collect distinct entity `value` strings (expected <200).
@@ -99,5 +99,4 @@ New `backend/api/scripts/backfill-person-entities.ts` (creates the scripts dir; 
 | ML mapping | `backend/api/src/services/mlService.ts` | `people: string[]` through-map |
 | Ingest | `backend/api/src/routes/voice.ts` | entity typing by `people` membership |
 | Retrieval | `backend/api/src/services/sparringService.ts` | `RetrievedNote.people` + corpus line |
-| Types | `backend/api/src/shared-types/index.ts` | `RetrievedNote.people` |
-| Backfill | `backend/api/scripts/backfill-person-entities.ts` | new, run-once, local |
+| Backfill | `backend/api/src/scripts/backfill-person-entities.ts` | new, run-once, local |
