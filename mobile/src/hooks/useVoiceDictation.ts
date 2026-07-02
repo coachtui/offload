@@ -159,6 +159,13 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   }, [teardown]);
 
   const stop = useCallback(async (): Promise<string> => {
+    // Intentional stop — silence the failure handlers before the flush wait so
+    // Deepgram closing the socket after CloseStream doesn't read as an error.
+    // onmessage stays live: final transcripts still arrive during the flush.
+    if (wsRef.current) {
+      wsRef.current.onerror = null;
+      wsRef.current.onclose = null;
+    }
     // Stop the mic first so no new audio arrives, then let Deepgram flush
     // buffered audio as a final transcript before closing (proven pattern
     // from the recording flow).
