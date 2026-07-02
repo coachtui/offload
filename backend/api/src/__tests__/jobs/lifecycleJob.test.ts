@@ -30,6 +30,7 @@ describe('runLifecycleSweep', () => {
     await runLifecycleSweep();
     const sql = mockQ.query.mock.calls[1][0] as string;
     expect(sql).toContain("object_type = 'reminder'");
+    expect(sql).toContain("retention_policy NOT IN ('long_term', 'user_confirmed')");
     expect(sql).toContain('reminder_fired_at IS NOT NULL');
     expect(sql).toContain("reminder_fired_at < NOW() - INTERVAL '3 days'");
     expect(sql).toContain("state IN ('open', 'active')");
@@ -48,10 +49,11 @@ describe('runLifecycleSweep', () => {
 
   it('never touches long_term or user_confirmed policies', async () => {
     await runLifecycleSweep();
-    for (const call of mockQ.query.mock.calls) {
-      const sql = call[0] as string;
-      expect(sql).not.toContain('long_term');
-      expect(sql).not.toContain('user_confirmed');
-    }
+    const sqls = mockQ.query.mock.calls.map((c) => c[0] as string);
+    // Rules 1 and 3 positively filter on a specific policy
+    expect(sqls[0]).toContain("retention_policy = 'until_done'");
+    expect(sqls[2]).toContain("retention_policy = 'decay'");
+    // Rule 2 has no positive policy filter, so it must explicitly exclude the protected ones
+    expect(sqls[1]).toContain("retention_policy NOT IN ('long_term', 'user_confirmed')");
   });
 });
