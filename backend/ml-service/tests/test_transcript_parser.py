@@ -184,6 +184,30 @@ _MESSY = (
 )
 
 
+# ─── Phase 8.3: people field ──────────────────────────────────────────────
+
+def test_people_defaults_to_empty_list_when_omitted():
+    """An LLM response without `people` must still validate (additive contract)."""
+    data = json.loads(tp.EXAMPLE_6_OUTPUT)["atomic_objects"][0].copy()
+    data.pop("people", None)
+    obj = AtomicObjectParsed(**data)
+    assert obj.people == []
+
+
+def test_people_passes_through_when_present():
+    data = json.loads(tp.EXAMPLE_6_OUTPUT)["atomic_objects"][0].copy()
+    data["people"] = ["Justin", "Chris"]
+    obj = AtomicObjectParsed(**data)
+    assert obj.people == ["Justin", "Chris"]
+
+
+def test_example_6_commitment_lists_justin_as_person():
+    """The Justin commitment few-shot is the people-field spec-by-example."""
+    objs = _load(tp.EXAMPLE_6_OUTPUT)
+    assert objs[0].people == ["Justin"]
+    assert "Justin" in objs[0].entities  # people ⊆ entities rule
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(
     not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")),

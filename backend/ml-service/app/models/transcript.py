@@ -44,6 +44,10 @@ class AtomicObjectParsed(BaseModel):
         default_factory=list,
         description="Named entities as strings: people, places, orgs, products"
     )
+    people: List[str] = Field(
+        default_factory=list,
+        description="People mentioned by name (first name fine); subset of entities",
+    )
     confidence: float = Field(ge=0, le=1, description="Parser confidence 0-1")
     temporal_hints: TemporalHints = Field(default_factory=TemporalHints)
     location_hints: LocationHints = Field(default_factory=LocationHints)
