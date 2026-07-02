@@ -16,7 +16,8 @@
     "migrate:create": "node-pg-migrate create",
     "migrate:status": "node --require tsx/cjs ./node_modules/.bin/node-pg-migrate status",
     "db:setup": "npm run migrate",
-    "generate-embeddings": "tsx src/scripts/generate-embeddings.ts"
+    "generate-embeddings": "tsx src/scripts/generate-embeddings.ts",
+    "backfill-person-entities": "tsx src/scripts/backfill-person-entities.ts"
   },
   "keywords": [
     "offload",

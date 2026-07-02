@@ -251,7 +251,7 @@ export function formatNotesForPrompt(notes: RetrievedNote[]): string {
     .join('\n\n---\n\n');
 }
 
-async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
+export async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
 
