@@ -57,7 +57,7 @@ Hourly `setInterval` job mirroring the existing pattern (`running` guard, per-ru
 | Rule | Filter | Window |
 |---|---|---|
 | Resolved done-items | `retention_policy = 'until_done'` AND `state = 'resolved'` | `state_updated_at` older than **7 days** |
-| Fired reminders | `object_type = 'reminder'` AND `reminder_fired_at IS NOT NULL` AND `state IN ('open','active')` | `reminder_fired_at` older than **3 days** |
+| Fired reminders | `object_type = 'reminder'` AND `retention_policy NOT IN ('long_term','user_confirmed')` AND `reminder_fired_at IS NOT NULL` AND `state IN ('open','active')` | `reminder_fired_at` older than **3 days** |
 | Decayed notes | `retention_policy = 'decay'` AND `state IN ('open','active')` | `created_at` older than **90 days** AND (`last_accessed_at IS NULL OR last_accessed_at` older than 90 days) |
 
 - `long_term` and `user_confirmed` policies: never touched by any rule.

@@ -399,6 +399,7 @@ export async function runLifecycleSweep(): Promise<{
      SET state = 'archived', state_updated_at = NOW()
      WHERE deleted_at IS NULL
        AND object_type = 'reminder'
+       AND retention_policy NOT IN ('long_term', 'user_confirmed')
        AND reminder_fired_at IS NOT NULL
        AND reminder_fired_at < NOW() - INTERVAL '3 days'
        AND state IN ('open', 'active')`
