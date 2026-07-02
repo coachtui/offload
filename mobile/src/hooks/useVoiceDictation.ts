@@ -36,6 +36,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioSubscriptionRef = useRef<any>(null);
+  const activeRef = useRef(false);
   const finalRef = useRef('');
   const partialRef = useRef('');
 
@@ -71,6 +72,8 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
   }, [teardown]);
 
   const start = useCallback(async () => {
+    if (activeRef.current) return;
+    activeRef.current = true;
     try {
       setError(null);
       finalRef.current = '';
@@ -122,7 +125,14 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
           // Non-JSON frames are ignorable
         }
       };
-      ws.onerror = () => setError('Voice connection error');
+      const failSession = (message: string) => {
+        void teardown();
+        activeRef.current = false;
+        setIsDictating(false);
+        setError(message);
+      };
+      ws.onerror = () => failSession('Voice connection error');
+      ws.onclose = () => failSession('Voice connection lost');
 
       const { subscription } = await ExpoPlayAudioStream.startMicrophone({
         sampleRate: 16000,
@@ -142,6 +152,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
       setIsDictating(true);
     } catch (err) {
       await teardown();
+      activeRef.current = false;
       setIsDictating(false);
       setError(err instanceof Error ? err.message : 'Could not start dictation');
     }
@@ -171,6 +182,7 @@ export function useVoiceDictation(): UseVoiceDictationReturn {
     try {
       deactivateKeepAwake(KEEP_AWAKE_TAG);
     } catch {}
+    activeRef.current = false;
     setIsDictating(false);
     return composeTranscript().trim();
   }, []);
