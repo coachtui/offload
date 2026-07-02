@@ -13,12 +13,22 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAI, AIMessage } from '../hooks/useAI';
+import { useVoiceDictation } from '../hooks/useVoiceDictation';
 import { AppScreen, AppHeader, Colors, Spacing } from '../components/ui';
 
 export default function AIQueryScreen({ navigation, route }: any) {
   const initialQuery: string | undefined = route?.params?.initialQuery;
   const [inputText, setInputText] = useState(initialQuery ?? '');
   const { messages, loading, error, askQuestion, clearConversation } = useAI();
+  const {
+    isDictating,
+    liveTranscript,
+    error: dictationError,
+    start: startDictation,
+    stop: stopDictation,
+  } = useVoiceDictation();
+  // Text that was in the box before dictation started — dictation appends, never destroys.
+  const dictationBaseRef = useRef('');
   const flatListRef = useRef<FlatList>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -27,6 +37,30 @@ export default function AIQueryScreen({ navigation, route }: any) {
       flatListRef.current?.scrollToEnd({ animated: true });
     }
   }, [messages]);
+
+  // Stream the live transcript into the box while dictating (appended to prior text)
+  useEffect(() => {
+    if (!isDictating) return;
+    const base = dictationBaseRef.current;
+    setInputText(liveTranscript ? (base ? base + ' ' + liveTranscript : liveTranscript) : base);
+  }, [liveTranscript, isDictating]);
+
+  // On dictation error, restore whatever was typed before the mic was tapped
+  useEffect(() => {
+    if (dictationError) setInputText(dictationBaseRef.current);
+  }, [dictationError]);
+
+  const handleMicPress = async () => {
+    if (loading) return;
+    if (isDictating) {
+      const final = await stopDictation();
+      const base = dictationBaseRef.current;
+      setInputText(final ? (base ? base + ' ' + final : final) : base);
+    } else {
+      dictationBaseRef.current = inputText.trim();
+      await startDictation();
+    }
+  };
 
   const handleSend = async () => {
     if (!inputText.trim() || loading) return;
@@ -166,6 +200,10 @@ export default function AIQueryScreen({ navigation, route }: any) {
           </View>
         )}
 
+        {dictationError && (
+          <Text style={styles.dictationError}>{dictationError}</Text>
+        )}
+
         {/* Input Area */}
         <View style={styles.inputContainer}>
           <TextInput
@@ -178,17 +216,28 @@ export default function AIQueryScreen({ navigation, route }: any) {
             maxLength={500}
             returnKeyType="send"
             onSubmitEditing={handleSend}
-            editable={!loading}
+            editable={!loading && !isDictating}
           />
           <TouchableOpacity
-            style={[styles.sendButton, (!inputText.trim() || loading) && styles.sendButtonDisabled]}
+            style={styles.micButton}
+            onPress={handleMicPress}
+            disabled={loading}
+          >
+            <Ionicons
+              name={isDictating ? 'stop-circle' : 'mic-outline'}
+              size={24}
+              color={loading ? '#9CA3AF' : isDictating ? '#EF4444' : '#6B7280'}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sendButton, (!inputText.trim() || loading || isDictating) && styles.sendButtonDisabled]}
             onPress={handleSend}
-            disabled={!inputText.trim() || loading}
+            disabled={!inputText.trim() || loading || isDictating}
           >
             <Ionicons
               name="send"
               size={20}
-              color={!inputText.trim() || loading ? '#9CA3AF' : '#FFFFFF'}
+              color={!inputText.trim() || loading || isDictating ? '#9CA3AF' : '#FFFFFF'}
             />
           </TouchableOpacity>
         </View>
@@ -381,5 +430,20 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#E5E7EB',
+  },
+  micButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  dictationError: {
+    color: '#DC2626',
+    fontSize: 13,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+    backgroundColor: '#FFFFFF',
   },
 });
