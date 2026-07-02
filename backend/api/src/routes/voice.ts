@@ -12,6 +12,7 @@ import { Session } from '../models/Session';
 import { resolveObjectPlaces } from '../services/placeService';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
 import { transcribeWithGpt4o } from '../services/transcriptionService';
+import { typeEntities } from '../services/entityTyping';
 
 const router = Router();
 
@@ -157,12 +158,8 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
           console.log('[Voice] ML parsed', parseResult.atomicObjects.length, 'objects');
 
           for (const parsedObject of parseResult.atomicObjects) {
-            // Convert entity names to Entity[] for metadata storage
-            const entityObjects = parsedObject.entities.map((name) => ({
-              type: 'other' as const,
-              value: name,
-              confidence: 1.0,
-            }));
+            // Type entities using the parser's people list (person vs other)
+            const entityObjects = typeEntities(parsedObject.entities, parsedObject.people);
 
             // Deterministic fallback: if ML didn't flag geofence_candidate but the text
             // contains clear arrival-trigger patterns ("when I get to Costco"), force it on.

@@ -86,6 +86,7 @@ OUTPUT FORMAT — return a JSON object with this EXACT structure:
       "domain": "work",
       "tags": ["tag1", "tag2"],
       "entities": ["Person Name", "Place Name", "Org Name"],
+      "people": ["Person Name"],
       "confidence": 0.95,
       "temporal_hints": {
         "has_date": true,
@@ -124,6 +125,7 @@ FIELD RULES:
   verbatim words live in raw_text; readability lives here.
 - title: ALWAYS set a short, meaningful title (max 8 words) for every object — never null. It is the headline shown in the notes list. Make it specific: "Call pump supplier about pricing", not "Phone call". Title the thought, not the words.
 - entities: only named things — people (first name is fine), specific places, specific companies/products; ALWAYS include local place names here
+- people: humans mentioned by name (first name fine) — every name here MUST also appear in entities; use [] when no people are mentioned
 - temporal_hints.urgency: infer from language — "ASAP"/"urgent"/"must"/"today" → high, "soon"/"this week" → medium, "eventually"/"someday" → low
 - location_hints.places: list ALL mentioned places, including streets, jobsites, neighborhoods
 - location_hints.geofence_candidate: true if the note could be triggered by arriving at or leaving a specific place (school, gym, home, office, store, jobsite, street corner, etc.)
@@ -152,6 +154,7 @@ EXAMPLE_1_OUTPUT = """{
       "domain": "work",
       "tags": ["supplier", "pricing", "call", "negotiation"],
       "entities": ["pump supplier"],
+      "people": [],
       "confidence": 0.95,
       "temporal_hints": {
         "has_date": true,
@@ -177,6 +180,7 @@ EXAMPLE_1_OUTPUT = """{
       "domain": "work",
       "tags": ["app", "dashboard", "ux", "simplification"],
       "entities": [],
+      "people": [],
       "confidence": 0.85,
       "temporal_hints": {
         "has_date": false,
@@ -201,6 +205,7 @@ EXAMPLE_1_OUTPUT = """{
       "domain": "family",
       "tags": ["pickup", "school", "Marcus", "Thursday"],
       "entities": ["Marcus"],
+      "people": ["Marcus"],
       "confidence": 0.98,
       "temporal_hints": {
         "has_date": true,
@@ -432,6 +437,7 @@ EXAMPLE_6_OUTPUT = """{
       "domain": "work",
       "tags": ["Justin", "quote", "client", "deadline"],
       "entities": ["Justin"],
+      "people": ["Justin"],
       "confidence": 0.92,
       "temporal_hints": {
         "has_date": true,
@@ -457,6 +463,7 @@ EXAMPLE_6_OUTPUT = """{
       "domain": "family",
       "tags": ["daughter", "AAC", "care"],
       "entities": [],
+      "people": [],
       "confidence": 0.9,
       "temporal_hints": {
         "has_date": false,
@@ -482,6 +489,7 @@ EXAMPLE_6_OUTPUT = """{
       "domain": "finance",
       "tags": ["Bedrock", "pricing", "margin"],
       "entities": ["Bedrock"],
+      "people": [],
       "confidence": 0.85,
       "temporal_hints": {
         "has_date": false,

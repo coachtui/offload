@@ -20,6 +20,7 @@ export interface ParsedAtomicObject {
   domain: ObjectDomain;
   tags: string[];
   entities: string[]; // Named entity strings
+  people: string[]; // Names from entities that are people (parser-typed)
   confidence: number;
   temporalHints: {
     hasDate: boolean;
@@ -81,6 +82,7 @@ export function mapParsedObject(obj: any, fallbackIndex: number): ParsedAtomicOb
     domain: (obj.domain as ObjectDomain) ?? 'unknown',
     tags: obj.tags ?? [],
     entities: obj.entities ?? [],
+    people: obj.people ?? [],
     confidence: obj.confidence ?? 0.5,
     temporalHints: {
       hasDate: obj.temporal_hints?.has_date ?? false,
