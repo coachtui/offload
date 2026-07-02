@@ -13,7 +13,9 @@ import { query } from '../db/queries';
 
 export const SUPERSEDE_MIN_SCORE = 0.85;
 const SUPERSEDE_ELIGIBLE_TYPES = new Set(['task', 'reminder', 'commitment', 'concern']);
-const CANDIDATE_LIMIT = 5;
+// 15, not 5: superseded notes keep their Weaviate vectors until hard-delete, so a
+// long recapture chain can crowd a small candidate pool and push the open head out.
+const CANDIDATE_LIMIT = 15;
 
 export function shouldSupersede(
   candidate: { id: string; objectType: string | null },

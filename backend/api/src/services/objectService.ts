@@ -142,7 +142,9 @@ export async function createObject(
       } catch (err) {
         console.warn('[objectService] Relationship detection failed (non-fatal):', err);
       }
-      await applySupersede(atomicObject.id, userId); // never throws
+      // .catch is structural insurance: applySupersede never rejects today, but an
+      // unhandled rejection here would crash the process (bare setImmediate async).
+      await applySupersede(atomicObject.id, userId).catch(() => {});
     });
   }
 
