@@ -50,6 +50,18 @@ export default function AIQueryScreen({ navigation, route }: any) {
     if (dictationError) setInputText(dictationBaseRef.current);
   }, [dictationError]);
 
+  // Stop dictation when the screen loses focus. Native-stack pushes keep this
+  // screen mounted (e.g. the ProximityBanner navigating to PlaceSummary), so
+  // unmount teardown alone would leave the mic hot behind the covering screen.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () => {
+      if (isDictating) {
+        void stopDictation();
+      }
+    });
+    return unsubscribe;
+  }, [navigation, isDictating, stopDictation]);
+
   const handleMicPress = async () => {
     if (loading) return;
     if (isDictating) {
