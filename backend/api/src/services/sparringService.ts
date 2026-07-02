@@ -13,6 +13,7 @@ import { AtomicObjectModel } from '../models/AtomicObject';
 import { semanticSearch, type SemanticSearchOptions } from './vectorService';
 import type { AtomicObject } from '@shared/types';
 import { pool } from '../db/connection';
+import { extractPeople } from './entityTyping';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface RetrievedNote {
   type: string;
   domain: string;
   tags: string[];
+  people: string[];
   createdAt: string;
   sourceTranscriptId: string | null;
   isActionable: boolean;
@@ -135,6 +137,7 @@ export async function buildContextPack(
       type: obj.objectType ?? 'observation',
       domain: obj.domain ?? 'unknown',
       tags: obj.metadata?.tags ?? [],
+      people: extractPeople(obj.metadata?.entities),
       createdAt: new Date(obj.createdAt).toISOString(),
       sourceTranscriptId: obj.source?.recordingId ?? null,
       isActionable: obj.actionability?.isActionable ?? false,
@@ -221,7 +224,7 @@ RETURN valid JSON with this exact structure:
   "gaps": "What cannot be answered from the notes, or null"
 }`;
 
-function formatNotesForPrompt(notes: RetrievedNote[]): string {
+export function formatNotesForPrompt(notes: RetrievedNote[]): string {
   if (notes.length === 0) {
     return '(No relevant notes found in your history)';
   }
@@ -241,6 +244,7 @@ function formatNotesForPrompt(notes: RetrievedNote[]): string {
         `Note: ${note.cleanedText}`,
         note.isActionable && note.nextAction ? `Next action: ${note.nextAction}` : null,
         note.tags.length > 0 ? `Tags: ${note.tags.join(', ')}` : null,
+        note.people.length > 0 ? `People: ${note.people.join(', ')}` : null,
       ].filter(Boolean);
       return lines.join('\n');
     })
