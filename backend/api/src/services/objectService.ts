@@ -18,6 +18,7 @@ import {
   type SemanticSearchResult,
 } from './vectorService';
 import { updateObjectRelationships } from './relationshipService';
+import { applySupersede } from './reinforcementService';
 import { query } from '../db/queries';
 
 // Validation schema for createObject input
@@ -141,6 +142,7 @@ export async function createObject(
       } catch (err) {
         console.warn('[objectService] Relationship detection failed (non-fatal):', err);
       }
+      await applySupersede(atomicObject.id, userId); // never throws
     });
   }
 
