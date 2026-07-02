@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   for (const row of rows) {
     let changed = false;
     const next = row.metadata_entities.map((e) => {
-      if (e.type === 'other' && persons.has(e.value.toLowerCase())) {
+      if (e.type === 'other' && persons.has(e.value?.toLowerCase())) {
         changed = true;
         return { ...e, type: 'person' };
       }

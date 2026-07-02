@@ -120,9 +120,9 @@ def test_location_reminder_example_is_geofence_reminder():
     assert "Costco" in reminder.location_hints.places
 
 
-def test_full_few_shot_set_has_five_examples():
+def test_full_few_shot_set_has_six_examples():
     msgs = tp.create_few_shot_examples()
-    assert len(msgs) == 10, f"expected 5 example pairs (10 messages), got {len(msgs)}"
+    assert len(msgs) == 12, f"expected 6 example pairs (12 messages), got {len(msgs)}"
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +184,9 @@ _MESSY = (
 )
 
 
-# ─── Phase 8.3: people field ──────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Phase 8.3: people field
+# ---------------------------------------------------------------------------
 
 def test_people_defaults_to_empty_list_when_omitted():
     """An LLM response without `people` must still validate (additive contract)."""
