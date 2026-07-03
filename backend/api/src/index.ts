@@ -75,6 +75,7 @@ import { startImportanceScoreJob } from './jobs/importanceScoreJob';
 import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesisJob';
 import { startWeeklySynthesisJob } from './jobs/weeklySynthesisJob';
 import { startTimeReminderJob } from './jobs/timeReminderJob';
+import { startLifecycleJob } from './jobs/lifecycleJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -203,4 +204,5 @@ server.listen(PORT, async () => {
   startMonthlyLongTermSynthesisJob();
   startWeeklySynthesisJob();
   startTimeReminderJob();
+  startLifecycleJob();
 });
