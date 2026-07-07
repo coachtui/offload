@@ -39,6 +39,7 @@ export function RecordScreen({ navigation }: Props) {
     startRecording,
     stopRecording,
     reset,
+    setRecordingLocation,
   } = useDeepgramTranscription();
 
   const { fetchGeofences } = useGeofences();
@@ -69,11 +70,21 @@ export function RecordScreen({ navigation }: Props) {
       navigation.navigate('Home');
       return;
     } else if (status === 'idle' || status === 'done' || status === 'error') {
-      const loc = await locationService.getCurrentLocation();
-      const geoPoint = loc
-        ? { latitude: loc.coords.latitude, longitude: loc.coords.longitude, accuracy: loc.coords.accuracy ?? undefined }
-        : undefined;
-      await startRecording(geoPoint);
+      // Start immediately — don't make the tap wait on location (up to 5s).
+      // The location fetch runs in parallel and is handed to the hook when
+      // (if) it resolves; no location is already a supported case.
+      void startRecording();
+      locationService.getCurrentLocation()
+        .then((loc) => {
+          if (loc) {
+            setRecordingLocation({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              accuracy: loc.coords.accuracy ?? undefined,
+            });
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -204,7 +215,7 @@ export function RecordScreen({ navigation }: Props) {
           {isRecording
             ? 'Tap to stop'
             : isConnecting
-            ? 'Connecting...'
+            ? 'Starting...'
             : isProcessing
             ? 'Saving...'
             : 'Tap to record'}

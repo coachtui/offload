@@ -30,6 +30,10 @@ interface UseDeepgramTranscriptionReturn extends TranscriptionState {
   startRecording: (location?: GeoPoint) => Promise<void>;
   stopRecording: (opts?: { onGeofencesNeeded?: () => void }) => Promise<void>;
   reset: () => void;
+  // Late-arriving location (fetched in parallel with startRecording) can be
+  // handed to the hook after the fact; it's only read at save time, so this
+  // just needs to land in locationRef before stopRecording runs.
+  setRecordingLocation: (loc: GeoPoint) => void;
 }
 
 const KEEP_AWAKE_TAG = 'offload-recording';
@@ -45,8 +49,11 @@ async function fetchDeepgramToken(): Promise<{ token: string; keywords: string[]
     return cachedToken;
   }
   const result = await apiService.getDeepgramToken();
-  cachedToken = { token: result.token, keywords: result.keywords ?? [], fetchedAt: Date.now() };
-  return cachedToken;
+  if (result.token) {
+    cachedToken = { token: result.token, keywords: result.keywords ?? [], fetchedAt: Date.now() };
+    return cachedToken;
+  }
+  return { token: result.token, keywords: result.keywords ?? [] };
 }
 
 export function prefetchDeepgramToken(): void {
@@ -104,6 +111,10 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Invalidate the session FIRST so a connectDeepgram completing after
+      // unmount hits the session-mismatch branch and closes its own socket,
+      // instead of assigning wsRef on an unmounted hook.
+      sessionIdRef.current += 1;
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -123,6 +134,10 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     // Deepgram connect) and must not run a second mic/timer/keep-awake sequence.
     if (startInFlightRef.current) {
       console.log('[Recording] startRecording already in flight — ignoring duplicate call');
+      return;
+    }
+    if (audioSubscriptionRef.current) {
+      console.log('[Recording] startRecording called while a session is already active — ignoring');
       return;
     }
     startInFlightRef.current = true;
@@ -225,12 +240,19 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         const keywordParams = keywords.length > 0
           ? '&' + keywords.map(k => `keywords=${encodeURIComponent(k)}`).join('&')
           : '';
+        // Stop (or unmount) already happened during the token fetch — skip the
+        // handshake entirely rather than opening a socket we'll just discard.
+        if (sessionIdRef.current !== session) {
+          console.log('[Recording] session changed before Deepgram WebSocket open — skipping connect');
+          return;
+        }
         const deepgramUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&channels=1&punctuate=true&smart_format=true&interim_results=true&endpointing=500&filler_words=false${keywordParams}`;
         console.log('[Recording] connecting to Deepgram...');
         const ws = new WebSocket(deepgramUrl, ['token', token]);
 
         await new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
+            ws.close();
             reject(new Error('Deepgram connection timeout after 10s'));
           }, 10000);
 
@@ -242,6 +264,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
           ws.onerror = (event) => {
             clearTimeout(timeout);
+            ws.close();
             console.error('[Recording] Deepgram WebSocket error on open:', event);
             reject(new Error('Failed to connect to Deepgram'));
           };
@@ -447,8 +470,16 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
         // ── 6b. Save transcript to backend ─────────────────────────────────
         if (!transcriptToSave.trim()) {
-          console.log('[Recording] empty transcript — skipping save');
-          setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
+          if (willEnhance) {
+            // The user spoke (audio chunks exist) but both Deepgram and the
+            // gpt-4o enhance pass produced nothing — don't lose this silently.
+            console.log('[Recording] empty transcript after enhance — audio existed, notifying failure');
+            setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
+            await notifySaveResult({ ok: false });
+          } else {
+            console.log('[Recording] empty transcript — skipping save');
+            setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
+          }
           return;
         }
 
@@ -531,6 +562,10 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     }
   }, [handleAuthError]);
 
+  const setRecordingLocation = useCallback((loc: GeoPoint) => {
+    locationRef.current = loc;
+  }, []);
+
   const reset = useCallback(() => {
     sessionIdRef.current++; // invalidate any in-flight background calls
     setState({
@@ -556,5 +591,6 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     startRecording,
     stopRecording,
     reset,
+    setRecordingLocation,
   };
 }
