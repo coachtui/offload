@@ -64,6 +64,12 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
   // Incremented on each new recording session so stale background calls don't update state
   const sessionIdRef = useRef<number>(0);
 
+  // Re-entrancy guards: a second tap while start/stop is still running is ignored,
+  // so the single-slot refs (audioSubscriptionRef, durationIntervalRef, wsRef) can't
+  // be clobbered by a duplicate in-flight sequence.
+  const startInFlightRef = useRef<boolean>(false);
+  const stopInFlightRef = useRef<boolean>(false);
+
   const wsRef = useRef<WebSocket | null>(null);
   const audioSubscriptionRef = useRef<any>(null);
   const startTimeRef = useRef<number>(0);
@@ -93,6 +99,14 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
   }, []);
 
   const startRecording = useCallback(async (location?: GeoPoint) => {
+    // Re-entrancy guard BEFORE the session increment: a duplicate tap must not
+    // bump the session counter (that would invalidate the first call's in-flight
+    // Deepgram connect) and must not run a second mic/timer/keep-awake sequence.
+    if (startInFlightRef.current) {
+      console.log('[Recording] startRecording already in flight — ignoring duplicate call');
+      return;
+    }
+    startInFlightRef.current = true;
     console.log('[Recording] startRecording called');
     const session = ++sessionIdRef.current;
     try {
@@ -287,192 +301,215 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         status: 'error',
         error: error instanceof Error ? error.message : 'Failed to start recording',
       }));
+    } finally {
+      // Covers both the success-path end and the outer catch: every exit of
+      // startRecording clears the re-entrancy guard.
+      startInFlightRef.current = false;
     }
   }, [handleAuthError]);
 
   const stopRecording = useCallback(async (opts?: { onGeofencesNeeded?: () => void }) => {
+    // Re-entrancy guard: a double-tap-stop's second call returns immediately so the
+    // CloseStream flush, state transition, and save pipeline run exactly once.
+    if (stopInFlightRef.current) {
+      console.log('[Recording] stopRecording already in flight — ignoring duplicate call');
+      return;
+    }
+    stopInFlightRef.current = true;
     console.log('[Recording] stopRecording called');
-    try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
-
-    // Stop duration timer
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-
-    // Stop microphone
-    if (audioSubscriptionRef.current) {
-      audioSubscriptionRef.current.remove();
-      audioSubscriptionRef.current = null;
-    }
-
+    // Invalidate the session synchronously so an in-flight connectDeepgram that opens
+    // AFTER this stop hits its session-mismatch branch, closes the socket, and never
+    // assigns wsRef (otherwise an early stop — wsRef still null — would skip WS cleanup
+    // and the late socket would leak into the next session's shared refs). The captured
+    // value also gates the background hint updates below; it replaces the old post-save
+    // `++sessionIdRef.current`, whose extra increment would have wrongly invalidated the
+    // NEXT session's in-flight connect.
+    const stopSession = ++sessionIdRef.current;
     try {
-      await ExpoPlayAudioStream.stopMicrophone();
-      console.log('[Recording] microphone stopped');
-    } catch (error) {
-      console.warn('[Recording] stopMicrophone error (may be normal):', error);
-    }
+      try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
 
-    // Close Deepgram connection — send CloseStream first so Deepgram flushes
-    // any buffered audio as a final transcript before we disconnect.
-    if (wsRef.current) {
-      if (wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'CloseStream' }));
-        console.log('[Recording] sent CloseStream to Deepgram, waiting for flush...');
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-      // Null out handlers before intentional close so onerror doesn't fire and show a spurious error
-      wsRef.current.onerror = null;
-      wsRef.current.onclose = null;
-      wsRef.current.close();
-      wsRef.current = null;
-      console.log('[Recording] Deepgram WebSocket closed');
-    }
-
-    const finalDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
-    // Combine confirmed final segments with any remaining partial (for short recordings
-    // where Deepgram may not have sent a final result before CloseStream).
-    const partial = partialTranscriptRef.current;
-    const transcript = finalTranscriptRef.current
-      ? finalTranscriptRef.current + (partial ? ' ' + partial : '')
-      : partial;
-    console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
-
-    // Snapshot audio chunks before launching background work so the IIFE has a
-    // stable reference even if audioChunksRef is cleared by reset().
-    const audioChunks = audioChunksRef.current.slice();
-    const willEnhance = audioChunks.length > 0;
-
-    setState(prev => ({
-      ...prev,
-      status: 'processing',
-      duration: finalDuration,
-      finalTranscript: transcript,
-      partialTranscript: '',
-      isEnhancing: willEnhance,
-      transcriptionMethod: 'deepgram',
-    }));
-
-    // ── Background: enhance → save → hint → notify ───────────────────────
-    // stopRecording returns to the caller here. The save pipeline continues
-    // asynchronously so the caller (RecordScreen) can navigate to Home immediately.
-    void (async () => {
-      // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
-      // Deepgram's result is shown as the preview above. Now send the captured
-      // raw audio for a more accurate transcript and swap it in when it returns.
-      // Any failure (network, empty audio, API error) keeps the Deepgram text.
-      let transcriptToSave = transcript;
-      let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
-      if (willEnhance) {
-        try {
-          console.log('[Recording] requesting gpt-4o transcription —',
-            audioChunks.length, 'chunks');
-          const { transcript: gpt4oTranscript } = await apiService.transcribeAudio(
-            audioChunks,
-            { sampleRate: 16000, channels: 1 }
-          );
-          if (gpt4oTranscript && gpt4oTranscript.trim()) {
-            transcriptToSave = gpt4oTranscript.trim();
-            transcriptionMethod = 'gpt-4o';
-            console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
-              '— swapping in for saved note');
-            setState(prev => ({
-              ...prev,
-              finalTranscript: transcriptToSave,
-              transcriptionMethod: 'gpt-4o',
-            }));
-          } else {
-            console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
-          }
-        } catch (error) {
-          console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
-            error instanceof Error ? error.message : error);
-        } finally {
-          setState(prev => ({ ...prev, isEnhancing: false }));
-        }
+      // Stop duration timer
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+        durationIntervalRef.current = null;
       }
 
-      // ── 6b. Save transcript to backend ─────────────────────────────────
-      if (!transcriptToSave.trim()) {
-        console.log('[Recording] empty transcript — skipping save');
-        setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
-        return;
+      // Stop microphone
+      if (audioSubscriptionRef.current) {
+        audioSubscriptionRef.current.remove();
+        audioSubscriptionRef.current = null;
       }
 
       try {
-        console.log('[Recording] saving transcript to backend...');
-        const result = await apiService.saveTranscript({
-          transcript: transcriptToSave,
-          duration: finalDuration,
-          location: locationRef.current,
-          metadata: { transcriptionMethod },
-        });
-
-        console.log('[Recording] transcript saved — sessionId:', result.sessionId,
-          '— objectCount:', result.objectCount);
-
-        const sessionId = ++sessionIdRef.current;
-
-        // Trigger geofence re-sync if the saved note has location-triggered reminders.
-        // Called here (after save, in the background) so it fires regardless of whether
-        // RecordScreen is still mounted.
-        if (result.hasGeofenceCandidates) {
-          opts?.onGeofencesNeeded?.();
-        }
-
-        setState(prev => ({
-          ...prev,
-          status: 'done',
-          savedObjectIds: result.objectIds,
-          relatedNotes: [],
-          contradictions: [],
-          hasGeofenceCandidates: result.hasGeofenceCandidates ?? false,
-        }));
-
-        // ── Hint computation: contradiction check + related notes ──────
-        // Run both in parallel for speed; apply contradiction hint first
-        // (it takes priority over the related-notes hint).
-        let hint: string | undefined;
-
-        if (transcriptToSave.trim().length > 50) {
-          const [contrSettled, ragSettled] = await Promise.allSettled([
-            apiService.ragCheckContradictions(transcriptToSave, result.objectIds),
-            apiService.ragSearch(transcriptToSave, { topK: 5, minScore: 0.6 }),
-          ]);
-
-          if (contrSettled.status === 'fulfilled' && contrSettled.value.hasConflict) {
-            if (sessionIdRef.current === sessionId) {
-              setState(prev => ({ ...prev, contradictions: contrSettled.value.conflicts }));
-            }
-            hint = '⚠️ may conflict with an earlier note';
-          }
-
-          if (!hint && ragSettled.status === 'fulfilled') {
-            const related = (ragSettled.value.results ?? [])
-              .filter((r) => !result.objectIds.includes(r.objectId))
-              .slice(0, 3);
-            if (related.length > 0) {
-              if (sessionIdRef.current === sessionId) {
-                setState(prev => ({ ...prev, relatedNotes: related }));
-              }
-              hint = `relates to ${related.length} earlier note${related.length === 1 ? '' : 's'}`;
-            }
-          }
-        }
-
-        await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim(), hint });
-
+        await ExpoPlayAudioStream.stopMicrophone();
+        console.log('[Recording] microphone stopped');
       } catch (error) {
-        console.error('[Recording] saveTranscript failed:', error instanceof Error ? error.message : error);
-        handleAuthError(error);
-        setState(prev => ({
-          ...prev,
-          status: 'error',
-          error: error instanceof Error ? error.message : 'Failed to save transcript',
-        }));
-        await notifySaveResult({ ok: false });
+        console.warn('[Recording] stopMicrophone error (may be normal):', error);
       }
-    })();
+
+      // Close Deepgram connection — send CloseStream first so Deepgram flushes
+      // any buffered audio as a final transcript before we disconnect.
+      if (wsRef.current) {
+        if (wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'CloseStream' }));
+          console.log('[Recording] sent CloseStream to Deepgram, waiting for flush...');
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+        // Null out handlers before intentional close so onerror doesn't fire and show a spurious error
+        wsRef.current.onerror = null;
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+        console.log('[Recording] Deepgram WebSocket closed');
+      }
+
+      const finalDuration = Math.floor((Date.now() - startTimeRef.current) / 1000);
+      // Combine confirmed final segments with any remaining partial (for short recordings
+      // where Deepgram may not have sent a final result before CloseStream).
+      const partial = partialTranscriptRef.current;
+      const transcript = finalTranscriptRef.current
+        ? finalTranscriptRef.current + (partial ? ' ' + partial : '')
+        : partial;
+      console.log('[Recording] final transcript length:', transcript.length, '— duration:', finalDuration, 's');
+
+      // Snapshot audio chunks before launching background work so the IIFE has a
+      // stable reference even if audioChunksRef is cleared by reset().
+      const audioChunks = audioChunksRef.current.slice();
+      const willEnhance = audioChunks.length > 0;
+
+      setState(prev => ({
+        ...prev,
+        status: 'processing',
+        duration: finalDuration,
+        finalTranscript: transcript,
+        partialTranscript: '',
+        isEnhancing: willEnhance,
+        transcriptionMethod: 'deepgram',
+      }));
+
+      // ── Background: enhance → save → hint → notify ───────────────────────
+      // stopRecording returns to the caller here. The save pipeline continues
+      // asynchronously so the caller (RecordScreen) can navigate to Home immediately.
+      void (async () => {
+        // ── 6a. Higher-accuracy transcript via gpt-4o-transcribe ──────────
+        // Deepgram's result is shown as the preview above. Now send the captured
+        // raw audio for a more accurate transcript and swap it in when it returns.
+        // Any failure (network, empty audio, API error) keeps the Deepgram text.
+        let transcriptToSave = transcript;
+        let transcriptionMethod: 'gpt-4o' | 'deepgram' = 'deepgram';
+        if (willEnhance) {
+          try {
+            console.log('[Recording] requesting gpt-4o transcription —',
+              audioChunks.length, 'chunks');
+            const { transcript: gpt4oTranscript } = await apiService.transcribeAudio(
+              audioChunks,
+              { sampleRate: 16000, channels: 1 }
+            );
+            if (gpt4oTranscript && gpt4oTranscript.trim()) {
+              transcriptToSave = gpt4oTranscript.trim();
+              transcriptionMethod = 'gpt-4o';
+              console.log('[Recording] gpt-4o transcript length:', transcriptToSave.length,
+                '— swapping in for saved note');
+              setState(prev => ({
+                ...prev,
+                finalTranscript: transcriptToSave,
+                transcriptionMethod: 'gpt-4o',
+              }));
+            } else {
+              console.log('[Recording] gpt-4o returned empty — keeping Deepgram transcript');
+            }
+          } catch (error) {
+            console.warn('[Recording] gpt-4o transcription failed — keeping Deepgram transcript:',
+              error instanceof Error ? error.message : error);
+          } finally {
+            setState(prev => ({ ...prev, isEnhancing: false }));
+          }
+        }
+
+        // ── 6b. Save transcript to backend ─────────────────────────────────
+        if (!transcriptToSave.trim()) {
+          console.log('[Recording] empty transcript — skipping save');
+          setState(prev => ({ ...prev, status: 'done', savedObjectIds: [] }));
+          return;
+        }
+
+        try {
+          console.log('[Recording] saving transcript to backend...');
+          const result = await apiService.saveTranscript({
+            transcript: transcriptToSave,
+            duration: finalDuration,
+            location: locationRef.current,
+            metadata: { transcriptionMethod },
+          });
+
+          console.log('[Recording] transcript saved — sessionId:', result.sessionId,
+            '— objectCount:', result.objectCount);
+
+          // Trigger geofence re-sync if the saved note has location-triggered reminders.
+          // Called here (after save, in the background) so it fires regardless of whether
+          // RecordScreen is still mounted.
+          if (result.hasGeofenceCandidates) {
+            opts?.onGeofencesNeeded?.();
+          }
+
+          setState(prev => ({
+            ...prev,
+            status: 'done',
+            savedObjectIds: result.objectIds,
+            relatedNotes: [],
+            contradictions: [],
+            hasGeofenceCandidates: result.hasGeofenceCandidates ?? false,
+          }));
+
+          // ── Hint computation: contradiction check + related notes ──────
+          // Run both in parallel for speed; apply contradiction hint first
+          // (it takes priority over the related-notes hint).
+          let hint: string | undefined;
+
+          if (transcriptToSave.trim().length > 50) {
+            const [contrSettled, ragSettled] = await Promise.allSettled([
+              apiService.ragCheckContradictions(transcriptToSave, result.objectIds),
+              apiService.ragSearch(transcriptToSave, { topK: 5, minScore: 0.6 }),
+            ]);
+
+            if (contrSettled.status === 'fulfilled' && contrSettled.value.hasConflict) {
+              if (sessionIdRef.current === stopSession) {
+                setState(prev => ({ ...prev, contradictions: contrSettled.value.conflicts }));
+              }
+              hint = '⚠️ may conflict with an earlier note';
+            }
+
+            if (!hint && ragSettled.status === 'fulfilled') {
+              const related = (ragSettled.value.results ?? [])
+                .filter((r) => !result.objectIds.includes(r.objectId))
+                .slice(0, 3);
+              if (related.length > 0) {
+                if (sessionIdRef.current === stopSession) {
+                  setState(prev => ({ ...prev, relatedNotes: related }));
+                }
+                hint = `relates to ${related.length} earlier note${related.length === 1 ? '' : 's'}`;
+              }
+            }
+          }
+
+          await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim(), hint });
+
+        } catch (error) {
+          console.error('[Recording] saveTranscript failed:', error instanceof Error ? error.message : error);
+          handleAuthError(error);
+          setState(prev => ({
+            ...prev,
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Failed to save transcript',
+          }));
+          await notifySaveResult({ ok: false });
+        }
+      })();
+    } finally {
+      // Always clear the re-entrancy guard, even if any await above threw
+      // (e.g. a WS send/close on a torn-down socket).
+      stopInFlightRef.current = false;
+    }
   }, [handleAuthError]);
 
   const reset = useCallback(() => {
