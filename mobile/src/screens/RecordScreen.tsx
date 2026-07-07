@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useDeepgramTranscription } from '../hooks/useDeepgramTranscription';
+import { useDeepgramTranscription, prefetchDeepgramToken } from '../hooks/useDeepgramTranscription';
 import { useGeofences } from '../hooks/useGeofences';
 import { RootStackParamList } from '../navigation/types';
 import { AppScreen, AppHeader, Colors } from '../components/ui';
@@ -42,6 +42,10 @@ export function RecordScreen({ navigation }: Props) {
   } = useDeepgramTranscription();
 
   const { fetchGeofences } = useGeofences();
+
+  useEffect(() => {
+    prefetchDeepgramToken();
+  }, []);
 
   const isRecording = status === 'recording';
   const isConnecting = status === 'connecting';

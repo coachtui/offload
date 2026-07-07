@@ -34,6 +34,25 @@ interface UseDeepgramTranscriptionReturn extends TranscriptionState {
 
 const KEEP_AWAKE_TAG = 'offload-recording';
 
+// Deepgram token cache — the "token" is a static server key, so a short TTL is
+// hygiene, not a security boundary. Prefetched on RecordScreen mount so the
+// record tap never pays this round-trip.
+const TOKEN_TTL_MS = 5 * 60 * 1000;
+let cachedToken: { token: string; keywords: string[]; fetchedAt: number } | null = null;
+
+async function fetchDeepgramToken(): Promise<{ token: string; keywords: string[] }> {
+  if (cachedToken && Date.now() - cachedToken.fetchedAt < TOKEN_TTL_MS) {
+    return cachedToken;
+  }
+  const result = await apiService.getDeepgramToken();
+  cachedToken = { token: result.token, keywords: result.keywords ?? [], fetchedAt: Date.now() };
+  return cachedToken;
+}
+
+export function prefetchDeepgramToken(): void {
+  fetchDeepgramToken().catch(() => {}); // best-effort; startRecording refetches on miss
+}
+
 // Convert base64 to ArrayBuffer
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
   const binaryString = atob(base64);
@@ -186,7 +205,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         let token: string;
         let keywords: string[] = [];
         try {
-          const result = await apiService.getDeepgramToken();
+          const result = await fetchDeepgramToken();
           token = result.token;
           keywords = result.keywords ?? [];
         } catch (err) {
