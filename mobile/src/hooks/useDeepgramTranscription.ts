@@ -94,6 +94,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
 
   const startRecording = useCallback(async (location?: GeoPoint) => {
     console.log('[Recording] startRecording called');
+    const session = ++sessionIdRef.current;
     try {
       setState(prev => ({ ...prev, status: 'connecting', error: null }));
       locationRef.current = location;
@@ -116,97 +117,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         throw new Error('Microphone permission not granted');
       }
 
-      // ── 3. Deepgram token fetch ────────────────────────────────────────
-      console.log('[Recording] fetching Deepgram token from backend...');
-      let token: string;
-      let keywords: string[] = [];
-      try {
-        const result = await apiService.getDeepgramToken();
-        token = result.token;
-        keywords = result.keywords ?? [];
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
-        console.error('[Recording] Deepgram token fetch failed:', detail);
-        throw new Error(`Voice service unavailable — ${detail}`);
-      }
-      if (!token) {
-        console.error('[Recording] Deepgram token is empty');
-        throw new Error('Voice service unavailable. Please try again later.');
-      }
-      console.log('[Recording] Deepgram token received, length:', token.length, '— keywords:', keywords.length);
-
-      // ── 4. Deepgram WebSocket connection ───────────────────────────────
-      // Nova-2 uses the `keywords` param; `keyterm` is Nova-3-only and Nova-2
-      // rejects the WS handshake (error 8007) if keyterm params are present.
-      const keywordParams = keywords.length > 0
-        ? '&' + keywords.map(k => `keywords=${encodeURIComponent(k)}`).join('&')
-        : '';
-      const deepgramUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&channels=1&punctuate=true&smart_format=true&interim_results=true&endpointing=500&filler_words=false${keywordParams}`;
-      console.log('[Recording] connecting to Deepgram...');
-      const ws = new WebSocket(deepgramUrl, ['token', token]);
-      wsRef.current = ws;
-
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Deepgram connection timeout after 10s'));
-        }, 10000);
-
-        ws.onopen = () => {
-          clearTimeout(timeout);
-          console.log('[Recording] Deepgram WebSocket open');
-          resolve();
-        };
-
-        ws.onerror = (event) => {
-          clearTimeout(timeout);
-          console.error('[Recording] Deepgram WebSocket error on open:', event);
-          reject(new Error('Failed to connect to Deepgram'));
-        };
-      });
-
-      // Handle Deepgram messages
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'Results' && data.channel?.alternatives?.[0]) {
-            const transcript = data.channel.alternatives[0].transcript;
-            const isFinal = data.is_final;
-
-            if (transcript) {
-              if (isFinal) {
-                finalTranscriptRef.current += (finalTranscriptRef.current ? ' ' : '') + transcript;
-                partialTranscriptRef.current = '';
-                console.log('[Recording] Deepgram final segment, total length:', finalTranscriptRef.current.length);
-                setState(prev => ({
-                  ...prev,
-                  finalTranscript: finalTranscriptRef.current,
-                  partialTranscript: '',
-                }));
-              } else {
-                partialTranscriptRef.current = transcript;
-                setState(prev => ({
-                  ...prev,
-                  partialTranscript: transcript,
-                }));
-              }
-            }
-          }
-        } catch (error) {
-          console.error('[Recording] Error parsing Deepgram message:', error);
-        }
-      };
-
-      ws.onclose = (event) => {
-        console.log('[Recording] Deepgram WebSocket closed:', event.code, event.reason);
-      };
-
-      ws.onerror = (event) => {
-        console.error('[Recording] Deepgram WebSocket error (post-connect):', event);
-        setState(prev => ({ ...prev, error: 'Deepgram connection error' }));
-      };
-
-      // ── 5. Microphone stream start ────────────────────────────────────
+      // ── 3. Microphone stream start ──────────────────────────────────────
       console.log('[Recording] starting microphone stream...');
       const { subscription } = await ExpoPlayAudioStream.startMicrophone({
         sampleRate: 16000,
@@ -250,6 +161,123 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       }));
 
       console.log('[Recording] recording started successfully');
+
+      // ── 4. Deepgram connect — network I/O happens after the mic is live,
+      // in parallel. Live captions are best-effort: any failure here just
+      // means no live preview, the raw audio is still captured above for
+      // the final gpt-4o-transcribe pass at stop.
+      const connectDeepgram = async (): Promise<void> => {
+        // ── Deepgram token fetch ───────────────────────────────────────
+        console.log('[Recording] fetching Deepgram token from backend...');
+        let token: string;
+        let keywords: string[] = [];
+        try {
+          const result = await apiService.getDeepgramToken();
+          token = result.token;
+          keywords = result.keywords ?? [];
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          console.error('[Recording] Deepgram token fetch failed:', detail);
+          throw new Error(`Voice service unavailable — ${detail}`);
+        }
+        if (!token) {
+          console.error('[Recording] Deepgram token is empty');
+          throw new Error('Voice service unavailable. Please try again later.');
+        }
+        console.log('[Recording] Deepgram token received, length:', token.length, '— keywords:', keywords.length);
+
+        // ── Deepgram WebSocket connection ───────────────────────────────
+        // Nova-2 uses the `keywords` param; `keyterm` is Nova-3-only and Nova-2
+        // rejects the WS handshake (error 8007) if keyterm params are present.
+        const keywordParams = keywords.length > 0
+          ? '&' + keywords.map(k => `keywords=${encodeURIComponent(k)}`).join('&')
+          : '';
+        const deepgramUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&channels=1&punctuate=true&smart_format=true&interim_results=true&endpointing=500&filler_words=false${keywordParams}`;
+        console.log('[Recording] connecting to Deepgram...');
+        const ws = new WebSocket(deepgramUrl, ['token', token]);
+
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Deepgram connection timeout after 10s'));
+          }, 10000);
+
+          ws.onopen = () => {
+            clearTimeout(timeout);
+            console.log('[Recording] Deepgram WebSocket open');
+            resolve();
+          };
+
+          ws.onerror = (event) => {
+            clearTimeout(timeout);
+            console.error('[Recording] Deepgram WebSocket error on open:', event);
+            reject(new Error('Failed to connect to Deepgram'));
+          };
+        });
+
+        // A stop (or a newer startRecording) happened while we were connecting —
+        // discard this socket so it doesn't leak into a stale session.
+        if (sessionIdRef.current !== session) {
+          console.log('[Recording] session changed during Deepgram connect — discarding socket');
+          ws.close();
+          return;
+        }
+
+        wsRef.current = ws;
+
+        // Handle Deepgram messages
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'Results' && data.channel?.alternatives?.[0]) {
+              const transcript = data.channel.alternatives[0].transcript;
+              const isFinal = data.is_final;
+
+              if (transcript) {
+                if (isFinal) {
+                  finalTranscriptRef.current += (finalTranscriptRef.current ? ' ' : '') + transcript;
+                  partialTranscriptRef.current = '';
+                  console.log('[Recording] Deepgram final segment, total length:', finalTranscriptRef.current.length);
+                  setState(prev => ({
+                    ...prev,
+                    finalTranscript: finalTranscriptRef.current,
+                    partialTranscript: '',
+                  }));
+                } else {
+                  partialTranscriptRef.current = transcript;
+                  setState(prev => ({
+                    ...prev,
+                    partialTranscript: transcript,
+                  }));
+                }
+              }
+            }
+          } catch (error) {
+            console.error('[Recording] Error parsing Deepgram message:', error);
+          }
+        };
+
+        ws.onclose = (event) => {
+          console.log('[Recording] Deepgram WebSocket closed:', event.code, event.reason);
+        };
+
+        ws.onerror = (event) => {
+          console.error('[Recording] Deepgram WebSocket error (post-connect):', event);
+          setState(prev => ({ ...prev, error: 'Deepgram connection error' }));
+        };
+
+        // Flush chunks captured while connecting, in order. Synchronous loop —
+        // live sends can't interleave until this handler returns.
+        for (const chunk of audioChunksRef.current) {
+          ws.send(base64ToArrayBuffer(chunk));
+        }
+        console.log(`[Recording] Deepgram open — flushed ${audioChunksRef.current.length} buffered chunks`);
+      };
+
+      // Live-caption socket connects in parallel — capture is already running.
+      connectDeepgram().catch((err) => {
+        console.warn('[Recording] Deepgram connect failed — continuing without live captions:', err);
+      });
     } catch (error) {
       try { deactivateKeepAwake(KEEP_AWAKE_TAG); } catch {}
       console.error('[Recording] startRecording failed:', error instanceof Error ? error.message : error);
