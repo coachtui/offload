@@ -675,7 +675,12 @@ class ApiService {
     return this.request('/api/v1/voice/save-transcript', {
       method: 'POST',
       body: JSON.stringify(data),
-    });
+    },
+    // The server LLM-parses the transcript into atomic objects, then writes each
+    // one sequentially. Long notes exceed the default 30s, so the client aborts
+    // and (wrongly) reports "Couldn't save your note" — even though the server
+    // finishes the save. Allow 90s to match the other LLM-bearing calls.
+    90000);
   }
 
   // Synthesis methods
