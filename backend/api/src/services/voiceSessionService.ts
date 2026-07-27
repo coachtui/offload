@@ -7,6 +7,7 @@ import { createObject } from './objectService';
 import { uploadAudioChunk, mergeAudioChunks, getAudioUrl } from './storageService';
 import { StreamingTranscriber, TranscriptionResult } from './transcriptionService';
 import { parseTranscript, checkMLServiceHealth } from './mlService';
+import { typeEntities } from './entityTyping';
 import type { GeoPoint, TranscriptionChunk } from '@shared/types';
 
 export interface ActiveSession {
@@ -204,22 +205,37 @@ export async function stopSession(
             `ML service parsed ${parseResult.atomicObjects.length} atomic objects in ${parseResult.processingTime}s`
           );
 
-          // Create atomic objects from parsed results
+          // Create atomic objects from parsed results.
+          // Mirrors the v2 mapping in routes/voice.ts — the parser returns the rich
+          // schema (cleanedText/type/domain/temporalHints), not the flat v1 shape.
           for (const parsedObject of parseResult.atomicObjects) {
+            // Type entities using the parser's people list (person vs other)
+            const entityObjects = typeEntities(parsedObject.entities, parsedObject.people);
+
             const object = await createObject(activeSession.session.userId, {
-              content: parsedObject.content,
-              category: parsedObject.category,
+              content: parsedObject.cleanedText || parsedObject.rawText || '',
+              category: [],
               source: {
                 type: 'voice',
                 recordingId: sessionId,
                 location: activeSession.session.location,
               },
               metadata: {
-                entities: parsedObject.entities,
-                sentiment: parsedObject.sentiment,
-                urgency: parsedObject.urgency,
+                entities: entityObjects,
                 tags: parsedObject.tags,
+                urgency: parsedObject.temporalHints?.urgency || undefined,
               },
+              // v2 rich fields
+              rawText: parsedObject.rawText,
+              cleanedText: parsedObject.cleanedText,
+              title: parsedObject.title,
+              whyItMatters: parsedObject.whyItMatters,
+              objectType: parsedObject.type,
+              domain: parsedObject.domain,
+              temporalHints: parsedObject.temporalHints,
+              locationHints: parsedObject.locationHints,
+              actionability: parsedObject.actionability,
+              sequenceIndex: parsedObject.sequenceIndex,
             });
             objectIds.push(object.id);
           }

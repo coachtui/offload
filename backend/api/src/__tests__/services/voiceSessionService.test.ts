@@ -16,26 +16,52 @@ import { Session } from '../../models/Session';
 import * as storageService from '../../services/storageService';
 import * as transcriptionService from '../../services/transcriptionService';
 import * as objectService from '../../services/objectService';
+import * as mlService from '../../services/mlService';
 
 // Mock dependencies
 jest.mock('../../models/Session');
 jest.mock('../../services/storageService');
 jest.mock('../../services/transcriptionService');
 jest.mock('../../services/objectService');
+jest.mock('../../services/mlService');
 
 const mockSession = Session as jest.Mocked<typeof Session>;
 const mockStorage = storageService as jest.Mocked<typeof storageService>;
 const mockTranscription = transcriptionService as jest.Mocked<typeof transcriptionService>;
 const mockObjectService = objectService as jest.Mocked<typeof objectService>;
+const mockMlService = mlService as jest.Mocked<typeof mlService>;
 
 describe('VoiceSessionService', () => {
   const mockUserId = 'user-123';
   const mockDeviceId = 'device-456';
 
+  /**
+   * `Session.update()` resolves to another Session-like object which itself has
+   * `.update()` — stopSession chains a second update onto the result. A plain
+   * `{}` here fails with "updatedSession.update is not a function".
+   */
+  const makeUpdatedSession = (metadata: Record<string, any> = {}) => {
+    const updated: any = { id: 'updated-session', metadata };
+    updated.update = jest.fn().mockResolvedValue(updated);
+    return updated;
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
-    // Clean up any active sessions from previous tests
-    // We need to access internal state, so we'll use cleanupAllSessions
+
+    // The auto-mocked StreamingTranscriber returns undefined from
+    // getFullTranscript(), which blows up stopSession's `transcript.trim()`.
+    // Give every test a well-formed transcriber; tests override as needed.
+    (transcriptionService.StreamingTranscriber as unknown as jest.Mock).mockImplementation(() => ({
+      addChunk: jest.fn().mockResolvedValue(undefined),
+      finalize: jest.fn().mockResolvedValue(undefined),
+      getFullTranscript: jest.fn().mockReturnValue(''),
+    }));
+
+    // ML service is off by default; tests that exercise the parse path opt in.
+    // (clearAllMocks only clears calls, not implementations — reset explicitly.)
+    mockMlService.checkMLServiceHealth.mockReset().mockResolvedValue(false);
+    mockMlService.parseTranscript.mockReset();
   });
 
   afterEach(async () => {
@@ -237,10 +263,9 @@ describe('VoiceSessionService', () => {
         location: undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
-        update: jest.fn().mockResolvedValue({
-          id: 'session-stop',
-          metadata: { transcript: 'Test transcript' },
-        }),
+        update: jest.fn().mockResolvedValue(
+          makeUpdatedSession({ transcript: 'Test transcript' })
+        ),
         delete: jest.fn(),
         toVoiceSession: jest.fn(),
       };
@@ -254,6 +279,13 @@ describe('VoiceSessionService', () => {
         content: 'Test transcript',
       } as any);
 
+      // Non-empty transcript so the object-creation path actually runs
+      (transcriptionService.StreamingTranscriber as unknown as jest.Mock).mockImplementation(() => ({
+        addChunk: jest.fn().mockResolvedValue(undefined),
+        finalize: jest.fn().mockResolvedValue(undefined),
+        getFullTranscript: jest.fn().mockReturnValue('Test transcript'),
+      }));
+
       const session = await startSession(mockUserId, { deviceId: mockDeviceId });
       const result = await stopSession(session.id);
 
@@ -261,6 +293,11 @@ describe('VoiceSessionService', () => {
       expect(mockStorage.mergeAudioChunks).toHaveBeenCalledWith(session.id);
       expect(mockSessionData.update).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'processing' })
+      );
+      // ML service is unavailable by default → single fallback object
+      expect(mockObjectService.createObject).toHaveBeenCalledWith(
+        mockUserId,
+        expect.objectContaining({ content: 'Test transcript' })
       );
     });
 
@@ -274,7 +311,7 @@ describe('VoiceSessionService', () => {
         location: undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue(makeUpdatedSession()),
         delete: jest.fn(),
         toVoiceSession: jest.fn(),
       };
@@ -297,6 +334,93 @@ describe('VoiceSessionService', () => {
         .rejects.toThrow('Session not found or not active');
     });
 
+    it('should map v2 parser output onto the atomic object create request', async () => {
+      const mockSessionData = {
+        id: 'session-v2-map',
+        userId: mockUserId,
+        deviceId: mockDeviceId,
+        status: 'recording' as const,
+        metadata: {},
+        location: undefined,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        update: jest.fn().mockResolvedValue({
+          id: 'session-v2-map',
+          metadata: {},
+          update: jest.fn().mockResolvedValue({}),
+        }),
+        delete: jest.fn(),
+        toVoiceSession: jest.fn(),
+      };
+
+      mockSession.create.mockResolvedValue(mockSessionData as any);
+      mockSession.findById.mockResolvedValue(mockSessionData as any);
+      mockStorage.mergeAudioChunks.mockResolvedValue('audio.webm');
+      mockStorage.getAudioUrl.mockResolvedValue('https://example.com/audio.webm');
+
+      // Transcriber must yield a non-empty transcript to reach the ML branch
+      (transcriptionService.StreamingTranscriber as unknown as jest.Mock).mockImplementation(() => ({
+        finalize: jest.fn().mockResolvedValue(undefined),
+        getFullTranscript: jest.fn().mockReturnValue('Call Sarah about the Q3 budget'),
+        processChunk: jest.fn(),
+      }));
+
+      // v2 rich schema — note there is no `content`/`category`/`sentiment`/`urgency` at top level
+      mockMlService.checkMLServiceHealth.mockResolvedValue(true);
+      mockMlService.parseTranscript.mockResolvedValue({
+        atomicObjects: [
+          {
+            rawText: 'call sarah about the q3 budget',
+            cleanedText: 'Call Sarah about the Q3 budget',
+            title: 'Call Sarah re: Q3 budget',
+            type: 'task',
+            domain: 'work',
+            tags: ['budget'],
+            entities: ['Sarah', 'Q3 budget'],
+            people: ['Sarah'],
+            confidence: 0.9,
+            temporalHints: { hasDate: false, dateText: null, urgency: 'high' },
+            locationHints: { places: [], geofenceCandidate: false },
+            actionability: { isActionable: true, nextAction: 'Call Sarah' },
+            sequenceIndex: 0,
+            whyItMatters: 'Q3 budget deadline is close',
+          },
+        ],
+        processingTime: 0.4,
+        modelUsed: 'test-model',
+      } as any);
+
+      mockObjectService.createObject.mockResolvedValue({ id: 'object-v2' } as any);
+
+      const session = await startSession(mockUserId, { deviceId: mockDeviceId });
+      await stopSession(session.id);
+
+      expect(mockObjectService.createObject).toHaveBeenCalledWith(
+        mockUserId,
+        expect.objectContaining({
+          // content comes from cleanedText, never the non-existent `content` field
+          content: 'Call Sarah about the Q3 budget',
+          rawText: 'call sarah about the q3 budget',
+          cleanedText: 'Call Sarah about the Q3 budget',
+          title: 'Call Sarah re: Q3 budget',
+          objectType: 'task',
+          domain: 'work',
+          whyItMatters: 'Q3 budget deadline is close',
+          sequenceIndex: 0,
+          metadata: expect.objectContaining({
+            // entities must be typed Entity[] objects, not raw strings
+            entities: [
+              { type: 'person', value: 'Sarah', confidence: 1.0 },
+              { type: 'other', value: 'Q3 budget', confidence: 1.0 },
+            ],
+            tags: ['budget'],
+            // urgency lives under temporalHints in v2
+            urgency: 'high',
+          }),
+        })
+      );
+    });
+
     it('should handle merge audio failure gracefully', async () => {
       const mockSessionData = {
         id: 'session-merge-fail',
@@ -307,7 +431,7 @@ describe('VoiceSessionService', () => {
         location: undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
-        update: jest.fn().mockResolvedValue({}),
+        update: jest.fn().mockResolvedValue(makeUpdatedSession()),
         delete: jest.fn(),
         toVoiceSession: jest.fn(),
       };
