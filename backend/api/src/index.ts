@@ -49,11 +49,14 @@ app.use(express.urlencoded({ extended: true }));
 app.get('/health', async (req, res) => {
   const dbConnected = await testConnection();
   const weaviateConnected = await testWeaviateConnection();
-  const storageConnected = await testStorageConnection();
   const deepgramConfigured = !!process.env.DEEPGRAM_API_KEY;
 
-  const allConnected = dbConnected && weaviateConnected && storageConnected;
-  const someConnected = dbConnected || weaviateConnected || storageConnected;
+  // Audio is not stored server-side — the Deepgram flow transcribes in the client
+  // and GET /sessions/:id/audio returns 404 by design. S3/MinIO therefore has no
+  // live consumer and must NOT gate service health. Probing it here also cost a
+  // failing network round-trip on every healthcheck.
+  const allConnected = dbConnected && weaviateConnected;
+  const someConnected = dbConnected || weaviateConnected;
 
   const status = allConnected ? 'ok' : someConnected ? 'degraded' : 'error';
 
@@ -63,7 +66,7 @@ app.get('/health', async (req, res) => {
     timestamp: new Date().toISOString(),
     database: dbConnected ? 'connected' : 'disconnected',
     vectorDb: weaviateConnected ? 'connected' : 'disconnected',
-    storage: storageConnected ? 'connected' : 'disconnected',
+    storage: 'disabled',
     deepgram: deepgramConfigured ? 'configured' : 'not configured',
   });
 });
