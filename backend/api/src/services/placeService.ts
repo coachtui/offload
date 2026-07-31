@@ -9,6 +9,7 @@ import { PlaceModel } from '../models/Place';
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { resolvePlaceNameMulti } from './placeResolutionService';
+import { matchPlaceName } from './placeNameMatch';
 import type { AtomicObject } from '@shared/types';
 
 // Maximum number of inferred geofences per user (leaves room for manual ones within OS 20-limit)
@@ -84,24 +85,38 @@ async function resolveAndLinkPlace(
 
   console.log(`[placeService] Resolving place "${normalizedQuery}" for object ${objectId}`);
 
-  // ─── 1. Fuzzy-match existing places by name ────────────────────────────────
-  const nameMatches = await PlaceModel.findByUserAndName(userId, normalizedQuery);
-  if (nameMatches.length > 0) {
-    const existing = nameMatches[0];
-    console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName})`);
-    logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: 'name_match' });
-    await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
-    return;
-  }
-
-  // ─── 1b. Match a manually-labeled geofence by exact name ───────────────────
-  const geofenceMatches = await GeofenceModel.findByUserAndName(userId, normalizedQuery);
-  if (geofenceMatches.length > 0) {
-    const geofence = geofenceMatches[0];
-    console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) — linking object ${objectId}`);
-    logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: 'manual_geofence_name_match' });
+  // ─── 1. Match a manually-labeled geofence ──────────────────────────────────
+  // The user's own labels are authoritative and are checked FIRST — before both
+  // inferred places and the geocoder — so a note about a place they named can
+  // never be hijacked by an OSM result (which is how a Costco note ended up on
+  // an auto-created "Costco Gasoline" geofence 25km away).
+  //
+  // Only MANUAL geofences are eligible here. Inferred geofences surface their
+  // notes through the backing place's object_place_links, not geofence_objects
+  // (see getGeofenceObjects) — linking one here would write a row the detail
+  // view never reads, silently dropping the note again.
+  const userGeofences = await GeofenceModel.findByUserId(userId);
+  const manualGeofences = userGeofences.filter(g => g.createdBy === 'manual');
+  const geofenceMatch = matchPlaceName(normalizedQuery, manualGeofences, g => g.name);
+  if (geofenceMatch) {
+    const geofence = geofenceMatch.candidate;
+    console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
+    logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
     return; // labeled place is authoritative — do not geocode or create an inferred place
+  }
+
+  // ─── 1b. Match an existing inferred place by name ──────────────────────────
+  // Same matcher, so "costco gasoline station" dedupes onto the existing
+  // "Costco Gasoline" place instead of geocoding a near-duplicate.
+  const userPlaces = await PlaceModel.findByUserId(userId);
+  const placeMatch = matchPlaceName(normalizedQuery, userPlaces, p => p.normalizedName);
+  if (placeMatch) {
+    const existing = placeMatch.candidate;
+    console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${placeMatch.reason}`);
+    logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${placeMatch.reason}` });
+    await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
+    return;
   }
 
   // ─── 2. Geocode via OSM Nominatim (up to 3 candidates) ───────────────────
@@ -188,10 +203,11 @@ async function maybeCreateInferredGeofence(
   // a chain like "McDonald's" has many branches, and we create a geofence for
   // each of the nearest few. (Re-recording the same note is de-duped earlier at
   // the place level via PlaceModel.findNearby, so this won't pile up duplicates.)
-  const sameName = await GeofenceModel.findByUserAndName(userId, place.normalizedName);
-  const manualMatch = sameName.filter(g => g.createdBy === 'manual');
-  if (manualMatch.length > 0) {
-    console.log(`[placeService] Manual geofence "${place.normalizedName}" exists — skipping inferred duplicate`);
+  const allGeofences = await GeofenceModel.findByUserId(userId);
+  const manualGeofences = allGeofences.filter(g => g.createdBy === 'manual');
+  const manualMatch = matchPlaceName(place.normalizedName, manualGeofences, g => g.name);
+  if (manualMatch) {
+    console.log(`[placeService] Manual geofence "${manualMatch.candidate.name}" exists (${manualMatch.reason}) — skipping inferred duplicate for "${place.normalizedName}"`);
     return;
   }
 
