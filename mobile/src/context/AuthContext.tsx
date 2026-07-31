@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { LoginRequest, RegisterRequest, AuthResponse } from '../types';
 import { apiService, AuthError } from '../services/api';
 import { registerPushTokenWithBackend } from '../services/pushRegistration';
+import { geofenceMonitoringService } from '../services/geofenceMonitoringService';
 
 interface AuthState {
   user: AuthResponse['user'] | null;
@@ -102,9 +103,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const handleAuthError = useCallback((error: unknown) => {
     if (error instanceof AuthError) {
       console.warn('[AuthContext] AuthError received — forcing logout:', error.message);
-      apiService.clearToken().then(() => {
-        setState({ user: null, isAuthenticated: false, isLoading: false });
-      });
+      // Same teardown as an explicit logout — a forced sign-out must not leave
+      // the previous account's regions registered with the OS either.
+      geofenceMonitoringService
+        .teardownForSignOut()
+        .catch(e => console.warn('[AuthContext] geofence teardown failed:', e))
+        .then(() => apiService.clearToken())
+        .then(() => {
+          setState({ user: null, isAuthenticated: false, isLoading: false });
+        });
     }
   }, []);
 
@@ -128,6 +135,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   async function logout() {
+    // Tear down geofences BEFORE dropping the token: OS region registrations
+    // outlive the session, so without this the next account inherits them.
+    await geofenceMonitoringService.teardownForSignOut();
     await apiService.logout();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }

@@ -13,37 +13,18 @@ import { resolveObjectPlaces } from '../services/placeService';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
 import { transcribeWithGpt4o } from '../services/transcriptionService';
 import { typeEntities } from '../services/entityTyping';
+import {
+  textHasArrivalTrigger,
+  extractPlacesFromText,
+  shouldResolvePlaces,
+} from '../services/arrivalTrigger';
 
 const router = Router();
 
 // All voice routes require authentication
 router.use(authenticate);
 
-// ─── Deterministic arrival-trigger detection ──────────────────────────────────
-// These patterns reliably indicate "remind me when I arrive at X" intent.
-// Applied as a fallback when the ML parser does not set geofence_candidate=true.
-const ARRIVAL_PATTERNS = [
-  /when\s+(?:i\s+)?(?:get|arrive|am|reach|go)\s+(?:to|at)\b/i,
-  /remind(?:er)?\s+(?:me\s+)?.+\bat\b\s+\w/i,
-  /at\s+(?:the\s+)?(?:costco|walmart|target|longs|safeway|home\s+depot|lowes|cvs|walgreens|sam['']?s|whole\s+foods|trader\s+joe['']?s|aldi|costco|ross|tj\s+maxx|marshalls|kohls?)\b/i,
-];
-
-function textHasArrivalTrigger(text: string): boolean {
-  return ARRIVAL_PATTERNS.some(p => p.test(text));
-}
-
-/**
- * Extract store/place names from text using the deterministic store pattern.
- * Used only in the ML-fallback path where the LLM isn't available to extract places.
- */
-function extractPlacesFromText(text: string): string[] {
-  const storePattern = /at\s+(?:the\s+)?(?:costco|walmart|target|longs(?:\s+drugs)?|safeway|home\s+depot|lowes|cvs|walgreens|sam['']?s(?:\s+club)?|whole\s+foods|trader\s+joe['']?s|aldi|ross|tj\s+maxx|marshalls|kohl['']?s?)\b/gi;
-  const matches = Array.from(text.matchAll(storePattern));
-  const places = matches
-    .map(m => m[0].replace(/^at\s+(?:the\s+)?/i, '').trim())
-    .filter(Boolean);
-  return [...new Set(places)]; // dedupe
-}
+// Deterministic arrival/errand detection — see services/arrivalTrigger.ts
 
 // Validation schemas
 const saveTranscriptSchema = z.object({
@@ -161,17 +142,22 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             // Type entities using the parser's people list (person vs other)
             const entityObjects = typeEntities(parsedObject.entities, parsedObject.people);
 
-            // Deterministic fallback: if ML didn't flag geofence_candidate but the text
-            // contains clear arrival-trigger patterns ("when I get to Costco"), force it on.
+            // Deterministic fallback: the parser only flags geofence_candidate for
+            // arrival phrasing, so a dictated errand ("I need chicken and soda from
+            // Costco") comes back false and its place was never resolved. These rules
+            // rescue that case; they only ever ADD candidates, never remove one.
             const textContent = parsedObject.cleanedText || parsedObject.rawText || '';
-            const deterministicGeofenceCandidate = textHasArrivalTrigger(textContent);
+            const parserFlag = parsedObject.locationHints?.geofenceCandidate;
+            const parsedPlaces = parsedObject.locationHints?.places ?? [];
+            const effectiveGeofenceCandidate = shouldResolvePlaces(
+              textContent,
+              parsedPlaces,
+              parserFlag
+            );
 
-            if (deterministicGeofenceCandidate && !parsedObject.locationHints?.geofenceCandidate) {
-              console.log(`[Voice] Deterministic arrival trigger detected in: "${textContent.slice(0, 80)}"`);
+            if (effectiveGeofenceCandidate && !parserFlag) {
+              console.log(`[Voice] Deterministic place trigger detected in: "${textContent.slice(0, 80)}"`);
             }
-
-            const effectiveGeofenceCandidate =
-              parsedObject.locationHints?.geofenceCandidate || deterministicGeofenceCandidate;
 
             const object = await createObject(userId, {
               content: textContent,
@@ -201,13 +187,12 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             objectIds.push(object.id);
 
             // Fire-and-forget place resolution for objects mentioning places
-            const places = parsedObject.locationHints?.places;
-            if (effectiveGeofenceCandidate && places && places.length > 0) {
+            if (effectiveGeofenceCandidate && parsedPlaces.length > 0) {
               hasGeofenceCandidates = true;
               resolveObjectPlaces(
                 userId,
                 object.id,
-                places,
+                parsedPlaces,
                 geoLocation
               ).catch(err =>
                 console.warn('[Voice] Place resolution failed silently for object', object.id, ':', err)

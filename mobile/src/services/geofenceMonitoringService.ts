@@ -32,6 +32,15 @@ function persistRegions(regions: GeofenceRegion[]): void {
   }
 }
 
+function clearPersistedRegions(): void {
+  try {
+    const file = new File(Paths.document, REGIONS_FILE_NAME);
+    if (file.exists) file.delete();
+  } catch (e) {
+    console.warn('[GeofenceMonitoring] Failed to clear persisted regions:', e);
+  }
+}
+
 async function loadPersistedRegions(): Promise<GeofenceRegion[]> {
   try {
     const file = new File(Paths.document, REGIONS_FILE_NAME);
@@ -231,6 +240,24 @@ class GeofenceMonitoringService {
   }
 
   /**
+   * Full teardown for sign-out.
+   *
+   * Regions registered with the OS outlive the session that created them, and
+   * the persisted metadata file is read by the background task. Without this,
+   * signing into a different account leaves the previous account's regions
+   * monitored until the next successful syncRegions — they fire, the notify
+   * call is rejected as Unauthorized, and the arrival is silently swallowed.
+   * (Nothing leaks server-side, but the stale regions also eat into the iOS
+   * 20-region budget, and any device-local fallback would show a stale name.)
+   */
+  async teardownForSignOut(): Promise<void> {
+    console.log('[GeofenceMonitoring] Tearing down for sign-out');
+    await this.stopAllMonitoring();
+    clearPersistedRegions();
+    this.initialized = false;
+  }
+
+  /**
    * Sync the full desired set of regions atomically.
    * Replaces activeRegions map entirely and makes a single startGeofencingAsync call.
    * Use this for bulk syncs (e.g. on app launch or after fetching geofences from server).
@@ -388,11 +415,21 @@ class GeofenceMonitoringService {
     try {
       const data = await this.fetchPlaceNotify(placeId, event.type);
 
-      // Backend unreachable / auth failed: we can't confirm there's an open note,
-      // so suppress rather than fire a noteless alert. The foreground proximity
-      // check surfaces the note next time the app is opened at the place.
+      // Backend unreachable / auth failed. We can't confirm whether there's an
+      // open note, and silence here is indistinguishable from "nothing pending" —
+      // which is how a broken linking pipeline stayed invisible for weeks. Fire a
+      // generic arrival ping so a FAILURE is never mistaken for an empty place.
+      // Note the asymmetry with the count === 0 branch below: a backend that
+      // answers "no open notes" is authoritative and stays silent.
       if (data === null) {
-        console.log(`[GeofenceMonitoring] Place ${placeId} notify unavailable — suppressing (foreground check is the fallback)`);
+        console.log(`[GeofenceMonitoring] Place ${placeId} notify unavailable — firing generic arrival ping`);
+        await this.schedulePlaceNotification(
+          event,
+          placeId,
+          fallbackPlaceName,
+          `📍 You're at ${fallbackPlaceName}`,
+          'Tap to view your notes'
+        );
         return;
       }
 
@@ -421,11 +458,20 @@ class GeofenceMonitoringService {
 
       await this.schedulePlaceNotification(event, placeId, placeName, title, body);
     } catch (error) {
-      // Do NOT fire a fallback notification here: we can't confirm there's an
-      // open note, and a noteless "Tap to view your notes" alert (when the
-      // background notify call times out/errors) is worse than a missed one.
-      // The foreground proximity check surfaces the note next time the app opens.
-      console.warn('[GeofenceMonitoring] showPlaceNotification failed — suppressing (foreground check is the fallback):', error);
+      // Unexpected failure — same reasoning as the data === null branch: surface
+      // the arrival rather than let an error look like an empty place.
+      console.warn('[GeofenceMonitoring] showPlaceNotification failed — firing generic arrival ping:', error);
+      try {
+        await this.schedulePlaceNotification(
+          event,
+          placeId,
+          fallbackPlaceName,
+          `📍 You're at ${fallbackPlaceName}`,
+          'Tap to view your notes'
+        );
+      } catch {
+        /* nothing more we can do */
+      }
     }
   }
 
@@ -540,11 +586,19 @@ class GeofenceMonitoringService {
     try {
       const data = await this.fetchGeofenceNotify(geofenceId, event.type);
 
-      // Backend unreachable / auth failed: we can't confirm there's an open note
-      // or that this event type is enabled, so suppress. The foreground proximity
-      // check surfaces the note next time the app is opened at the place.
+      // Backend unreachable / auth failed. Fire a generic arrival ping so an
+      // infrastructure failure is never silently indistinguishable from "you
+      // have nothing here". When the backend DOES answer (below) it is
+      // authoritative and we respect its suppress decision.
       if (data === null) {
-        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — suppressing (foreground check is the fallback)`);
+        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — firing generic arrival ping`);
+        await this.scheduleManualGeofenceNotification(
+          event,
+          geofenceId,
+          geofenceName,
+          `📍 You're at ${geofenceName}`,
+          'Tap to view your notes'
+        );
         return;
       }
 
@@ -574,9 +628,18 @@ class GeofenceMonitoringService {
 
       await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, body);
     } catch (error) {
-      // Do NOT fire a noteless fallback (see showPlaceNotification): suppress on
-      // error rather than alert with no content; the foreground check is the net.
-      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — suppressing:', error);
+      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — firing generic arrival ping:', error);
+      try {
+        await this.scheduleManualGeofenceNotification(
+          event,
+          geofenceId,
+          geofenceName,
+          `📍 You're at ${geofenceName}`,
+          'Tap to view your notes'
+        );
+      } catch {
+        /* nothing more we can do */
+      }
     }
   }
 
