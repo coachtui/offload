@@ -4,7 +4,6 @@ export type RootStackParamList = {
   Home: undefined;
   Record: undefined;
   Objects: { geofenceId?: string; objectId?: string } | undefined;
-  Reminders: undefined;
   Places: undefined;
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
@@ -19,7 +18,6 @@ export type RootStackParamList = {
     quietHoursEnd?: string;
     location: { latitude: number; longitude: number };
   };
-  Search: undefined;
   AskOffload: { initialQuery?: string } | undefined;
   Insights: undefined;
   PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
