@@ -80,7 +80,7 @@ export function RegisterScreen({ navigation }: Props) {
             Create your account
           </AppText>
           <AppText variant="body" color="muted" align="center" style={styles.tagline}>
-            Your second brain starts listening today
+            Get it out of your head — Offload keeps it
           </AppText>
         </View>
 
