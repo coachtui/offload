@@ -57,10 +57,12 @@ export function useProximityAlerts() {
       const { geofences } = await apiService.getGeofences();
 
       // Nearest enabled geofence whose radius (+ GPS buffer) we're inside.
+      // This is an arrival alert, so geofences with "notify on entry" switched
+      // off are skipped — same rule the background path applies.
       let best: any = null;
       let bestDist = Infinity;
       for (const g of geofences) {
-        if (!g.enabled || !g.location) continue;
+        if (!g.enabled || !g.notifyOnEnter || !g.location) continue;
         const d = haversineMeters(latitude, longitude, g.location.latitude, g.location.longitude);
         if (d <= (g.radius ?? 150) + ARRIVAL_BUFFER_METERS && d < bestDist) {
           best = g;
