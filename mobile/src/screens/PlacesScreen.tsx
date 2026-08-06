@@ -6,7 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService, PlaceOverviewItem } from '../services/api';
-import { Spacing, SkeletonCard, useToast } from '../components/ui';
+import { Spacing, Radius, AppPressable, SkeletonCard, useToast } from '../components/ui';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Places'>;
@@ -117,17 +117,25 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
         renderItem={({ item }) => {
           const bellOn = item.kind === 'geofence' && item.enabled;
           return (
-            <View style={styles.card}>
-              <TouchableOpacity style={styles.cardMain} onPress={() => openPlace(item)} activeOpacity={0.7}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.count}>
-                  {item.openCount} {item.openCount === 1 ? 'note' : 'notes'}
-                  {item.kind === 'place' ? ' · detected' : ''}
+            <AppPressable
+              style={styles.card}
+              onPress={() => openPlace(item)}
+              accessibilityRole="button"
+              accessibilityLabel={item.name}
+            >
+              <View style={styles.iconChip}>
+                <Ionicons name="location" size={20} color={colors.accent} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.subline} numberOfLines={1}>
+                  {item.openCount} open {item.openCount === 1 ? 'note' : 'notes'}
+                  {' · '}Arrival reminders {bellOn ? 'on' : 'off'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </View>
+              <AppPressable
                 onPress={() => toggleBell(item)}
-                activeOpacity={0.7}
+                style={[styles.bellButton, bellOn ? styles.bellButtonOn : styles.bellButtonOff]}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 accessibilityRole="button"
                 accessibilityLabel="Toggle arrival reminders"
@@ -135,21 +143,29 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
               >
                 <Ionicons
                   name={bellOn ? 'notifications' : 'notifications-off-outline'}
-                  size={22}
-                  color={bellOn ? colors.accent : colors.textFaint}
+                  size={18}
+                  color={bellOn ? colors.accent : colors.textMuted}
                 />
-              </TouchableOpacity>
-            </View>
+              </AppPressable>
+            </AppPressable>
           );
         }}
         ListEmptyComponent={
-          <Text style={styles.empty}>No places yet. Tap "+ Add a place" to create one.</Text>
+          <Text style={styles.empty}>No places yet. Tap "Add a place" to create one.</Text>
         }
-        contentContainerStyle={{ padding: 16 }}
+        ListFooterComponent={
+          <AppPressable
+            style={styles.addCard}
+            onPress={() => navigation.navigate('CreateGeofence')}
+            accessibilityRole="button"
+            accessibilityLabel="Add a place"
+          >
+            <Ionicons name="add-circle-outline" size={20} color={colors.textMuted} />
+            <Text style={styles.addCardText}>Add a place</Text>
+          </AppPressable>
+        }
+        contentContainerStyle={styles.listContent}
       />
-      <TouchableOpacity style={styles.manage} onPress={() => navigation.navigate('CreateGeofence')}>
-        <Text style={styles.manageText}>+ Add a place</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -178,24 +194,57 @@ const createStyles = (c: ThemeColors) =>
       color: c.text,
     },
     sectionHeader: { color: c.textMuted, fontSize: 12, fontFamily: Fonts.bold, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
+    listContent: {
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.sm,
+      paddingBottom: Spacing.xxl,
+    },
     card: {
       backgroundColor: c.bgSurface,
-      borderRadius: 10,
-      padding: 16,
-      marginBottom: 10,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.border,
       ...Elevation.level1,
     },
-    cardMain: { flex: 1, marginRight: 12 },
-    name: { color: c.text, fontSize: 16, fontFamily: Fonts.semibold },
-    count: { color: c.textMuted, fontSize: 13 },
-    empty: { color: c.textMuted, textAlign: 'center', marginTop: 40 },
-    manage: { padding: 16, alignItems: 'center' },
-    manageText: { color: c.accent, fontSize: 15, fontFamily: Fonts.semibold },
+    iconChip: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: c.accentLight,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardBody: { flex: 1, marginHorizontal: Spacing.md },
+    name: { color: c.text, fontSize: 15, fontFamily: Fonts.semibold },
+    subline: { color: c.textMuted, fontSize: 12, marginTop: 3 },
+    bellButton: {
+      width: 36,
+      height: 36,
+      borderRadius: Radius.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    bellButtonOn: { backgroundColor: c.accentLight },
+    bellButtonOff: { backgroundColor: c.bgMuted },
+    addCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginTop: Spacing.xs,
+      borderWidth: 1,
+      borderStyle: 'dashed',
+      borderColor: c.borderStrong,
+      backgroundColor: 'transparent',
+    },
+    addCardText: { color: c.textMuted, fontSize: 15, fontFamily: Fonts.semibold },
+    empty: { color: c.textMuted, textAlign: 'center', marginTop: 40, marginBottom: Spacing.lg },
     skeletonList: { padding: Spacing.lg },
     skeletonGap: { marginTop: Spacing.md },
   });

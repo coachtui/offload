@@ -30,6 +30,7 @@ import {
   AppHeader,
   AppSearchBar,
   AppSheet,
+  AppButton,
   ConfirmSheet,
   useToast,
   Spacing,
@@ -39,7 +40,6 @@ import { Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PrimaryFilter = 'all' | 'todo' | 'reminders' | 'ideas' | 'saved';
 type NoteStatus = 'open' | 'active' | 'resolved' | 'archived';
 
 type ObjectsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Objects'>;
@@ -52,14 +52,6 @@ interface Props {
 
 const DOMAINS = ['work', 'personal', 'health', 'family', 'finance', 'project', 'misc'];
 const OBJECT_TYPES = ['task', 'idea', 'reminder', 'decision', 'question', 'observation'];
-
-const PRIMARY_FILTERS: Array<{ key: PrimaryFilter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'todo', label: 'To Do' },
-  { key: 'reminders', label: 'Reminders' },
-  { key: 'ideas', label: 'Ideas' },
-  { key: 'saved', label: 'Saved' },
-];
 
 // Category hues harmonized with the Deep Lagoon palette
 const DOMAIN_COLORS: Record<string, string> = {
@@ -161,16 +153,6 @@ function buildCardSubtitle(objectType?: string | null, domain?: string | null): 
   return type;
 }
 
-function primaryFilterToObjectTypes(filter: PrimaryFilter): string[] | undefined {
-  switch (filter) {
-    case 'todo': return ['task'];
-    case 'reminders': return ['reminder'];
-    case 'ideas': return ['idea'];
-    case 'saved': return ['reference', 'observation', 'decision', 'question', 'journal'];
-    default: return undefined;
-  }
-}
-
 // ─── Date grouping ────────────────────────────────────────────────────────────
 
 type DateBucket = 'Today' | 'Yesterday' | 'This Week' | 'Earlier';
@@ -230,7 +212,6 @@ export function ObjectsScreen({ navigation }: Props) {
   const [updatingState, setUpdatingState] = useState(false);
 
   // Filter state
-  const [primaryFilter, setPrimaryFilter] = useState<PrimaryFilter>('all');
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
 
@@ -337,17 +318,6 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [searchText, selectedDomains, selectedTypes, triggerSearch]);
 
-  const handlePrimaryFilterPress = useCallback((filter: PrimaryFilter) => {
-    setPrimaryFilter(filter);
-    const types = primaryFilterToObjectTypes(filter) ?? [];
-    setSelectedTypes(types);
-    if (searchText.trim()) {
-      triggerSearch(searchText, selectedDomains, types);
-    } else {
-      triggerBrowse(selectedDomains, types);
-    }
-  }, [searchText, selectedDomains, triggerSearch, triggerBrowse]);
-
   const handleOpenFilterSheet = useCallback(() => {
     setPendingDomains(selectedDomains);
     setPendingTypes(selectedTypes);
@@ -357,7 +327,6 @@ export function ObjectsScreen({ navigation }: Props) {
   const handleApplyFilters = useCallback(() => {
     setSelectedDomains(pendingDomains);
     setSelectedTypes(pendingTypes);
-    setPrimaryFilter('all');
     setFilterSheetVisible(false);
     if (searchText.trim()) {
       triggerSearch(searchText, pendingDomains, pendingTypes);
@@ -370,43 +339,68 @@ export function ObjectsScreen({ navigation }: Props) {
     setSearchText('');
     setSelectedDomains([]);
     setSelectedTypes([]);
-    setPrimaryFilter('all');
     clearResults();
     setFilters({});
   }, [setFilters, clearResults]);
 
+  // Single filter row: All + top categories + a "+N / Filters" chip opening the
+  // full filter sheet. Scales to any category count without stacking rows.
+  const VISIBLE_CHIPS = 4;
   const renderCategoryChips = useCallback(() => {
-    if (categories.length === 0) return null;
+    let visible = categories.slice(0, VISIBLE_CHIPS);
+    const selected = filters.categoryId
+      ? categories.find((c) => c.id === filters.categoryId)
+      : undefined;
+    if (selected && !visible.some((c) => c.id === selected.id)) {
+      visible = [...visible.slice(0, VISIBLE_CHIPS - 1), selected];
+    }
+    const hiddenCount = Math.max(0, categories.length - visible.length);
+    const moreLabel = hiddenCount > 0 ? `+${hiddenCount} more` : 'Filters';
+
     return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterChipsRow}
-        contentContainerStyle={styles.filterChipsContent}
-      >
-        <TouchableOpacity
-          style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
-          onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
-          accessibilityRole="button"
-          accessibilityState={{ selected: !filters.categoryId }}
+      <View style={styles.chipsBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterChipsContent}
         >
-          <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
-        </TouchableOpacity>
-        {categories.map((c) => (
           <TouchableOpacity
-            key={c.id}
-            style={[styles.filterChip, filters.categoryId === c.id && styles.filterChipActive]}
-            onPress={() => setFilters({ ...filters, categoryId: c.id })}
+            style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
+            onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
             accessibilityRole="button"
-            accessibilityState={{ selected: filters.categoryId === c.id }}
+            accessibilityState={{ selected: !filters.categoryId }}
           >
-            <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
-            <Text style={[styles.filterChipText, filters.categoryId === c.id && styles.filterChipTextActive]}>{c.name}</Text>
+            <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+          {visible.map((c) => {
+            const isActive = filters.categoryId === c.id;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setFilters({ ...filters, categoryId: isActive ? undefined : c.id })}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>{c.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            style={[styles.filterChip, styles.moreChip, hasActiveFilters && styles.moreChipActive]}
+            onPress={handleOpenFilterSheet}
+            accessibilityRole="button"
+            accessibilityLabel="More filters"
+            accessibilityState={{ selected: hasActiveFilters }}
+          >
+            <Ionicons name="options-outline" size={13} color={colors.accent} />
+            <Text style={styles.moreChipText}>{moreLabel}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
     );
-  }, [categories, filters, setFilters, styles]);
+  }, [categories, filters, setFilters, hasActiveFilters, handleOpenFilterSheet, styles, colors]);
 
   // ─── Modal / detail actions ───────────────────────────────────────────────
 
@@ -480,46 +474,6 @@ export function ObjectsScreen({ navigation }: Props) {
   }, [confirmDeleteId, deleteObject, handleCloseModal, toast]);
 
   // ─── Renders: list screen ─────────────────────────────────────────────────
-
-  const renderPrimaryFilters = useCallback(() => (
-    <View style={styles.primaryFilterBar}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.primaryFilterContent}
-      >
-        {PRIMARY_FILTERS.map((f) => {
-          const isActive = primaryFilter === f.key;
-          return (
-            <TouchableOpacity
-              key={f.key}
-              style={[styles.primaryPill, isActive && styles.primaryPillActive]}
-              onPress={() => handlePrimaryFilterPress(f.key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
-            >
-              <Text style={[styles.primaryPillText, isActive && styles.primaryPillTextActive]}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-      <TouchableOpacity
-        style={[styles.filterIconBtn, hasActiveFilters && styles.filterIconBtnActive]}
-        onPress={handleOpenFilterSheet}
-        accessibilityRole="button"
-        accessibilityLabel="Filter notes"
-        accessibilityState={{ selected: hasActiveFilters }}
-      >
-        <Ionicons
-          name="options-outline"
-          size={18}
-          color={hasActiveFilters ? colors.accent : colors.textMuted}
-        />
-      </TouchableOpacity>
-    </View>
-  ), [primaryFilter, hasActiveFilters, handlePrimaryFilterPress, handleOpenFilterSheet, styles, colors]);
 
   const renderGeofenceContext = useCallback(() => {
     if (!geofenceId || geofenceObjects.length === 0) return null;
@@ -634,14 +588,22 @@ export function ObjectsScreen({ navigation }: Props) {
     );
   }, [staleObjects, staleExpanded, handleObjectPress, styles, colors]);
 
+  const categoryById = React.useMemo(
+    () => new Map(categories.map((c) => [c.id, c])),
+    [categories]
+  );
+
   const renderNoteCard = useCallback(({ item }: { item: AtomicObject }) => {
     const title = item.title || item.content;
-    const subtitle = buildCardSubtitle(item.objectType, item.domain);
+    const snippet = item.title && item.content && item.content !== item.title ? item.content : null;
     const urgency = item.metadata?.urgency;
     const showUrgency = urgency === 'high' || urgency === 'medium';
     const currentState = (item as any).state ?? 'open';
     const isDone = currentState === 'resolved' || currentState === 'archived';
     const isSelected = selectedIds.has(item.id);
+    const category = (item as any).categoryId ? categoryById.get((item as any).categoryId) : undefined;
+    const tagColor = category?.color ?? DOMAIN_COLORS[item.domain ?? 'misc'] ?? colors.textMuted;
+    const tagLabel = category?.name ?? getFriendlyType(item.objectType);
 
     return (
       <TouchableOpacity
@@ -664,32 +626,34 @@ export function ObjectsScreen({ navigation }: Props) {
           <Text style={[styles.noteTitle, isDone && styles.noteTitleDone]} numberOfLines={2}>
             {title}
           </Text>
-          <View style={styles.noteMeta}>
-            <Text style={styles.noteSubtitle}>{subtitle}</Text>
-            <Text style={styles.noteDot}> · </Text>
-            <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
-            {showUrgency && (
-              <>
-                <Text style={styles.noteDot}> · </Text>
-                <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
-                <Text style={[styles.noteUrgency, { color: URGENCY_COLORS[urgency!] }]}>
-                  {urgency === 'high' ? 'Urgent' : 'Medium priority'}
-                </Text>
-              </>
-            )}
-          </View>
-          {item.whyItMatters ? (
-            <Text style={styles.noteWhy} numberOfLines={2}>Why: {item.whyItMatters}</Text>
+          {snippet ? (
+            <Text style={styles.noteSnippet} numberOfLines={2}>
+              "{snippet.trim()}"
+            </Text>
           ) : null}
           {item.actionability?.nextAction && !isDone && (
             <Text style={styles.noteNextAction} numberOfLines={1}>
               → {item.actionability.nextAction}
             </Text>
           )}
+          <View style={styles.noteMeta}>
+            <View style={[styles.noteTag, { backgroundColor: `${tagColor}1F` }]}>
+              <Text style={[styles.noteTagText, { color: tagColor }]}>{tagLabel}</Text>
+            </View>
+            <Text style={styles.noteDate}>{formatRelativeDate(item.createdAt)}</Text>
+            {showUrgency && (
+              <>
+                <View style={[styles.urgencyDot, { backgroundColor: URGENCY_COLORS[urgency!] }]} />
+                <Text style={[styles.noteUrgency, { color: URGENCY_COLORS[urgency!] }]}>
+                  {urgency === 'high' ? 'Urgent' : 'Medium'}
+                </Text>
+              </>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     );
-  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress, styles, colors]);
+  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress, categoryById, styles, colors]);
 
   const renderSearchResultCard = useCallback(({ item }: { item: RagSearchResult }) => {
     const subtitle = buildCardSubtitle(item.type, item.domain);
@@ -775,81 +739,78 @@ export function ObjectsScreen({ navigation }: Props) {
   // ─── Filter Sheet ─────────────────────────────────────────────────────────
 
   const renderFilterSheet = () => (
-    <Modal
+    <AppSheet
       visible={filterSheetVisible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={() => setFilterSheetVisible(false)}
+      onClose={() => setFilterSheetVisible(false)}
+      title="Filter notes"
+      headerRight={
+        <TouchableOpacity
+          onPress={() => { setPendingDomains([]); setPendingTypes([]); }}
+          accessibilityRole="button"
+          accessibilityLabel="Reset filters"
+        >
+          <Text style={styles.sheetReset}>Reset</Text>
+        </TouchableOpacity>
+      }
     >
-      <SafeAreaView style={styles.sheetContainer} edges={['top']}>
-        <View style={styles.sheetHeader}>
-          <TouchableOpacity onPress={() => setFilterSheetVisible(false)}>
-            <Text style={styles.sheetCancel}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.sheetTitle}>Filter Notes</Text>
-          <TouchableOpacity onPress={() => { setPendingDomains([]); setPendingTypes([]); }}>
-            <Text style={styles.sheetReset}>Reset</Text>
-          </TouchableOpacity>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.sheetScroll}>
+        <Text style={styles.sheetSectionLabel}>Type</Text>
+        <View style={styles.sheetChipsWrap}>
+          {OBJECT_TYPES.map((type) => {
+            const isSelected = pendingTypes.includes(type);
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[styles.sheetChip, isSelected && styles.sheetChipSelected]}
+                onPress={() => setPendingTypes(prev =>
+                  prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+                )}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
+                  {TYPE_LABELS[type] || type}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sheetSectionLabel}>Area</Text>
-          <View style={styles.sheetChipsWrap}>
-            {DOMAINS.map((domain) => {
-              const isSelected = pendingDomains.includes(domain);
-              const color = DOMAIN_COLORS[domain] ?? colors.textMuted;
-              return (
-                <TouchableOpacity
-                  key={domain}
-                  style={[styles.sheetChip, isSelected && { backgroundColor: color, borderColor: color }]}
-                  onPress={() => setPendingDomains(prev =>
-                    prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
-                  )}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                >
-                  <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
-                    {DOMAIN_LABELS[domain] || domain}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={[styles.sheetSectionLabel, { marginTop: 28 }]}>Type</Text>
-          <View style={styles.sheetChipsWrap}>
-            {OBJECT_TYPES.map((type) => {
-              const isSelected = pendingTypes.includes(type);
-              return (
-                <TouchableOpacity
-                  key={type}
-                  style={[styles.sheetChip, isSelected && styles.sheetChipSelected]}
-                  onPress={() => setPendingTypes(prev =>
-                    prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-                  )}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                >
-                  <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
-                    {TYPE_LABELS[type] || type}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
-
-        <View style={styles.sheetFooter}>
-          <TouchableOpacity style={styles.applyBtn} onPress={handleApplyFilters}>
-            <Text style={styles.applyBtnText}>
-              Apply{pendingDomains.length + pendingTypes.length > 0
-                ? ` · ${pendingDomains.length + pendingTypes.length} selected`
-                : ''}
-            </Text>
-          </TouchableOpacity>
+        <Text style={[styles.sheetSectionLabel, styles.sheetSectionGap]}>Area</Text>
+        <View style={styles.sheetChipsWrap}>
+          {DOMAINS.map((domain) => {
+            const isSelected = pendingDomains.includes(domain);
+            const color = DOMAIN_COLORS[domain] ?? colors.textMuted;
+            return (
+              <TouchableOpacity
+                key={domain}
+                style={[styles.sheetChip, isSelected && { backgroundColor: color, borderColor: color }]}
+                onPress={() => setPendingDomains(prev =>
+                  prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
+                )}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+              >
+                <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
+                  {DOMAIN_LABELS[domain] || domain}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </SafeAreaView>
-    </Modal>
+      </ScrollView>
+
+      <AppButton
+        label={
+          pendingDomains.length + pendingTypes.length > 0
+            ? `Show notes · ${pendingDomains.length + pendingTypes.length} filters`
+            : 'Show all notes'
+        }
+        onPress={handleApplyFilters}
+        size="lg"
+        style={styles.sheetApply}
+      />
+    </AppSheet>
   );
 
   // ─── Detail Modal ─────────────────────────────────────────────────────────
@@ -1127,7 +1088,6 @@ export function ObjectsScreen({ navigation }: Props) {
         />
       </View>
 
-      {renderPrimaryFilters()}
       {renderCategoryChips()}
       {renderGeofenceContext()}
       {renderDashboardCard()}
@@ -1367,55 +1327,26 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.bg,
   },
 
-  // Primary filter bar
-  primaryFilterBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  // Filter chips bar
+  chipsBar: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.border,
     backgroundColor: c.bg,
   },
-  primaryFilterContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  primaryPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: c.bgMuted,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-  },
-  primaryPillActive: {
-    backgroundColor: c.primary,
-    borderColor: c.primary,
-  },
-  primaryPillText: {
-    color: c.textMuted,
-    fontSize: 13,
-    fontFamily: Fonts.medium,
-  },
-  primaryPillTextActive: {
-    color: '#FFFFFF',
-  },
-  filterIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: c.bgMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Spacing.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: c.border,
-  },
-  filterIconBtnActive: {
+  moreChip: {
     backgroundColor: c.accentLight,
     borderColor: c.accentBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  moreChipActive: {
+    borderColor: c.accent,
+  },
+  moreChipText: {
+    fontSize: 13,
+    fontFamily: Fonts.semibold,
+    color: c.accent,
   },
 
   // Loading / Error
@@ -1472,10 +1403,9 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   noteRowDone: { opacity: 0.5 },
   noteTitle: {
     fontSize: 15,
-    fontFamily: Fonts.medium,
+    fontFamily: Fonts.semibold,
     color: c.text,
-    lineHeight: 22,
-    marginBottom: 5,
+    lineHeight: 21,
   },
   noteTitleDone: {
     textDecorationLine: 'line-through',
@@ -1487,18 +1417,37 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     lineHeight: 19,
     marginBottom: 5,
   },
+  noteSnippet: {
+    fontSize: 13,
+    fontFamily: Fonts.regular,
+    color: c.textMuted,
+    lineHeight: 19,
+    marginTop: 3,
+  },
   noteMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm + 1,
+  },
+  noteTag: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+  },
+  noteTagText: {
+    fontSize: 10,
+    fontFamily: Fonts.bold,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   noteSubtitle: { fontSize: 12, color: c.textMuted },
   noteDot: { fontSize: 12, color: c.textFaint },
   noteDate: { fontSize: 12, color: c.textFaint },
   urgencyDot: { width: 6, height: 6, borderRadius: 3, marginRight: 3 },
   noteUrgency: { fontSize: 11, fontFamily: Fonts.medium },
-  noteWhy: { color: c.textMuted, fontSize: 12, fontStyle: 'italic', marginTop: 2 },
-  noteNextAction: { fontSize: 12, color: c.accent, marginTop: 5 },
+  noteNextAction: { fontSize: 12, color: c.accent, marginTop: 4 },
   matchScore: { fontSize: 12, color: c.accent, fontFamily: Fonts.medium },
 
   // Empty State
@@ -1595,20 +1544,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   dashboardMeta: { color: c.textMuted, fontSize: 12 },
 
   // Filter sheet
-  sheetContainer: { flex: 1, backgroundColor: c.bg },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-  },
-  sheetTitle: { fontSize: 16, fontFamily: Fonts.semibold, color: c.text },
-  sheetCancel: { color: c.textMuted, fontSize: 15 },
   sheetReset: { color: c.accent, fontSize: 15 },
-  sheetBody: { flex: 1, padding: Spacing.xxl },
+  sheetScroll: { flexGrow: 0 },
   sheetSectionLabel: {
     fontSize: 12,
     fontFamily: Fonts.semibold,
@@ -1617,6 +1554,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: Spacing.md,
   },
+  sheetSectionGap: { marginTop: Spacing.xxl },
   sheetChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   sheetChip: {
     paddingHorizontal: 14,
@@ -1628,19 +1566,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   sheetChipSelected: { backgroundColor: c.primary, borderColor: c.primary },
   sheetChipText: { fontSize: 13, color: c.textSecondary, fontFamily: Fonts.medium },
-  sheetChipTextSelected: { color: '#FFFFFF' },
-  sheetFooter: {
-    padding: Spacing.xxl,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: c.border,
-  },
-  applyBtn: {
-    backgroundColor: c.primary,
-    borderRadius: Radius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  applyBtnText: { color: '#fff', fontFamily: Fonts.semibold, fontSize: 16 },
+  sheetChipTextSelected: { color: c.onPrimary },
+  sheetApply: { marginTop: Spacing.xl },
 
   // Detail modal
   modalContainer: { flex: 1, backgroundColor: c.bg },
@@ -1806,11 +1733,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   moveSheetRowText: { fontSize: 15, color: c.text, fontFamily: Fonts.medium },
 
   // Category filter chips (list screen)
-  filterChipsRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-    backgroundColor: c.bg,
-  },
   filterChipsContent: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,

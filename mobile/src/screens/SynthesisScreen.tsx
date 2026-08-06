@@ -19,7 +19,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiService, WeeklySynthesis, SynthesisRef, DormantIdea } from '../services/api';
 import { AtomicObject } from '../types';
 import { Spacing, SkeletonCard, useToast } from '../components/ui';
-import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
+import { Fonts, Type, Radius, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
+
+// ─── Section identity hues ────────────────────────────────────────────────────
+// Harmonized with the Deep Lagoon palette. Chip bg = hue at ~12% alpha ('1F'),
+// icon + bullet dots = hue at full strength.
+
+const SECTION_HUES: Record<string, string> = {
+  'book-outline': '#2C6E8F',
+  'trophy-outline': '#A1740C',
+  'repeat-outline': '#7A5FB0',
+  'git-network-outline': '#0F6B5F',
+  'checkmark-circle-outline': '#1E7B54',
+  'flash-outline': '#C2492F',
+  'bulb-outline': '#A1740C',
+  'scale-outline': '#2C6E8F',
+  'calendar-outline': '#5F6B66',
+  'link-outline': '#0F6B5F',
+};
+
+const hueFor = (icon: string): string => SECTION_HUES[icon] ?? '#5F6B66';
 
 interface SynthesisScreenProps {
   navigation: any;
@@ -190,29 +209,43 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
           />
         }
       >
-        {/* Period + generate button */}
-        <View style={styles.periodRow}>
-          <View>
-            <Text style={styles.periodLabel}>Week of</Text>
-            <Text style={styles.periodText}>{synthesis ? formatPeriod(synthesis) : ''}</Text>
-            <Text style={styles.objectCount}>
-              {synthesis?.objectCount ?? 0} notes analysed
-            </Text>
+        {/* Hero summary card */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroRow}>
+            <View style={styles.heroChip}>
+              <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.heroTextBlock}>
+              <Text style={styles.heroLabel}>Weekly synthesis</Text>
+              <Text style={styles.heroTitle} accessibilityRole="header">
+                {synthesis
+                  ? `Week of ${formatDate(synthesis.periodStart)}`
+                  : 'Patterns from your week'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.regenButton, generating && styles.regenButtonDisabled]}
+              onPress={() => handleGenerate(true)}
+              disabled={generating}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh insights"
+              accessibilityState={{ disabled: generating }}
+            >
+              {generating ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="refresh" size={14} color={colors.accent} />
+                  <Text style={styles.regenButtonText}>Refresh</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.regenButton, generating && styles.regenButtonDisabled]}
-            onPress={() => handleGenerate(true)}
-            disabled={generating}
-          >
-            {generating ? (
-              <ActivityIndicator color={colors.accent} size="small" />
-            ) : (
-              <>
-                <Ionicons name="refresh" size={14} color={colors.accent} />
-                <Text style={styles.regenButtonText}>Refresh</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {synthesis && (
+            <Text style={styles.heroMeta}>
+              {formatPeriod(synthesis)} · {synthesis.objectCount ?? 0} notes analysed
+            </Text>
+          )}
         </View>
 
         {synthesis && (
@@ -246,35 +279,35 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
             {/* Accomplished */}
             {synthesis.accomplished && synthesis.accomplished.length > 0 && (
               <Section title="Accomplished" icon="trophy-outline">
-                <BulletList items={synthesis.accomplished} color={colors.success} />
+                <BulletList items={synthesis.accomplished} color={hueFor('trophy-outline')} />
               </Section>
             )}
 
             {/* Patterns */}
             {synthesis.patterns.length > 0 && (
               <Section title="Patterns" icon="repeat-outline">
-                <BulletList items={synthesis.patterns} color={colors.accent} />
+                <BulletList items={synthesis.patterns} color={hueFor('repeat-outline')} />
               </Section>
             )}
 
             {/* Open threads */}
             {synthesis.openThreads.length > 0 && (
               <Section title="Open Threads" icon="git-network-outline">
-                <BulletList items={synthesis.openThreads} color={colors.warning} />
+                <BulletList items={synthesis.openThreads} color={hueFor('git-network-outline')} />
               </Section>
             )}
 
             {/* Action items */}
             {synthesis.actionableInsights.length > 0 && (
               <Section title="Action Items" icon="checkmark-circle-outline">
-                <BulletList items={synthesis.actionableInsights} color={colors.success} />
+                <BulletList items={synthesis.actionableInsights} color={hueFor('checkmark-circle-outline')} />
               </Section>
             )}
 
             {/* Contradictions */}
             {synthesis.contradictions.length > 0 && (
               <Section title="Contradictions" icon="flash-outline">
-                <BulletList items={synthesis.contradictions} color={colors.error} />
+                <BulletList items={synthesis.contradictions} color={hueFor('flash-outline')} />
               </Section>
             )}
 
@@ -398,19 +431,25 @@ function Header({ navigation }: { navigation: any }) {
 function Section({
   title,
   icon,
+  hue,
   children,
 }: {
   title: string;
   icon: keyof typeof Ionicons.glyphMap;
+  hue?: string;
   children: React.ReactNode;
 }) {
   const styles = useThemedStyles(createStyles);
-  const { colors } = useTheme();
+  const sectionHue = hue ?? hueFor(icon);
   return (
     <View style={styles.section}>
       <View style={styles.sectionTitleRow}>
-        <Ionicons name={icon} size={16} color={colors.textMuted} />
-        <Text style={styles.sectionTitle}>{title}</Text>
+        <View style={[styles.sectionIconChip, { backgroundColor: sectionHue + '1F' }]}>
+          <Ionicons name={icon} size={16} color={sectionHue} />
+        </View>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {title}
+        </Text>
       </View>
       {children}
     </View>
@@ -429,8 +468,12 @@ function CollapsibleCitedNotes({ refs }: { refs: SynthesisRef[] }) {
         accessibilityState={{ expanded: open }}
       >
         <View style={[styles.sectionTitleRow, { marginBottom: 0 }]}>
-          <Ionicons name="link-outline" size={16} color={colors.textMuted} />
-          <Text style={styles.sectionTitle}>Sources ({refs.length})</Text>
+          <View style={[styles.sectionIconChip, { backgroundColor: hueFor('link-outline') + '1F' }]}>
+            <Ionicons name="link-outline" size={16} color={hueFor('link-outline')} />
+          </View>
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            Sources ({refs.length})
+          </Text>
         </View>
         <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />
       </TouchableOpacity>
@@ -537,24 +580,54 @@ const createStyles = (c: ThemeColors) =>
     },
     generateButtonText: { color: '#FFFFFF', fontSize: 15, fontFamily: Fonts.semibold },
 
-    // Period row
-    periodRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      marginBottom: 16,
+    // Hero summary card
+    heroCard: {
+      backgroundColor: c.accentLight,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
     },
-    periodLabel: { fontSize: 12, color: c.textFaint, marginBottom: 2 },
-    periodText: { fontSize: 15, fontFamily: Fonts.bold, color: c.text },
-    objectCount: { fontSize: 12, color: c.textFaint, marginTop: 2 },
+    heroRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.md,
+    },
+    heroChip: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: c.accent,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    heroTextBlock: { flex: 1 },
+    heroLabel: {
+      ...Type.label,
+      color: c.accent,
+      marginBottom: 3,
+    },
+    heroTitle: {
+      ...Type.heading,
+      color: c.text,
+    },
+    heroMeta: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      marginTop: Spacing.md,
+    },
     regenButton: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      backgroundColor: c.accentLight,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
       paddingHorizontal: 12,
       paddingVertical: 8,
-      borderRadius: 20,
+      borderRadius: Radius.full,
     },
     regenButtonDisabled: { opacity: 0.5 },
     regenButtonText: { color: c.accent, fontSize: 13, fontFamily: Fonts.semibold },
@@ -577,9 +650,9 @@ const createStyles = (c: ThemeColors) =>
     // Sections
     section: {
       backgroundColor: c.bgSurface,
-      borderRadius: 12,
-      padding: 16,
-      marginBottom: 12,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
       ...Elevation.level1,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: c.border,
@@ -587,12 +660,18 @@ const createStyles = (c: ThemeColors) =>
     sectionTitleRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 6,
-      marginBottom: 12,
+      gap: Spacing.sm + 2,
+      marginBottom: Spacing.md,
+    },
+    sectionIconChip: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     sectionTitle: {
-      fontSize: 15,
-      fontFamily: Fonts.bold,
+      ...Type.heading,
       color: c.text,
     },
     narrative: {
@@ -633,9 +712,9 @@ const createStyles = (c: ThemeColors) =>
     citedTitle: { fontSize: 13, color: c.textSecondary, lineHeight: 18 },
 
     // Bullets
-    bulletList: { gap: 8 },
+    bulletList: { gap: Spacing.sm },
     bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-    bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
+    bullet: { width: 5, height: 5, borderRadius: 2.5, marginTop: 7.5 },
     bulletText: { flex: 1, fontSize: 14, color: c.textSecondary, lineHeight: 20 },
 
     // Dormant ideas
