@@ -262,7 +262,9 @@ export function ObjectsScreen({ navigation }: Props) {
 
   // Context data
   const [staleObjects, setStaleObjects] = useState<AtomicObject[]>([]);
-  const [staleExpanded, setStaleExpanded] = useState(true);
+  // Collapsed by default — a count in the header is enough of a nudge;
+  // expanding is a deliberate act, not a wall of cards on every visit.
+  const [staleExpanded, setStaleExpanded] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
   const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
@@ -602,7 +604,7 @@ export function ObjectsScreen({ navigation }: Props) {
         </TouchableOpacity>
         {staleExpanded && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextCardsRow}>
-            {staleObjects.map((item) => {
+            {staleObjects.slice(0, 6).map((item) => {
               const daysOld = Math.floor((Date.now() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
               return (
                 <TouchableOpacity
@@ -792,49 +794,49 @@ export function ObjectsScreen({ navigation }: Props) {
     >
       <ScrollView showsVerticalScrollIndicator={false} style={styles.sheetScroll}>
         <Text style={styles.sheetSectionLabel}>Type</Text>
-        <View style={styles.sheetChipsWrap}>
-          {OBJECT_TYPES.map((type) => {
-            const isSelected = pendingTypes.includes(type);
-            return (
-              <TouchableOpacity
-                key={type}
-                style={[styles.sheetChip, isSelected && styles.sheetChipSelected]}
-                onPress={() => setPendingTypes(prev =>
-                  prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-                )}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-              >
-                <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
-                  {TYPE_LABELS[type] || type}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {OBJECT_TYPES.map((type) => {
+          const isSelected = pendingTypes.includes(type);
+          return (
+            <TouchableOpacity
+              key={type}
+              style={styles.sheetRow}
+              onPress={() => setPendingTypes(prev =>
+                prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+              )}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={TYPE_LABELS[type] || type}
+            >
+              <View style={[styles.sheetCheck, isSelected && styles.sheetCheckOn]}>
+                {isSelected ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+              </View>
+              <Text style={styles.sheetRowText}>{TYPE_LABELS[type] || type}</Text>
+            </TouchableOpacity>
+          );
+        })}
 
         <Text style={[styles.sheetSectionLabel, styles.sheetSectionGap]}>Area</Text>
-        <View style={styles.sheetChipsWrap}>
-          {DOMAINS.map((domain) => {
-            const isSelected = pendingDomains.includes(domain);
-            const color = DOMAIN_COLORS[domain] ?? colors.textMuted;
-            return (
-              <TouchableOpacity
-                key={domain}
-                style={[styles.sheetChip, isSelected && { backgroundColor: color, borderColor: color }]}
-                onPress={() => setPendingDomains(prev =>
-                  prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
-                )}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-              >
-                <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
-                  {DOMAIN_LABELS[domain] || domain}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {DOMAINS.map((domain) => {
+          const isSelected = pendingDomains.includes(domain);
+          return (
+            <TouchableOpacity
+              key={domain}
+              style={styles.sheetRow}
+              onPress={() => setPendingDomains(prev =>
+                prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
+              )}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              accessibilityLabel={DOMAIN_LABELS[domain] || domain}
+            >
+              <View style={[styles.sheetCheck, isSelected && styles.sheetCheckOn]}>
+                {isSelected ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+              </View>
+              <View style={[styles.swatchSm, { backgroundColor: DOMAIN_COLORS[domain] }]} />
+              <Text style={styles.sheetRowText}>{DOMAIN_LABELS[domain] || domain}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       <AppButton
@@ -1594,7 +1596,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Filter sheet
   sheetReset: { color: c.accent, fontSize: 15 },
-  sheetScroll: { flexGrow: 0 },
+  sheetScroll: { flexGrow: 0, maxHeight: 430 },
   sheetSectionLabel: {
     fontSize: 12,
     fontFamily: Fonts.semibold,
@@ -1603,19 +1605,29 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: Spacing.md,
   },
-  sheetSectionGap: { marginTop: Spacing.xxl },
-  sheetChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-  sheetChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: Radius.full,
-    backgroundColor: c.bgMuted,
-    borderWidth: 1,
-    borderColor: c.border,
+  sheetSectionGap: { marginTop: Spacing.xl },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md - 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
   },
-  sheetChipSelected: { backgroundColor: c.primary, borderColor: c.primary },
-  sheetChipText: { fontSize: 13, color: c.textSecondary, fontFamily: Fonts.medium },
-  sheetChipTextSelected: { color: c.onPrimary },
+  sheetCheck: {
+    width: 19,
+    height: 19,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: c.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetCheckOn: {
+    backgroundColor: c.accent,
+    borderColor: c.accent,
+  },
+  sheetRowText: { fontSize: 15, color: c.text, fontFamily: Fonts.medium, flex: 1 },
   sheetApply: { marginTop: Spacing.xl },
 
   // Detail modal
