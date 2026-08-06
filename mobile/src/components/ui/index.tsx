@@ -1,6 +1,8 @@
 /**
  * Shared UI primitives for Offload
  * Use these across all screens for consistent styling.
+ *
+ * All components draw from the active theme (light/dark) via useThemedStyles.
  */
 import React from 'react';
 import {
@@ -14,50 +16,34 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  lightColors,
+  Spacing,
+  Radius,
+  Fonts,
+  Elevation,
+  ThemeColors,
+  useTheme,
+  useThemedStyles,
+} from '../../theme';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
+// Canonical definitions live in src/theme. `Colors` is kept as a legacy alias
+// for the light palette; theme-aware code should use useTheme() instead.
 
-export const Colors = {
-  bg: '#FFFFFF',
-  bgSurface: '#F9FAFB',
-  bgMuted: '#F3F4F6',
-  border: '#E5E7EB',
-  borderStrong: '#D1D5DB',
-  text: '#111827',
-  textSecondary: '#374151',
-  textMuted: '#6B7280',
-  textFaint: '#9CA3AF',
-  primary: '#111827',
-  accent: '#4F46E5',
-  accentLight: '#EEF2FF',
-  accentBorder: '#C7D2FE',
-  error: '#DC2626',
-  errorBg: '#FEE2E2',
-  errorBorder: '#FECACA',
-  warning: '#92400E',
-  warningBg: '#FEF3C7',
-  warningBorder: '#FDE68A',
-  success: '#065F46',
-  successBg: '#D1FAE5',
-} as const;
+export const Colors = lightColors;
+export { Spacing, Radius };
 
-export const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 32,
-} as const;
+// ─── Primitives ───────────────────────────────────────────────────────────────
 
-export const Radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  full: 999,
-} as const;
+export { AppText } from './Text';
+export { AppPressable } from './Pressable';
+export { AppInput } from './Input';
+export { AppChip, AppBadge } from './Chip';
+export { AppIconButton } from './IconButton';
+export { AppSkeleton, SkeletonCard } from './Skeleton';
+export { AppSheet, ConfirmSheet } from './Sheet';
+export { ToastProvider, useToast } from './Toast';
 
 // ─── AppScreen ────────────────────────────────────────────────────────────────
 // Wraps content in a SafeAreaView with the standard background.
@@ -68,20 +54,22 @@ interface AppScreenProps {
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
 }
 
+const createScreenStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+  });
+
 export function AppScreen({ children, style, edges = ['top'] }: AppScreenProps) {
+  const styles = useThemedStyles(createScreenStyles);
   return (
-    <SafeAreaView style={[screenStyles.container, style]} edges={edges}>
+    <SafeAreaView style={[styles.container, style]} edges={edges}>
       {children}
     </SafeAreaView>
   );
 }
-
-const screenStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bg,
-  },
-});
 
 // ─── AppHeader ────────────────────────────────────────────────────────────────
 // Standard 3-column header: [left] [title/subtitle] [right]
@@ -95,6 +83,37 @@ interface AppHeaderProps {
   titleAlign?: 'left' | 'center';
 }
 
+const createHeaderStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.xxl,
+      paddingVertical: Spacing.lg,
+      backgroundColor: c.bg,
+    },
+    border: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    sideSlot: { minWidth: 56 },
+    rightSlot: { alignItems: 'flex-end' },
+    center: { flex: 1, alignItems: 'center' },
+    centerLeft: { alignItems: 'flex-start', paddingLeft: Spacing.sm },
+    title: {
+      fontSize: 17,
+      fontFamily: Fonts.semibold,
+      color: c.text,
+      letterSpacing: -0.2,
+    },
+    subtitle: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      marginTop: 2,
+    },
+  });
+
 export function AppHeader({
   title,
   subtitle,
@@ -103,46 +122,18 @@ export function AppHeader({
   border = true,
   titleAlign = 'center',
 }: AppHeaderProps) {
+  const styles = useThemedStyles(createHeaderStyles);
   return (
-    <View style={[headerStyles.container, border && headerStyles.border]}>
-      <View style={headerStyles.sideSlot}>{left ?? <View />}</View>
-      <View style={[headerStyles.center, titleAlign === 'left' && headerStyles.centerLeft]}>
-        <Text style={headerStyles.title}>{title}</Text>
-        {subtitle ? <Text style={headerStyles.subtitle}>{subtitle}</Text> : null}
+    <View style={[styles.container, border && styles.border]}>
+      <View style={styles.sideSlot}>{left ?? <View />}</View>
+      <View style={[styles.center, titleAlign === 'left' && styles.centerLeft]}>
+        <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      <View style={[headerStyles.sideSlot, headerStyles.rightSlot]}>{right ?? <View />}</View>
+      <View style={[styles.sideSlot, styles.rightSlot]}>{right ?? <View />}</View>
     </View>
   );
 }
-
-const headerStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.lg,
-    backgroundColor: Colors.bg,
-  },
-  border: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  sideSlot: { minWidth: 56 },
-  rightSlot: { alignItems: 'flex-end' },
-  center: { flex: 1, alignItems: 'center' },
-  centerLeft: { alignItems: 'flex-start', paddingLeft: Spacing.sm },
-  title: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: Colors.text,
-    letterSpacing: -0.2,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginTop: 2,
-  },
-});
 
 // ─── AppCard ──────────────────────────────────────────────────────────────────
 // Standard rounded card with surface background.
@@ -153,31 +144,29 @@ interface AppCardProps {
   style?: ViewStyle;
 }
 
+const createCardStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    card: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+  });
+
 export function AppCard({ children, onPress, style }: AppCardProps) {
+  const styles = useThemedStyles(createCardStyles);
   if (onPress) {
     return (
-      <TouchableOpacity style={[cardStyles.card, style]} onPress={onPress} activeOpacity={0.72}>
+      <TouchableOpacity style={[styles.card, style]} onPress={onPress} activeOpacity={0.72}>
         {children}
       </TouchableOpacity>
     );
   }
-  return <View style={[cardStyles.card, style]}>{children}</View>;
+  return <View style={[styles.card, style]}>{children}</View>;
 }
-
-const cardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.bgSurface,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-});
 
 // ─── AppSearchBar ─────────────────────────────────────────────────────────────
 // Consistent search input with leading icon, clear button, and loading state.
@@ -192,6 +181,29 @@ interface AppSearchBarProps {
   onSubmit?: () => void;
 }
 
+const createSearchStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.md,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+    },
+    leadingIcon: {
+      marginRight: Spacing.sm,
+    },
+    input: {
+      flex: 1,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.text,
+    },
+  });
+
 export function AppSearchBar({
   value,
   onChangeText,
@@ -201,64 +213,40 @@ export function AppSearchBar({
   loading,
   onSubmit,
 }: AppSearchBarProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createSearchStyles);
   return (
-    <View style={[searchStyles.container, style]}>
+    <View style={[styles.container, style]}>
       {loading ? (
-        <ActivityIndicator
-          size="small"
-          color={Colors.textFaint}
-          style={searchStyles.leadingIcon}
-        />
+        <ActivityIndicator size="small" color={colors.textFaint} style={styles.leadingIcon} />
       ) : (
-        <Ionicons
-          name="search"
-          size={17}
-          color={Colors.textFaint}
-          style={searchStyles.leadingIcon}
-        />
+        <Ionicons name="search" size={17} color={colors.textFaint} style={styles.leadingIcon} />
       )}
       <TextInput
-        style={searchStyles.input}
+        style={styles.input}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={Colors.textFaint}
+        placeholderTextColor={colors.textFaint}
         autoFocus={autoFocus}
         returnKeyType="search"
         onSubmitEditing={onSubmit}
+        accessibilityRole="search"
+        accessibilityLabel={placeholder}
       />
       {value.length > 0 && (
         <TouchableOpacity
           onPress={() => onChangeText('')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
         >
-          <Ionicons name="close-circle" size={17} color={Colors.textFaint} />
+          <Ionicons name="close-circle" size={17} color={colors.textFaint} />
         </TouchableOpacity>
       )}
     </View>
   );
 }
-
-const searchStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgMuted,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
-  },
-  leadingIcon: {
-    marginRight: Spacing.sm,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: Colors.text,
-  },
-});
 
 // ─── AppSection ───────────────────────────────────────────────────────────────
 // Titled section wrapper with optional action in the header row.
@@ -270,11 +258,32 @@ interface AppSectionProps {
   style?: ViewStyle;
 }
 
+const createSectionStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: { marginBottom: Spacing.xxl },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    title: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.6,
+    },
+  });
+
 export function AppSection({ title, children, action, style }: AppSectionProps) {
+  const styles = useThemedStyles(createSectionStyles);
   return (
-    <View style={[sectionStyles.container, style]}>
-      <View style={sectionStyles.header}>
-        <Text style={sectionStyles.title}>{title}</Text>
+    <View style={[styles.container, style]}>
+      <View style={styles.header}>
+        <Text style={styles.title} accessibilityRole="header">
+          {title}
+        </Text>
         {action ?? null}
       </View>
       {children}
@@ -282,25 +291,8 @@ export function AppSection({ title, children, action, style }: AppSectionProps) 
   );
 }
 
-const sectionStyles = StyleSheet.create({
-  container: { marginBottom: Spacing.xxl },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-});
-
 // ─── AppButton ────────────────────────────────────────────────────────────────
-// Consistent button in primary, secondary, or ghost variant.
+// Consistent button in primary, secondary, ghost, or accent variant.
 
 interface AppButtonProps {
   label: string;
@@ -312,6 +304,40 @@ interface AppButtonProps {
   style?: ViewStyle;
 }
 
+const createBtnStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    base: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: Radius.md,
+    },
+    disabled: { opacity: 0.45 },
+    label: { fontSize: 15, fontFamily: Fonts.semibold },
+    // variants
+    primary: { backgroundColor: c.primary },
+    secondary: {
+      backgroundColor: c.bgMuted,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    ghost: { backgroundColor: 'transparent' },
+    accent: {
+      backgroundColor: c.accentLight,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+    },
+    // sizes
+    sm: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+    md: { paddingHorizontal: Spacing.lg, paddingVertical: 11 },
+    lg: { paddingHorizontal: Spacing.xxl, paddingVertical: Spacing.md },
+    // labels
+    label_primary: { color: c.onPrimary },
+    label_secondary: { color: c.text },
+    label_ghost: { color: c.accent },
+    label_accent: { color: c.accent },
+  });
+
 export function AppButton({
   label,
   onPress,
@@ -321,25 +347,20 @@ export function AppButton({
   disabled,
   style,
 }: AppButtonProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createBtnStyles);
   const iconColor =
-    variant === 'primary'
-      ? '#FFFFFF'
-      : variant === 'accent'
-      ? Colors.accent
-      : Colors.text;
+    variant === 'primary' ? colors.onPrimary : variant === 'accent' ? colors.accent : colors.text;
 
   return (
     <TouchableOpacity
-      style={[
-        btnStyles.base,
-        btnStyles[variant],
-        btnStyles[`size_${size}` as keyof typeof btnStyles],
-        disabled && btnStyles.disabled,
-        style,
-      ]}
+      style={[styles.base, styles[variant], styles[size], disabled && styles.disabled, style]}
       onPress={onPress}
       activeOpacity={0.78}
       disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
     >
       {icon ? (
         <Ionicons
@@ -349,42 +370,10 @@ export function AppButton({
           style={{ marginRight: 6 }}
         />
       ) : null}
-      <Text style={[btnStyles.label, btnStyles[`label_${variant}` as keyof typeof btnStyles]]}>
-        {label}
-      </Text>
+      <Text style={[styles.label, styles[`label_${variant}`]]}>{label}</Text>
     </TouchableOpacity>
   );
 }
-
-const btnStyles = StyleSheet.create({
-  base: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Radius.md,
-  },
-  primary: { backgroundColor: Colors.primary },
-  secondary: {
-    backgroundColor: Colors.bgMuted,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  ghost: { backgroundColor: 'transparent' },
-  accent: {
-    backgroundColor: Colors.accentLight,
-    borderWidth: 1,
-    borderColor: Colors.accentBorder,
-  },
-  size_sm: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  size_md: { paddingHorizontal: Spacing.lg, paddingVertical: 11 },
-  size_lg: { paddingHorizontal: Spacing.xxl, paddingVertical: Spacing.md },
-  disabled: { opacity: 0.45 },
-  label: { fontSize: 15, fontWeight: '600' },
-  label_primary: { color: '#FFFFFF' },
-  label_secondary: { color: Colors.text },
-  label_ghost: { color: Colors.accent },
-  label_accent: { color: Colors.accent },
-});
 
 // ─── ListRow ──────────────────────────────────────────────────────────────────
 // A single list item row with title, optional subtitle, meta text, and slots.
@@ -400,6 +389,25 @@ interface ListRowProps {
   showChevron?: boolean;
 }
 
+const createRowStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.md,
+      paddingHorizontal: Spacing.xxl,
+      backgroundColor: c.bg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    leftSlot: { marginRight: Spacing.md },
+    body: { flex: 1 },
+    title: { fontSize: 15, fontFamily: Fonts.medium, color: c.text },
+    subtitle: { fontSize: 13, fontFamily: Fonts.regular, color: c.textMuted, marginTop: 2, lineHeight: 18 },
+    rightSlot: { marginLeft: Spacing.sm, alignItems: 'flex-end', flexDirection: 'row', gap: 4 },
+    meta: { fontSize: 12, fontFamily: Fonts.regular, color: c.textFaint },
+  });
+
 export function ListRow({
   title,
   subtitle,
@@ -410,24 +418,26 @@ export function ListRow({
   style,
   showChevron,
 }: ListRowProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createRowStyles);
   const content = (
-    <View style={[rowStyles.container, style]}>
-      {left ? <View style={rowStyles.leftSlot}>{left}</View> : null}
-      <View style={rowStyles.body}>
-        <Text style={rowStyles.title} numberOfLines={1}>
+    <View style={[styles.container, style]}>
+      {left ? <View style={styles.leftSlot}>{left}</View> : null}
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
         {subtitle ? (
-          <Text style={rowStyles.subtitle} numberOfLines={2}>
+          <Text style={styles.subtitle} numberOfLines={2}>
             {subtitle}
           </Text>
         ) : null}
       </View>
-      <View style={rowStyles.rightSlot}>
-        {meta ? <Text style={rowStyles.meta}>{meta}</Text> : null}
+      <View style={styles.rightSlot}>
+        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
         {right ?? null}
         {showChevron ? (
-          <Ionicons name="chevron-forward" size={16} color={Colors.borderStrong} />
+          <Ionicons name="chevron-forward" size={16} color={colors.borderStrong} />
         ) : null}
       </View>
     </View>
@@ -435,31 +445,18 @@ export function ListRow({
 
   if (onPress) {
     return (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+      >
         {content}
       </TouchableOpacity>
     );
   }
   return content;
 }
-
-const rowStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xxl,
-    backgroundColor: Colors.bg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  leftSlot: { marginRight: Spacing.md },
-  body: { flex: 1 },
-  title: { fontSize: 15, fontWeight: '500', color: Colors.text },
-  subtitle: { fontSize: 13, color: Colors.textMuted, marginTop: 2, lineHeight: 18 },
-  rightSlot: { marginLeft: Spacing.sm, alignItems: 'flex-end', flexDirection: 'row', gap: 4 },
-  meta: { fontSize: 12, color: Colors.textFaint },
-});
 
 // ─── EmptyState ───────────────────────────────────────────────────────────────
 // Centered empty state with an optional icon, title, body text, and action.
@@ -471,38 +468,42 @@ interface EmptyStateProps {
   action?: React.ReactNode;
 }
 
+const createEmptyStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 48,
+      paddingVertical: 64,
+    },
+    title: {
+      fontSize: 18,
+      fontFamily: Fonts.semibold,
+      color: c.text,
+      marginTop: 16,
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    text: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 21,
+    },
+    action: { marginTop: 24 },
+  });
+
 export function EmptyState({ icon, title, text, action }: EmptyStateProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createEmptyStyles);
   return (
-    <View style={emptyStyles.container}>
-      {icon ? <Ionicons name={icon} size={52} color={Colors.border} /> : null}
-      <Text style={emptyStyles.title}>{title}</Text>
-      {text ? <Text style={emptyStyles.text}>{text}</Text> : null}
-      {action ? <View style={emptyStyles.action}>{action}</View> : null}
+    <View style={styles.container}>
+      {icon ? <Ionicons name={icon} size={52} color={colors.border} /> : null}
+      <Text style={styles.title}>{title}</Text>
+      {text ? <Text style={styles.text}>{text}</Text> : null}
+      {action ? <View style={styles.action}>{action}</View> : null}
     </View>
   );
 }
-
-const emptyStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 48,
-    paddingVertical: 64,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  text: {
-    fontSize: 14,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
-  action: { marginTop: 24 },
-});
