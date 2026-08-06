@@ -1,67 +1,73 @@
 import Link from 'next/link';
 import PublicNav from '@/components/PublicNav';
 import Footer from '@/components/Footer';
-import HeroIllustration from '@/components/HeroIllustration';
-import { buttonClasses } from '@/components/ui/Button';
-import { MicIcon, SparkleIcon, LocationIcon, ShieldIcon, CheckIcon } from '@/components/ui/icons';
+import {
+  MicIcon,
+  ShieldIcon,
+  CheckIcon,
+  AppleIcon,
+  LogoGlyph,
+  LogoMark,
+} from '@/components/ui/icons';
+import HeroStrands from '@/components/marketing/HeroStrands';
+import PhoneRecord from '@/components/marketing/PhoneRecord';
+import PhoneHome from '@/components/marketing/PhoneHome';
+import PhoneNotes from '@/components/marketing/PhoneNotes';
 
-// ── How it works steps ────────────────────────────────────────────────────
+// ── How it works — the logo story in three steps ─────────────────────────
+
+/** Strands + dots only — thoughts in the open, before the vessel. */
+function StrandsGlyph(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 96 96"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={5.5}
+      strokeLinecap="round"
+      aria-hidden
+      className={props.className}
+    >
+      <g transform="translate(10 24)">
+        <circle cx="12" cy="14" r="3.5" fill="currentColor" stroke="none" />
+        <circle cx="22" cy="7" r="2.5" fill="currentColor" stroke="none" />
+        <path d="M22 20 C36 14 40 26 54 22" />
+        <path d="M34 32 C46 27 50 36 62 32" />
+      </g>
+    </svg>
+  );
+}
 
 const HOW_IT_WORKS = [
   {
-    step: '01',
-    icon: <MicIcon />,
-    // Coral is reserved for capture/record imagery — mirrors the mobile app
-    iconBg: 'bg-record-tint',
-    iconColor: 'text-record',
-    title: 'Capture',
+    icon: <StrandsGlyph className="w-7 h-7" />,
+    title: 'Just talk',
     description:
-      'Speak naturally and save thoughts as they happen. No typing, no navigation — just record.',
+      'Hit record and say everything on your mind — no structure, no order, no typing.',
   },
   {
-    step: '02',
-    icon: <SparkleIcon />,
-    iconBg: 'bg-accent-tint',
-    iconColor: 'text-accent',
-    title: 'Organize',
+    icon: <LogoMark className="w-7 h-7" />,
+    title: 'Offload it',
     description:
-      "AI structures your notes so they're searchable and easier to act on later. Everything in one place.",
+      'Offload catches the stream and splits it into separate notes, each filed under the right category.',
   },
   {
-    step: '03',
-    icon: <LocationIcon />,
-    iconBg: 'bg-accent-tint',
-    iconColor: 'text-accent',
-    title: 'Resurface',
+    icon: <LogoGlyph className="w-7 h-7" />,
+    title: 'Find it organized',
     description:
-      'Relevant notes return when you reach the right place or moment. Nothing slips through.',
+      'Open the app to tidy, searchable notes — resurfaced when you reach the right place or moment.',
   },
 ];
 
-// ── Use cases ─────────────────────────────────────────────────────────────
+// ── Section 2 — product screens ──────────────────────────────────────────
 
-const USE_CASES = [
-  {
-    tag: 'Field & construction',
-    title: 'For field workers',
-    description:
-      'Contractors, technicians, and tradespeople can capture job notes, part numbers, and reminders hands-free — without stopping work or reaching for a pen.',
-  },
-  {
-    tag: 'Business',
-    title: 'For entrepreneurs',
-    description:
-      'Ideas and decisions come fast. Offload them the moment they arrive so nothing valuable disappears between meetings or calls.',
-  },
-  {
-    tag: 'Daily life',
-    title: 'For busy parents',
-    description:
-      "Juggling schedules, errands, and obligations is hard enough. Offload keeps track so you don't have to hold it all in your head.",
-  },
+const PRODUCT_SCREENS = [
+  { phone: <PhoneHome />, caption: 'Everything in one place' },
+  { phone: <PhoneNotes />, caption: 'Notes that file themselves' },
+  { phone: <PhoneNotes dark />, caption: 'Easy on the eyes' },
 ];
 
-// ── Trust points ──────────────────────────────────────────────────────────
+// ── Privacy trust points ─────────────────────────────────────────────────
 
 const TRUST_POINTS = [
   'Your data belongs to you',
@@ -70,99 +76,111 @@ const TRUST_POINTS = [
   'Delete your account and data at any time',
 ];
 
-const TRUST_CHIPS = [
-  'Voice-first capture',
-  'Context-aware reminders',
-  'Built for real life',
-  'Private by default',
-];
-
-// ── Page ──────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg flex flex-col">
       <PublicNav />
 
-      {/* ── Hero ──────────────────────────────────────────────────────── */}
-      <section className="px-6 pt-16 pb-20 lg:pt-24 lg:pb-28">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+      {/* ── 1 · Hero ──────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
+        <HeroStrands />
 
-            {/* Text column */}
-            <div className="text-center lg:text-left order-2 lg:order-1">
-              {/* Pill badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-10 text-xs font-medium text-accent bg-accent-tint border border-accent-line rounded-full">
-                <span className="w-1.5 h-1.5 bg-accent rounded-full" aria-hidden="true" />
-                Private by default
-              </div>
+        <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] items-center gap-12 lg:gap-8">
+          {/* Copy */}
+          <div className="relative z-10 max-w-xl">
+            <span className="inline-flex items-center gap-2 px-3.5 py-1.5 mb-7 text-[11px] font-bold uppercase tracking-[0.08em] text-accent bg-accent-tint border border-accent-line rounded-full">
+              <MicIcon className="w-3.5 h-3.5" strokeWidth={2.4} />
+              Voice notes that sort themselves
+            </span>
 
-              <h1 className="text-5xl sm:text-6xl font-bold text-ink tracking-tight leading-[1.08] mb-6 text-balance">
-                Offload what&apos;s
-                <br />
-                on your mind.
-              </h1>
+            <h1 className="text-5xl sm:text-6xl font-extrabold text-ink tracking-tight leading-[1.06] mb-6 text-balance">
+              Say it once.
+              <br />
+              <span className="text-accent">It&apos;s handled.</span>
+            </h1>
 
-              <p className="text-xl text-ink-muted leading-relaxed mb-10 max-w-xl mx-auto lg:mx-0">
-                Capture thoughts instantly. AI organizes them. Your notes return when they matter.
-              </p>
+            <p className="text-lg sm:text-xl text-ink-muted leading-relaxed mb-9 max-w-lg">
+              Talk for thirty seconds — errands, ideas, gym notes, all in one breath. Offload
+              splits the ramble into organized notes and resurfaces each one exactly where and
+              when you need it.
+            </p>
 
-              <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 mb-12">
-                <Link href="/signup" className={buttonClasses('primary', 'lg', 'w-full sm:w-auto')}>
-                  Get Started
-                </Link>
-                <Link href="/login" className={buttonClasses('tonal', 'lg', 'w-full sm:w-auto')}>
-                  Log In
-                </Link>
-              </div>
-
-              {/* Trust chips */}
-              <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
-                {TRUST_CHIPS.map((chip) => (
-                  <span
-                    key={chip}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-ink-muted bg-surface border border-line rounded-full"
-                  >
-                    <CheckIcon className="w-3.5 h-3.5 text-accent flex-shrink-0" strokeWidth={2.5} />
-                    {chip}
-                  </span>
-                ))}
-              </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center px-7 py-3.5 text-base font-bold text-bg bg-ink rounded-full shadow-level2 hover:-translate-y-0.5 hover:shadow-level3 active:translate-y-0 active:shadow-level1 transition-all duration-150"
+              >
+                Get the app
+              </Link>
+              <a
+                href="#how"
+                className="text-base font-semibold text-accent hover:opacity-80 transition-opacity"
+              >
+                See how it works&nbsp;→
+              </a>
             </div>
+          </div>
 
-            {/* Hero illustration — signal → structure → memory */}
-            <div className="flex items-center justify-center order-1 lg:order-2">
-              <HeroIllustration className="w-full max-w-[320px] sm:max-w-[420px] lg:max-w-[520px]" />
+          {/* Phone — Record focus mode */}
+          <div className="relative z-10 hidden sm:flex justify-center">
+            <div className="scale-[0.62] -my-[122px] lg:scale-[0.72] lg:-my-[90px]">
+              <PhoneRecord />
             </div>
-
           </div>
         </div>
       </section>
 
-      {/* ── How It Works ──────────────────────────────────────────────── */}
-      <section className="px-6 py-24 border-t border-line">
+      {/* ── 2 · Your day, sorted ──────────────────────────────────────── */}
+      <section id="product" className="scroll-mt-20 px-6 py-24 border-t border-line">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <p className="text-xs font-semibold text-ink-faint uppercase tracking-widest mb-3">
+              The product
+            </p>
+            <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight mb-4">
+              Your day, sorted
+            </h2>
+            <p className="text-lg text-ink-muted max-w-xl mx-auto">
+              Real screens from the iOS app — capture on the go, and every note lands where it
+              belongs.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-center items-start gap-x-10 gap-y-14">
+            {PRODUCT_SCREENS.map((screen) => (
+              <div key={screen.caption} className="flex flex-col items-center">
+                {screen.phone}
+                <p className="mt-5 text-sm font-medium text-ink-muted">{screen.caption}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── 3 · How it works ──────────────────────────────────────────── */}
+      <section id="how" className="scroll-mt-20 px-6 py-24 bg-surface-muted border-y border-line">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-xs font-semibold text-ink-faint uppercase tracking-widest mb-3">
               How it works
             </p>
             <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight">
-              Three steps. No friction.
+              From ramble to organized in one step.
             </h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {HOW_IT_WORKS.map((item) => (
+            {HOW_IT_WORKS.map((item, index) => (
               <div
-                key={item.step}
+                key={item.title}
                 className="relative p-7 bg-surface border border-line rounded-lg shadow-level1"
               >
                 <span className="absolute top-5 right-5 text-xs font-bold text-line-strong select-none">
-                  {item.step}
+                  0{index + 1}
                 </span>
-                <div
-                  className={`inline-flex items-center justify-center w-11 h-11 ${item.iconBg} ${item.iconColor} rounded-md mb-5`}
-                >
+                <div className="inline-flex items-center justify-center w-12 h-12 bg-accent-tint text-accent rounded-md mb-5">
                   {item.icon}
                 </div>
                 <h3 className="text-base font-semibold text-ink mb-2">{item.title}</h3>
@@ -173,49 +191,20 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Use Cases ─────────────────────────────────────────────────── */}
-      <section className="px-6 py-24 bg-surface-muted border-y border-line">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-16">
-            <p className="text-xs font-semibold text-ink-faint uppercase tracking-widest mb-3">
-              Use cases
-            </p>
-            <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight">
-              Built for the way people actually work.
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {USE_CASES.map((card) => (
-              <div
-                key={card.title}
-                className="p-6 bg-surface border border-line rounded-lg shadow-level1"
-              >
-                <span className="inline-block px-2.5 py-0.5 text-xs font-semibold text-accent bg-accent-tint border border-accent-line rounded-full mb-4">
-                  {card.tag}
-                </span>
-                <h3 className="text-base font-semibold text-ink mb-2">{card.title}</h3>
-                <p className="text-sm text-ink-muted leading-relaxed">{card.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Privacy Trust ─────────────────────────────────────────────── */}
+      {/* ── 4 · Privacy ───────────────────────────────────────────────── */}
       <section className="px-6 py-24">
         <div className="max-w-4xl mx-auto">
           {/* Fixed deep-lagoon panel — deliberately dark in both schemes */}
-          <div className="bg-[#17211E] rounded-xl px-8 py-16 md:px-14 text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 bg-white/10 rounded-md mb-8">
+          <div className="bg-[#17211E] rounded-xl px-8 py-14 md:px-14 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 bg-white/10 rounded-md mb-7">
               <ShieldIcon className="text-[#53B8A5]" />
             </div>
             <h2 className="text-3xl sm:text-4xl font-bold text-white tracking-tight mb-4">
               Your thoughts stay yours.
             </h2>
-            <p className="text-[#9BA6A0] text-lg leading-relaxed mb-12 max-w-lg mx-auto">
-              We do not sell personal data or train AI models on your content. You stay in control
-              of your information.
+            <p className="text-[#9BA6A0] text-lg leading-relaxed mb-10 max-w-lg mx-auto">
+              We do not sell personal data or train AI models on your content. You stay in
+              control of your information.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto text-left">
               {TRUST_POINTS.map((point) => (
@@ -235,18 +224,27 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Final CTA ─────────────────────────────────────────────────── */}
+      {/* ── 5 · Close ─────────────────────────────────────────────────── */}
       <section className="px-6 py-24 text-center border-t border-line">
         <div className="max-w-xl mx-auto">
-          <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight mb-4">
-            Ready to clear your head?
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-accent text-white rounded-xl shadow-level2 mb-8">
+            <LogoGlyph className="w-9 h-9" />
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight mb-10 text-balance">
+            Stop holding it all in your head.
           </h2>
-          <p className="text-ink-muted mb-10 text-lg">
-            Start using Offload for free. No credit card required.
+          <div className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-bg font-semibold text-sm rounded-md cursor-default select-none">
+            <AppleIcon />
+            Available on the App Store
+          </div>
+          <p className="mt-6">
+            <Link
+              href="/signup"
+              className="text-sm font-semibold text-accent hover:opacity-80 transition-opacity"
+            >
+              Create your account&nbsp;→
+            </Link>
           </p>
-          <Link href="/signup" className={buttonClasses('primary', 'lg')}>
-            Get Started Free
-          </Link>
         </div>
       </section>
 
