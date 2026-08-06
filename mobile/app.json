@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "updates": {
       "url": "https://u.expo.dev/6444b92a-4608-4106-8a94-5764a457cb72"
@@ -76,7 +76,9 @@
           "icon": "./assets/icon.png",
           "color": "#3b82f6"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
