@@ -280,7 +280,8 @@ export async function getPlaceObjects(
 /**
  * Called when a place-linked geofence fires.
  * Checks cooldown, updates trigger state, returns active objects.
- * Returns null if currently in cooldown (notification should be suppressed).
+ * Returns null — notification should be suppressed — if currently in cooldown
+ * OR the place has no open notes.
  */
 export async function getPlaceNotifyPayload(
   userId: string,
@@ -298,8 +299,18 @@ export async function getPlaceNotifyPayload(
     return null;
   }
 
-  // Mark enter + set cooldown + increment visit
+  // Only notify — and only burn the cooldown — when there's an open note to
+  // show (mirrors getGeofenceNotifyPayload). Otherwise a note-less visit would
+  // set the cooldown and suppress a legitimate notification if a note gets
+  // attached and the place is re-entered within the window.
   const lastEnteredAt = now;
+  const objects = await getPlaceObjects(userId, placeId, lastEnteredAt);
+  if (objects.length === 0) {
+    console.log(`[placeService] Place ${placeId} has no open notes — not notifying`);
+    return null;
+  }
+
+  // Mark enter + set cooldown + increment visit
   const cooldownUntil = new Date(now.getTime() + COOLDOWN_MS);
   await PlaceModel.upsertTriggerState(userId, placeId, {
     lastEnteredAt,
@@ -307,9 +318,6 @@ export async function getPlaceNotifyPayload(
     cooldownUntil,
     incrementVisit: true,
   });
-
-  // Get objects, excluding items dismissed in this visit (sinceEnteredAt = lastEnteredAt)
-  const objects = await getPlaceObjects(userId, placeId, lastEnteredAt);
 
   return { objects, placeName: place.normalizedName };
 }

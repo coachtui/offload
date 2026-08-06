@@ -416,20 +416,11 @@ class GeofenceMonitoringService {
       const data = await this.fetchPlaceNotify(placeId, event.type);
 
       // Backend unreachable / auth failed. We can't confirm whether there's an
-      // open note, and silence here is indistinguishable from "nothing pending" —
-      // which is how a broken linking pipeline stayed invisible for weeks. Fire a
-      // generic arrival ping so a FAILURE is never mistaken for an empty place.
-      // Note the asymmetry with the count === 0 branch below: a backend that
-      // answers "no open notes" is authoritative and stays silent.
+      // open note, so stay silent: arrival notifications are strictly gated on
+      // having a note to show, and a generic "you're here" ping on every entry
+      // is worse than a missed one. The loud log is the failure signal.
       if (data === null) {
-        console.log(`[GeofenceMonitoring] Place ${placeId} notify unavailable — firing generic arrival ping`);
-        await this.schedulePlaceNotification(
-          event,
-          placeId,
-          fallbackPlaceName,
-          `📍 You're at ${fallbackPlaceName}`,
-          'Tap to view your notes'
-        );
+        console.warn(`[GeofenceMonitoring] Place ${placeId} notify unavailable — suppressing (cannot confirm open notes)`);
         return;
       }
 
@@ -458,20 +449,9 @@ class GeofenceMonitoringService {
 
       await this.schedulePlaceNotification(event, placeId, placeName, title, body);
     } catch (error) {
-      // Unexpected failure — same reasoning as the data === null branch: surface
-      // the arrival rather than let an error look like an empty place.
-      console.warn('[GeofenceMonitoring] showPlaceNotification failed — firing generic arrival ping:', error);
-      try {
-        await this.schedulePlaceNotification(
-          event,
-          placeId,
-          fallbackPlaceName,
-          `📍 You're at ${fallbackPlaceName}`,
-          'Tap to view your notes'
-        );
-      } catch {
-        /* nothing more we can do */
-      }
+      // Unexpected failure — same rule as the data === null branch: no note
+      // confirmed means no notification.
+      console.warn('[GeofenceMonitoring] showPlaceNotification failed — suppressing:', error);
     }
   }
 
@@ -586,19 +566,11 @@ class GeofenceMonitoringService {
     try {
       const data = await this.fetchGeofenceNotify(geofenceId, event.type);
 
-      // Backend unreachable / auth failed. Fire a generic arrival ping so an
-      // infrastructure failure is never silently indistinguishable from "you
-      // have nothing here". When the backend DOES answer (below) it is
-      // authoritative and we respect its suppress decision.
+      // Backend unreachable / auth failed. Stay silent: arrival notifications
+      // are strictly gated on having a note to show, and without the backend we
+      // can't confirm one exists. The loud log is the failure signal.
       if (data === null) {
-        console.log(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — firing generic arrival ping`);
-        await this.scheduleManualGeofenceNotification(
-          event,
-          geofenceId,
-          geofenceName,
-          `📍 You're at ${geofenceName}`,
-          'Tap to view your notes'
-        );
+        console.warn(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — suppressing (cannot confirm open notes)`);
         return;
       }
 
@@ -628,18 +600,9 @@ class GeofenceMonitoringService {
 
       await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, body);
     } catch (error) {
-      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — firing generic arrival ping:', error);
-      try {
-        await this.scheduleManualGeofenceNotification(
-          event,
-          geofenceId,
-          geofenceName,
-          `📍 You're at ${geofenceName}`,
-          'Tap to view your notes'
-        );
-      } catch {
-        /* nothing more we can do */
-      }
+      // Same rule as the data === null branch: no note confirmed means no
+      // notification.
+      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — suppressing:', error);
     }
   }
 
