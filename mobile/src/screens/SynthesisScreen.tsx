@@ -12,19 +12,42 @@ import {
   ActivityIndicator,
   StyleSheet,
   RefreshControl,
-  Alert,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { apiService, WeeklySynthesis, SynthesisRef, DormantIdea } from '../services/api';
 import { AtomicObject } from '../types';
+import { Spacing, SkeletonCard, useToast } from '../components/ui';
+import { Fonts, Type, Radius, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
+
+// ─── Section identity hues ────────────────────────────────────────────────────
+// Harmonized with the Deep Lagoon palette. Chip bg = hue at ~12% alpha ('1F'),
+// icon + bullet dots = hue at full strength.
+
+const SECTION_HUES: Record<string, string> = {
+  'book-outline': '#2C6E8F',
+  'trophy-outline': '#A1740C',
+  'repeat-outline': '#7A5FB0',
+  'git-network-outline': '#0F6B5F',
+  'checkmark-circle-outline': '#1E7B54',
+  'flash-outline': '#C2492F',
+  'bulb-outline': '#A1740C',
+  'scale-outline': '#2C6E8F',
+  'calendar-outline': '#5F6B66',
+  'link-outline': '#0F6B5F',
+};
+
+const hueFor = (icon: string): string => SECTION_HUES[icon] ?? '#5F6B66';
 
 interface SynthesisScreenProps {
   navigation: any;
 }
 
 export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const toast = useToast();
   const [synthesis, setSynthesis] = useState<WeeklySynthesis | null>(null);
   const [history, setHistory] = useState<WeeklySynthesis[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,12 +112,12 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
       } catch (err: any) {
         const msg = err.message || 'Failed to generate insights';
         setError(msg);
-        Alert.alert('Error', msg);
+        toast.show({ message: "Couldn't generate insights", description: msg, tone: 'error' });
       } finally {
         setGenerating(false);
       }
     },
-    []
+    [toast]
   );
 
   const handleArchiveIdea = useCallback(async (id: string) => {
@@ -128,7 +151,12 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
       <SafeAreaView style={styles.container}>
         <Header navigation={navigation} />
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🧠</Text>
+          <Ionicons
+            name="sparkles-outline"
+            size={48}
+            color={colors.borderStrong}
+            style={styles.emptyIcon}
+          />
           <Text style={styles.emptyTitle}>No insights yet</Text>
           <Text style={styles.emptySubtitle}>
             Generate your first weekly insights to see patterns across your notes.
@@ -139,7 +167,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
             disabled={generating}
           >
             {generating ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <Text style={styles.generateButtonText}>Generate This Week's Insights</Text>
             )}
@@ -155,8 +183,10 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
     return (
       <SafeAreaView style={styles.container}>
         <Header navigation={navigation} />
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#6366f1" />
+        <View style={styles.scrollContent}>
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={2} style={styles.skeletonGap} />
+          <SkeletonCard lines={2} style={styles.skeletonGap} />
         </View>
       </SafeAreaView>
     );
@@ -175,33 +205,47 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#6366f1"
+            tintColor={colors.accent}
           />
         }
       >
-        {/* Period + generate button */}
-        <View style={styles.periodRow}>
-          <View>
-            <Text style={styles.periodLabel}>Week of</Text>
-            <Text style={styles.periodText}>{synthesis ? formatPeriod(synthesis) : ''}</Text>
-            <Text style={styles.objectCount}>
-              {synthesis?.objectCount ?? 0} notes analysed
-            </Text>
+        {/* Hero summary card */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroRow}>
+            <View style={styles.heroChip}>
+              <Ionicons name="sparkles" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.heroTextBlock}>
+              <Text style={styles.heroLabel}>Weekly synthesis</Text>
+              <Text style={styles.heroTitle} accessibilityRole="header">
+                {synthesis
+                  ? `Week of ${formatDate(synthesis.periodStart)}`
+                  : 'Patterns from your week'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.regenButton, generating && styles.regenButtonDisabled]}
+              onPress={() => handleGenerate(true)}
+              disabled={generating}
+              accessibilityRole="button"
+              accessibilityLabel="Refresh insights"
+              accessibilityState={{ disabled: generating }}
+            >
+              {generating ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+              ) : (
+                <>
+                  <Ionicons name="refresh" size={14} color={colors.accent} />
+                  <Text style={styles.regenButtonText}>Refresh</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.regenButton, generating && styles.regenButtonDisabled]}
-            onPress={() => handleGenerate(true)}
-            disabled={generating}
-          >
-            {generating ? (
-              <ActivityIndicator color="#6366f1" size="small" />
-            ) : (
-              <>
-                <Ionicons name="refresh" size={14} color="#6366f1" />
-                <Text style={styles.regenButtonText}>Refresh</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {synthesis && (
+            <Text style={styles.heroMeta}>
+              {formatPeriod(synthesis)} · {synthesis.objectCount ?? 0} notes analysed
+            </Text>
+          )}
         </View>
 
         {synthesis && (
@@ -222,7 +266,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
             )}
 
             {/* Narrative */}
-            <Section title="This Week" icon="📖">
+            <Section title="This Week" icon="book-outline">
               {synthesis.narrative
                 .split(/\n\n+/)
                 .map((para, i) => (
@@ -234,36 +278,36 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
             {/* Accomplished */}
             {synthesis.accomplished && synthesis.accomplished.length > 0 && (
-              <Section title="Accomplished" icon="🏆">
-                <BulletList items={synthesis.accomplished} color="#22c55e" />
+              <Section title="Accomplished" icon="trophy-outline">
+                <BulletList items={synthesis.accomplished} color={hueFor('trophy-outline')} />
               </Section>
             )}
 
             {/* Patterns */}
             {synthesis.patterns.length > 0 && (
-              <Section title="Patterns" icon="🔁">
-                <BulletList items={synthesis.patterns} color="#6366f1" />
+              <Section title="Patterns" icon="repeat-outline">
+                <BulletList items={synthesis.patterns} color={hueFor('repeat-outline')} />
               </Section>
             )}
 
             {/* Open threads */}
             {synthesis.openThreads.length > 0 && (
-              <Section title="Open Threads" icon="🧵">
-                <BulletList items={synthesis.openThreads} color="#f59e0b" />
+              <Section title="Open Threads" icon="git-network-outline">
+                <BulletList items={synthesis.openThreads} color={hueFor('git-network-outline')} />
               </Section>
             )}
 
             {/* Action items */}
             {synthesis.actionableInsights.length > 0 && (
-              <Section title="Action Items" icon="✅">
-                <BulletList items={synthesis.actionableInsights} color="#10b981" />
+              <Section title="Action Items" icon="checkmark-circle-outline">
+                <BulletList items={synthesis.actionableInsights} color={hueFor('checkmark-circle-outline')} />
               </Section>
             )}
 
             {/* Contradictions */}
             {synthesis.contradictions.length > 0 && (
-              <Section title="Contradictions" icon="⚡">
-                <BulletList items={synthesis.contradictions} color="#ef4444" />
+              <Section title="Contradictions" icon="flash-outline">
+                <BulletList items={synthesis.contradictions} color={hueFor('flash-outline')} />
               </Section>
             )}
 
@@ -274,9 +318,9 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
             {/* Revisit — dormant ideas */}
             {(dormantLoading || dormantIdeas.filter(i => !dismissedIds.has(i.id)).length > 0) && (
-              <Section title="Revisit" icon="💡">
+              <Section title="Revisit" icon="bulb-outline">
                 {dormantLoading ? (
-                  <ActivityIndicator size="small" color="#6366f1" />
+                  <ActivityIndicator size="small" color={colors.accent} />
                 ) : (
                   dormantIdeas
                     .filter((idea) => !dismissedIds.has(idea.id))
@@ -310,7 +354,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
             {/* Decision Reviews */}
             {pendingDecisions.filter(d => !submittedDecisions.has(d.id)).length > 0 && (
-              <Section title="Decision Reviews" icon="⚖️">
+              <Section title="Decision Reviews" icon="scale-outline">
                 {pendingDecisions
                   .filter((d) => !submittedDecisions.has(d.id))
                   .map((decision) => (
@@ -321,7 +365,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
                       <TextInput
                         style={styles.decisionInput}
                         placeholder="How did this turn out?"
-                        placeholderTextColor="#9CA3AF"
+                        placeholderTextColor={colors.textFaint}
                         value={decisionReviewText[decision.id] ?? ''}
                         onChangeText={(text) =>
                           setDecisionReviewText((prev) => ({ ...prev, [decision.id]: text }))
@@ -344,7 +388,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
             {/* Past syntheses */}
             {history.length > 1 && (
-              <Section title="Previous" icon="📅">
+              <Section title="Previous" icon="calendar-outline">
                 {history.slice(1).map((s) => (
                   <TouchableOpacity
                     key={s.sessionId}
@@ -367,10 +411,16 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Header({ navigation }: { navigation: any }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.header}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#374151" />
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+      >
+        <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Insights</Text>
       <View style={{ width: 24 }} />
@@ -381,29 +431,51 @@ function Header({ navigation }: { navigation: any }) {
 function Section({
   title,
   icon,
+  hue,
   children,
 }: {
   title: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  hue?: string;
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(createStyles);
+  const sectionHue = hue ?? hueFor(icon);
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>
-        {icon} {title}
-      </Text>
+      <View style={styles.sectionTitleRow}>
+        <View style={[styles.sectionIconChip, { backgroundColor: sectionHue + '1F' }]}>
+          <Ionicons name={icon} size={16} color={sectionHue} />
+        </View>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          {title}
+        </Text>
+      </View>
       {children}
     </View>
   );
 }
 
 function CollapsibleCitedNotes({ refs }: { refs: SynthesisRef[] }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   return (
     <View style={styles.section}>
-      <TouchableOpacity style={styles.collapsibleHeader} onPress={() => setOpen((o) => !o)}>
-        <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>🔗 Sources ({refs.length})</Text>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#9CA3AF" />
+      <TouchableOpacity
+        style={styles.collapsibleHeader}
+        onPress={() => setOpen((o) => !o)}
+        accessibilityState={{ expanded: open }}
+      >
+        <View style={[styles.sectionTitleRow, { marginBottom: 0 }]}>
+          <View style={[styles.sectionIconChip, { backgroundColor: hueFor('link-outline') + '1F' }]}>
+            <Ionicons name="link-outline" size={16} color={hueFor('link-outline')} />
+          </View>
+          <Text style={styles.sectionTitle} accessibilityRole="header">
+            Sources ({refs.length})
+          </Text>
+        </View>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textFaint} />
       </TouchableOpacity>
       {open && <CitedNotes refs={refs} />}
     </View>
@@ -411,15 +483,17 @@ function CollapsibleCitedNotes({ refs }: { refs: SynthesisRef[] }) {
 }
 
 function CitedNotes({ refs }: { refs: SynthesisRef[] }) {
+  const styles = useThemedStyles(createStyles);
+  // Category hues harmonized with the Deep Lagoon palette (see ObjectsScreen)
   const DOMAIN_COLORS: Record<string, string> = {
-    work: '#3b82f6',
-    personal: '#8b5cf6',
-    health: '#10b981',
-    family: '#f59e0b',
-    finance: '#ef4444',
-    project: '#6366f1',
-    misc: '#6b7280',
-    unknown: '#4b5563',
+    work: '#2C6E8F',
+    personal: '#7A5FB0',
+    health: '#1E7B54',
+    family: '#A1740C',
+    finance: '#0F6B5F',
+    project: '#B0508A',
+    misc: '#5F6B66',
+    unknown: '#5F6B66',
   };
   const TYPE_LABELS: Record<string, string> = {
     task: 'Task', reminder: 'Reminder', idea: 'Idea', decision: 'Decision',
@@ -431,7 +505,7 @@ function CitedNotes({ refs }: { refs: SynthesisRef[] }) {
       {refs.map((ref) => (
         <View key={ref.id} style={styles.citedRow}>
           <View style={styles.citedBadges}>
-            <View style={[styles.badge, { backgroundColor: DOMAIN_COLORS[ref.domain] ?? '#4b5563' }]}>
+            <View style={[styles.badge, { backgroundColor: DOMAIN_COLORS[ref.domain] ?? '#5F6B66' }]}>
               <Text style={styles.badgeText}>{ref.domain}</Text>
             </View>
             <View style={styles.typeBadge}>
@@ -446,6 +520,7 @@ function CitedNotes({ refs }: { refs: SynthesisRef[] }) {
 }
 
 function BulletList({ items, color }: { items: string[]; color: string }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.bulletList}>
       {items.map((item, i) => (
@@ -460,204 +535,242 @@ function BulletList({ items, color }: { items: string[]; color: string }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    scroll: { flex: 1 },
+    scrollContent: { padding: 16, paddingBottom: 40 },
+    skeletonGap: { marginTop: Spacing.md },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      backgroundColor: c.bg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    headerTitle: { fontSize: 17, fontFamily: Fonts.bold, color: c.text },
 
-  // Empty state
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  emptyIcon: { fontSize: 56, marginBottom: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#111827', marginBottom: 8 },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 32,
-  },
-  generateButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 12,
-    minWidth: 220,
-    alignItems: 'center',
-  },
-  generateButtonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+    // Empty state
+    emptyState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 32,
+    },
+    emptyIcon: { marginBottom: 16 },
+    emptyTitle: { fontSize: 20, fontFamily: Fonts.bold, color: c.text, marginBottom: 8 },
+    emptySubtitle: {
+      fontSize: 14,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 32,
+    },
+    generateButton: {
+      backgroundColor: c.accent,
+      paddingHorizontal: 24,
+      paddingVertical: 14,
+      borderRadius: 12,
+      minWidth: 220,
+      alignItems: 'center',
+    },
+    generateButtonText: { color: '#FFFFFF', fontSize: 15, fontFamily: Fonts.semibold },
 
-  // Period row
-  periodRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  periodLabel: { fontSize: 12, color: '#9CA3AF', marginBottom: 2 },
-  periodText: { fontSize: 15, fontWeight: '700', color: '#111827' },
-  objectCount: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
-  regenButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  regenButtonDisabled: { opacity: 0.5 },
-  regenButtonText: { color: '#6366f1', fontSize: 13, fontWeight: '600' },
+    // Hero summary card
+    heroCard: {
+      backgroundColor: c.accentLight,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
+    },
+    heroRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.md,
+    },
+    heroChip: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: c.accent,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    heroTextBlock: { flex: 1 },
+    heroLabel: {
+      ...Type.label,
+      color: c.accent,
+      marginBottom: 3,
+    },
+    heroTitle: {
+      ...Type.heading,
+      color: c.text,
+    },
+    heroMeta: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      marginTop: Spacing.md,
+    },
+    regenButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: Radius.full,
+    },
+    regenButtonDisabled: { opacity: 0.5 },
+    regenButtonText: { color: c.accent, fontSize: 13, fontFamily: Fonts.semibold },
 
-  // Domain chips
-  domainsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 16,
-  },
-  domainChip: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  domainChipText: { color: '#6B7280', fontSize: 12 },
+    // Domain chips
+    domainsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 16,
+    },
+    domainChip: {
+      backgroundColor: c.bgMuted,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    domainChipText: { color: c.textMuted, fontSize: 12 },
 
-  // Sections
-  section: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
-  },
-  narrative: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 22,
-  },
-  narrativeParagraph: {
-    marginTop: 12,
-  },
+    // Sections
+    section: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      marginBottom: Spacing.md,
+      ...Elevation.level1,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+    },
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm + 2,
+      marginBottom: Spacing.md,
+    },
+    sectionIconChip: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sectionTitle: {
+      ...Type.heading,
+      color: c.text,
+    },
+    narrative: {
+      fontSize: 14,
+      color: c.textSecondary,
+      lineHeight: 22,
+    },
+    narrativeParagraph: {
+      marginTop: 12,
+    },
 
-  collapsibleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 0,
-  },
+    collapsibleHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 0,
+    },
 
-  // Cited notes
-  citedList: { gap: 10, marginTop: 12 },
-  citedRow: { gap: 4 },
-  citedBadges: { flexDirection: 'row', gap: 6 },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeText: { fontSize: 11, fontWeight: '600', color: '#fff' },
-  typeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  typeBadgeText: { fontSize: 11, color: '#6B7280' },
-  citedTitle: { fontSize: 13, color: '#374151', lineHeight: 18 },
+    // Cited notes
+    citedList: { gap: 10, marginTop: 12 },
+    citedRow: { gap: 4 },
+    citedBadges: { flexDirection: 'row', gap: 6 },
+    badge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    badgeText: { fontSize: 11, fontFamily: Fonts.semibold, color: '#FFFFFF' },
+    typeBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 4,
+      backgroundColor: c.bgMuted,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    typeBadgeText: { fontSize: 11, color: c.textMuted },
+    citedTitle: { fontSize: 13, color: c.textSecondary, lineHeight: 18 },
 
-  // Bullets
-  bulletList: { gap: 8 },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  bullet: { width: 6, height: 6, borderRadius: 3, marginTop: 7 },
-  bulletText: { flex: 1, fontSize: 14, color: '#374151', lineHeight: 20 },
+    // Bullets
+    bulletList: { gap: Spacing.sm },
+    bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+    bullet: { width: 5, height: 5, borderRadius: 2.5, marginTop: 7.5 },
+    bulletText: { flex: 1, fontSize: 14, color: c.textSecondary, lineHeight: 20 },
 
-  // Dormant ideas
-  dormantCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  dormantCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  dormantAge: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
-  dormantArchive: { fontSize: 11, color: '#6366f1', fontWeight: '600' },
-  dormantText: { fontSize: 13, color: '#374151', lineHeight: 18 },
-  dormantMention: { fontSize: 11, color: '#6366f1', marginTop: 4 },
+    // Dormant ideas
+    dormantCard: {
+      backgroundColor: c.bgMuted,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 8,
+    },
+    dormantCardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginBottom: 4,
+    },
+    dormantAge: { fontSize: 11, color: c.textFaint, fontFamily: Fonts.semibold },
+    dormantArchive: { fontSize: 11, color: c.accent, fontFamily: Fonts.semibold },
+    dormantText: { fontSize: 13, color: c.textSecondary, lineHeight: 18 },
+    dormantMention: { fontSize: 11, color: c.accent, marginTop: 4 },
 
-  // Decision reviews
-  decisionCard: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  decisionText: { fontSize: 13, color: '#374151', marginBottom: 8, lineHeight: 18 },
-  decisionInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#111827',
-    marginBottom: 8,
-  },
-  decisionSubmit: {
-    backgroundColor: '#6366f1',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  decisionSubmitDisabled: { opacity: 0.4 },
-  decisionSubmitText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+    // Decision reviews
+    decisionCard: {
+      backgroundColor: c.bgMuted,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 8,
+    },
+    decisionText: { fontSize: 13, color: c.textSecondary, marginBottom: 8, lineHeight: 18 },
+    decisionInput: {
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 13,
+      color: c.text,
+      marginBottom: 8,
+    },
+    decisionSubmit: {
+      backgroundColor: c.accent,
+      borderRadius: 8,
+      paddingVertical: 8,
+      alignItems: 'center',
+    },
+    decisionSubmitDisabled: { opacity: 0.4 },
+    decisionSubmitText: { color: '#FFFFFF', fontSize: 13, fontFamily: Fonts.semibold },
 
-  // History
-  historyItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  historyDate: { fontSize: 14, color: '#374151' },
-  historyCount: { fontSize: 12, color: '#9CA3AF' },
-});
+    // History
+    historyItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    historyDate: { fontSize: 14, color: c.textSecondary },
+    historyCount: { fontSize: 12, color: c.textFaint },
+  });

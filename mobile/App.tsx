@@ -1,10 +1,14 @@
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import * as Updates from 'expo-updates';
 import { AuthProvider } from './src/context/AuthContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
+import { ThemeProvider, fontMap } from './src/theme';
+import { ToastProvider } from './src/components/ui';
 
 async function checkForUpdate() {
   if (!Updates.isEnabled) {
@@ -56,6 +60,8 @@ function handleNotificationData(data: any, attempt = 0) {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts(fontMap);
+
   useEffect(() => {
     if (!__DEV__) checkForUpdate();
 
@@ -77,10 +83,20 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
+  // Keep the splash visible until Inter is ready so text never flashes
+  // from the system face to the brand face.
+  if (!fontsLoaded) return null;
+
   return (
-    <AuthProvider>
-      <StatusBar style="light" />
-      <AppNavigator />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <StatusBar style="auto" />
+            <AppNavigator />
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

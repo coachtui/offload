@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import {
   View,
-  Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  ScrollView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
+import { AppText, AppInput, AppButton, AppPressable, Spacing, Radius } from '../components/ui';
+import { Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type RegisterScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Register'>;
 
@@ -20,29 +19,32 @@ interface Props {
   navigation: RegisterScreenNavigationProp;
 }
 
+type FieldErrors = { email?: string; password?: string; confirmPassword?: string };
+
 export function RegisterScreen({ navigation }: Props) {
   const { register } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [fieldError, setFieldError] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const clearField = (key: keyof FieldErrors) =>
+    setFieldError((e) => (e[key] ? { ...e, [key]: undefined } : e));
 
   async function handleRegister() {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
-
-    if (password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters');
-      return;
-    }
+    const errors: FieldErrors = {};
+    if (!email.trim()) errors.email = 'Enter your email address';
+    if (!password.trim()) errors.password = 'Choose a password';
+    else if (password.length < 8) errors.password = 'Must be at least 8 characters';
+    if (password && confirmPassword !== password) errors.confirmPassword = "Passwords don't match";
+    setFieldError(errors);
+    setFormError(null);
+    if (Object.keys(errors).length > 0) return;
 
     setIsLoading(true);
     try {
@@ -52,8 +54,9 @@ export function RegisterScreen({ navigation }: Props) {
         name: name.trim() || undefined,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Registration failed';
-      Alert.alert('Registration Failed', message);
+      const message =
+        error instanceof Error ? error.message : "Couldn't create your account. Try again.";
+      setFormError(message);
     } finally {
       setIsLoading(false);
     }
@@ -64,141 +67,174 @@ export function RegisterScreen({ navigation }: Props) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.content}>
-        <Text style={styles.brand}>Offload</Text>
-        <Text style={styles.subtitle}>Create your account</Text>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.brandBlock}>
+          <View style={styles.brandMark}>
+            <Ionicons name="mic" size={26} color="#FFFFFF" />
+          </View>
+          <AppText variant="display" align="center">
+            Create your account
+          </AppText>
+          <AppText variant="body" color="muted" align="center" style={styles.tagline}>
+            Your second brain starts listening today
+          </AppText>
+        </View>
 
         <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Name (optional)"
-            placeholderTextColor="#9CA3AF"
+          <AppInput
+            label="Name"
+            helper="Optional — used for your greeting"
+            placeholder="Your name"
             value={name}
             onChangeText={setName}
             autoCapitalize="words"
+            autoComplete="name"
+            textContentType="name"
             editable={!isLoading}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
+          <AppInput
+            label="Email"
+            placeholder="you@example.com"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(t) => {
+              setEmail(t);
+              clearField('email');
+            }}
+            error={fieldError.email}
             autoCapitalize="none"
             keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
             editable={!isLoading}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
+          <AppInput
+            label="Password"
+            placeholder="At least 8 characters"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(t) => {
+              setPassword(t);
+              clearField('password');
+            }}
+            error={fieldError.password}
             secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
             editable={!isLoading}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm Password"
-            placeholderTextColor="#9CA3AF"
+          <AppInput
+            label="Confirm password"
+            placeholder="Same again"
             value={confirmPassword}
-            onChangeText={setConfirmPassword}
+            onChangeText={(t) => {
+              setConfirmPassword(t);
+              clearField('confirmPassword');
+            }}
+            error={fieldError.confirmPassword}
             secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
             editable={!isLoading}
           />
 
-          <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
+          {formError ? (
+            <View style={styles.formError} accessibilityRole="alert">
+              <Ionicons name="alert-circle" size={16} color={colors.error} />
+              <AppText variant="secondary" color="error" style={styles.formErrorText}>
+                {formError}
+              </AppText>
+            </View>
+          ) : null}
+
+          <AppButton
+            label={isLoading ? 'Creating account…' : 'Create account'}
             onPress={handleRegister}
             disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
-            )}
-          </TouchableOpacity>
+            size="lg"
+            style={styles.submit}
+          />
 
-          <TouchableOpacity
+          <AppPressable
+            scale={false}
             style={styles.linkButton}
             onPress={() => navigation.goBack()}
             disabled={isLoading}
+            accessibilityRole="button"
+            accessibilityLabel="Back to sign in"
           >
-            <Text style={styles.linkText}>
+            <AppText variant="secondary" color="muted">
               Already have an account?{' '}
-              <Text style={styles.linkTextBold}>Sign in</Text>
-            </Text>
-          </TouchableOpacity>
+              <AppText variant="secondary" style={styles.linkBold}>
+                Sign in
+              </AppText>
+            </AppText>
+          </AppPressable>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.bg,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: Spacing.xxxl,
+    paddingVertical: Spacing.xxxl,
   },
-  brand: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-    letterSpacing: -0.5,
-    marginBottom: 8,
+  brandBlock: {
+    alignItems: 'center',
+    marginBottom: Spacing.xxxl,
   },
-  subtitle: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 40,
+  brandMark: {
+    width: 56,
+    height: 56,
+    borderRadius: Radius.lg - 2,
+    backgroundColor: c.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.lg,
+  },
+  tagline: {
+    marginTop: Spacing.xs,
   },
   form: {
-    gap: 12,
+    gap: Spacing.lg,
   },
-  input: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: '#111827',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
-  },
-  button: {
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 16,
+  formError: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    gap: Spacing.sm,
+    backgroundColor: c.errorBg,
+    borderWidth: 1,
+    borderColor: c.errorBorder,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
   },
-  buttonDisabled: {
-    opacity: 0.6,
+  formErrorText: {
+    flex: 1,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  submit: {
+    marginTop: Spacing.xs,
   },
   linkButton: {
-    padding: 16,
+    padding: Spacing.lg,
     alignItems: 'center',
   },
-  linkText: {
-    color: '#6B7280',
-    fontSize: 14,
+  linkBold: {
+    color: c.text,
+    fontFamily: Fonts.semibold,
   },
-  linkTextBold: {
-    color: '#111827',
-    fontWeight: '600',
-  },
-});
+  });

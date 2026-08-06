@@ -1,18 +1,16 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, DarkTheme, NavigationContainer, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useTheme } from '../theme';
 import { useAuth } from '../context/AuthContext';
 import {
   LoginScreen,
   RegisterScreen,
   HomeScreen,
   RecordScreen,
-  SessionsScreen,
   ObjectsScreen,
 } from '../screens';
-import GeofencesScreen from '../screens/GeofencesScreen';
 import CreateGeofenceScreen from '../screens/CreateGeofenceScreen';
-import SearchScreen from '../screens/SearchScreen';
 import AIQueryScreen from '../screens/AIQueryScreen';
 import SynthesisScreen from '../screens/SynthesisScreen';
 import ManageGeofenceObjectsScreen from '../screens/ManageGeofenceObjectsScreen';
@@ -28,12 +26,29 @@ import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function useNavTheme(): Theme {
+  const { colors, scheme } = useTheme();
+  const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+  return {
+    ...base,
+    colors: {
+      ...base.colors,
+      primary: colors.accent,
+      background: colors.bg,
+      card: colors.bgSurface,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+}
+
 function AuthStack() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#FFFFFF' },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
@@ -43,24 +58,27 @@ function AuthStack() {
 }
 
 function MainStack() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: '#F9FAFB' },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Record" component={RecordScreen} />
+      <Stack.Screen
+        name="Record"
+        component={RecordScreen}
+        options={{ presentation: 'fullScreenModal', animation: 'fade_from_bottom' }}
+      />
       <Stack.Screen name="Objects" component={ObjectsScreen} />
-      <Stack.Screen name="Reminders" component={GeofencesScreen} />
       <Stack.Screen name="Places" component={PlacesScreen} />
       <Stack.Screen
         name="CreateGeofence"
         component={CreateGeofenceScreen}
-        options={{ headerShown: false }}
+        options={{ headerShown: false, presentation: 'modal' }}
       />
-      <Stack.Screen name="Search" component={SearchScreen} />
       <Stack.Screen name="AskOffload" component={AIQueryScreen} />
       <Stack.Screen name="Insights" component={SynthesisScreen} />
       <Stack.Screen
@@ -85,17 +103,19 @@ function MainStack() {
 
 export function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { colors } = useTheme();
+  const navTheme = useNavTheme();
 
   if (isLoading) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+      <View style={[styles.loading, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       {isAuthenticated ? (
         <>
           <MainStack />
@@ -115,6 +135,5 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
   },
 });

@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { darkColors, Fonts, Radius, Spacing } from '../theme';
 
 interface AudioPlayerProps {
   audioUrl: string;
 }
+
+// Media surface deliberately stays dark (sea-glass) in both themes.
+const D = darkColors;
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -85,19 +90,32 @@ export function AudioPlayer({ audioUrl }: AudioPlayerProps) {
       </View>
 
       <View style={styles.controls}>
-        <TouchableOpacity style={styles.seekButton} onPress={handleSeekBackward}>
+        <TouchableOpacity
+          style={styles.seekButton}
+          onPress={handleSeekBackward}
+          accessibilityLabel="Back 10 seconds"
+        >
           <Text style={styles.seekButtonText}>-10s</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.playButton} onPress={handlePlayPause} disabled={isLoading}>
+        <TouchableOpacity
+          style={styles.playButton}
+          onPress={handlePlayPause}
+          disabled={isLoading}
+          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+        >
           {isLoading ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
-            <Text style={styles.playButtonText}>{isPlaying ? '⏸' : '▶'}</Text>
+            <Ionicons name={isPlaying ? 'pause' : 'play'} size={24} color="#FFFFFF" />
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.seekButton} onPress={handleSeekForward}>
+        <TouchableOpacity
+          style={styles.seekButton}
+          onPress={handleSeekForward}
+          accessibilityLabel="Forward 10 seconds"
+        >
           <Text style={styles.seekButtonText}>+10s</Text>
         </TouchableOpacity>
       </View>
@@ -107,77 +125,82 @@ export function AudioPlayer({ audioUrl }: AudioPlayerProps) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: D.bg,
+    borderRadius: Radius.md,
+    padding: Spacing.lg,
   },
   progressContainer: {
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   progressBar: {
     height: 4,
-    backgroundColor: '#333',
+    backgroundColor: D.bgMuted,
     borderRadius: 2,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#3b82f6',
+    backgroundColor: D.accent,
   },
   timeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    marginTop: Spacing.sm,
   },
   timeText: {
     fontSize: 12,
-    color: '#888',
+    fontFamily: Fonts.regular,
+    fontVariant: ['tabular-nums'],
+    color: D.textMuted,
   },
   controls: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 24,
+    gap: Spacing.xxl,
   },
   seekButton: {
-    padding: 8,
+    padding: Spacing.sm,
   },
   seekButtonText: {
-    color: '#888',
+    color: D.textMuted,
     fontSize: 14,
+    fontFamily: Fonts.medium,
   },
   playButton: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3b82f6',
+    borderRadius: Radius.full,
+    backgroundColor: D.accent,
     justifyContent: 'center',
     alignItems: 'center',
   },
   playButtonText: {
     fontSize: 24,
-    color: '#fff',
+    color: '#FFFFFF',
   },
   errorContainer: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: D.bg,
+    borderRadius: Radius.md,
+    padding: Spacing.lg,
     alignItems: 'center',
   },
   errorText: {
-    color: '#ef4444',
+    color: D.error,
     fontSize: 14,
-    marginBottom: 12,
+    fontFamily: Fonts.regular,
+    marginBottom: Spacing.md,
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: '#333',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: D.bgMuted,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm,
   },
   retryButtonText: {
-    color: '#fff',
+    color: D.text,
     fontSize: 14,
+    fontFamily: Fonts.medium,
   },
 });

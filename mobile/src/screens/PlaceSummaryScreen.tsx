@@ -13,7 +13,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +21,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService } from '../services/api';
 import { AtomicObject } from '../types';
+import { ConfirmSheet, useToast, Spacing, Radius } from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type PlaceSummaryRoute = RouteProp<RootStackParamList, 'PlaceSummary'>;
 type PlaceSummaryNav = NativeStackNavigationProp<RootStackParamList, 'PlaceSummary'>;
@@ -45,11 +46,15 @@ function formatNoteDate(value: Date | string): string {
 export default function PlaceSummaryScreen({ navigation }: Props) {
   const route = useRoute<PlaceSummaryRoute>();
   const { placeId, geofenceId, placeName, eventType } = route.params;
+  const toast = useToast();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   const [objects, setObjects] = useState<AtomicObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null); // objectId being actioned
   const [editLoading, setEditLoading] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // ─── Load objects ───────────────────────────────────────────────────────────
 
@@ -80,35 +85,28 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
       await apiService.updateObjectState(objectId, 'resolved');
       setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
-      Alert.alert('Error', 'Failed to mark as done.');
+      toast.show({ message: "Couldn't mark as done", description: 'Please try again.', tone: 'error' });
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleDelete = (objectId: string) => {
-    Alert.alert(
-      'Delete note',
-      'This note will be removed everywhere. You can recover it within 30 days.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setActionLoading(objectId);
-            try {
-              await apiService.deleteObject(objectId);
-              setObjects(prev => prev.filter(o => o.id !== objectId));
-            } catch (err: any) {
-              Alert.alert('Error', 'Failed to delete.');
-            } finally {
-              setActionLoading(null);
-            }
-          },
-        },
-      ]
-    );
+    setConfirmDeleteId(objectId);
+  };
+
+  const performDelete = async () => {
+    const objectId = confirmDeleteId;
+    if (!objectId) return;
+    setActionLoading(objectId);
+    try {
+      await apiService.deleteObject(objectId);
+      setObjects(prev => prev.filter(o => o.id !== objectId));
+    } catch (err: any) {
+      toast.show({ message: "Couldn't delete", description: 'Please try again.', tone: 'error' });
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   // ─── Edit reminder settings ─────────────────────────────────────────────────
@@ -132,10 +130,10 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
           location: g.location,
         });
       } else {
-        Alert.alert('Could not open reminder settings', 'Please try again.');
+        toast.show({ message: "Couldn't open reminder settings", description: 'Please try again.', tone: 'error' });
       }
     } catch {
-      Alert.alert('Could not open reminder settings', 'Please try again.');
+      toast.show({ message: "Couldn't open reminder settings", description: 'Please try again.', tone: 'error' });
     } finally {
       setEditLoading(false);
     }
@@ -165,23 +163,23 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
         </Text>
 
         {isActioning ? (
-          <ActivityIndicator size="small" color="#3b82f6" style={styles.actionLoader} />
+          <ActivityIndicator size="small" color={colors.accent} style={styles.actionLoader} />
         ) : (
           <View style={styles.actionRow}>
             <TouchableOpacity
               style={[styles.actionBtn, styles.doneBtn]}
               onPress={() => handleDone(item.id)}
             >
-              <Ionicons name="checkmark-circle-outline" size={14} color="#22c55e" />
-              <Text style={[styles.actionBtnText, { color: '#22c55e' }]}>Done</Text>
+              <Ionicons name="checkmark-circle-outline" size={14} color={colors.success} />
+              <Text style={[styles.actionBtnText, { color: colors.success }]}>Done</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.actionBtn, styles.deleteBtn]}
               onPress={() => handleDelete(item.id)}
             >
-              <Ionicons name="trash-outline" size={14} color="#ef4444" />
-              <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Delete</Text>
+              <Ionicons name="trash-outline" size={14} color={colors.error} />
+              <Text style={[styles.actionBtnText, { color: colors.error }]}>Delete</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -193,8 +191,13 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color="#e2e8f0" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={24} color={colors.textSecondary} />
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.placeName} numberOfLines={1}>
@@ -204,7 +207,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
             {eventType === 'enter' ? "You're here" : eventType === 'exit' ? 'You just left' : 'Linked notes'}
           </Text>
         </View>
-        <Ionicons name="location" size={20} color="#3b82f6" style={{ marginRight: 4 }} />
+        <Ionicons name="location" size={20} color={colors.accent} style={{ marginRight: 4 }} />
       </View>
 
       {/* Edit reminder settings — only for saved geofences */}
@@ -215,10 +218,10 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
           disabled={editLoading}
         >
           {editLoading ? (
-            <ActivityIndicator size="small" color="#3b82f6" />
+            <ActivityIndicator size="small" color={colors.accent} />
           ) : (
             <>
-              <Ionicons name="settings-outline" size={16} color="#3b82f6" />
+              <Ionicons name="settings-outline" size={16} color={colors.accent} />
               <Text style={styles.editReminderText}>Edit reminder settings</Text>
             </>
           )}
@@ -228,11 +231,11 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
       {/* Content */}
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : objects.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="checkmark-done-circle-outline" size={48} color="#475569" />
+          <Ionicons name="checkmark-done-circle-outline" size={48} color={colors.borderStrong} />
           <Text style={styles.emptyText}>Nothing to do here right now</Text>
         </View>
       ) : (
@@ -245,133 +248,148 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
         />
       )}
 
+      <ConfirmSheet
+        visible={confirmDeleteId != null}
+        onClose={() => setConfirmDeleteId(null)}
+        onConfirm={performDelete}
+        title="Delete note?"
+        message="This note will be removed everywhere. You can recover it within 30 days."
+        confirmLabel="Delete"
+        destructive
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0a0a0a',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  backBtn: {
-    padding: 4,
-    marginRight: 8,
-  },
-  headerText: {
-    flex: 1,
-  },
-  placeName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#e2e8f0',
-  },
-  placeSubtitle: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#64748b',
-    textAlign: 'center',
-  },
-  list: {
-    padding: 16,
-  },
-  separator: {
-    height: 12,
-  },
-  objectCard: {
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#1e293b',
-  },
-  objectHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  objectDate: {
-    marginLeft: 'auto',
-    fontSize: 11,
-    color: '#64748b',
-  },
-  typeBadge: {
-    backgroundColor: '#1e3a5f',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  typeBadgeText: {
-    fontSize: 10,
-    color: '#93c5fd',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  objectTitle: {
-    fontSize: 15,
-    color: '#e2e8f0',
-    lineHeight: 21,
-    marginBottom: 12,
-  },
-  actionLoader: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: '#1e293b',
-  },
-  doneBtn: {
-    backgroundColor: '#052e16',
-  },
-  deleteBtn: {
-    backgroundColor: '#2e0a0a',
-  },
-  actionBtnText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontWeight: '500',
-  },
-  editReminderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  editReminderText: {
-    fontSize: 13,
-    color: '#3b82f6',
-    fontWeight: '500',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    backBtn: {
+      padding: 4,
+      marginRight: 8,
+    },
+    headerText: {
+      flex: 1,
+    },
+    placeName: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      color: c.text,
+    },
+    placeSubtitle: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      marginTop: 1,
+    },
+    centered: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 12,
+    },
+    emptyText: {
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      textAlign: 'center',
+    },
+    list: {
+      padding: Spacing.lg,
+    },
+    separator: {
+      height: 12,
+    },
+    objectCard: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.md,
+      padding: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    objectHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    objectDate: {
+      marginLeft: 'auto',
+      fontSize: 11,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+    },
+    typeBadge: {
+      backgroundColor: c.accentLight,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 4,
+    },
+    typeBadgeText: {
+      fontSize: 10,
+      color: c.accent,
+      fontFamily: Fonts.semibold,
+      textTransform: 'uppercase',
+    },
+    objectTitle: {
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      lineHeight: 21,
+      marginBottom: 12,
+    },
+    actionLoader: {
+      alignSelf: 'flex-start',
+      marginTop: 4,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      gap: 8,
+      flexWrap: 'wrap',
+    },
+    actionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 6,
+      backgroundColor: c.bgMuted,
+    },
+    doneBtn: {
+      backgroundColor: c.successBg,
+    },
+    deleteBtn: {
+      backgroundColor: c.errorBg,
+    },
+    actionBtnText: {
+      fontSize: 12,
+      fontFamily: Fonts.medium,
+      color: c.textMuted,
+    },
+    editReminderRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    editReminderText: {
+      fontSize: 13,
+      color: c.accent,
+      fontFamily: Fonts.medium,
+    },
+  });

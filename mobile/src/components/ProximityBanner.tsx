@@ -4,17 +4,17 @@
  * the place's notes; the ✕ dismisses it for this visit.
  */
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useProximityAlerts } from '../hooks/useProximityAlerts';
 import { navigationRef } from '../navigation/navigationRef';
-
-// Fixed top offset to clear the status bar / notch. Avoids useSafeAreaInsets,
-// which requires a SafeAreaProvider in the tree above this component.
-const TOP_OFFSET = Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 24) + 8;
+import { Fonts, Radius, Spacing, Elevation, useTheme } from '../theme';
 
 export function ProximityBanner() {
   const { match, dismiss } = useProximityAlerts();
+  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   if (!match) return null;
 
@@ -29,8 +29,14 @@ export function ProximityBanner() {
   };
 
   return (
-    <View style={[styles.wrap, { top: TOP_OFFSET }]} pointerEvents="box-none">
-      <TouchableOpacity style={styles.banner} onPress={open} activeOpacity={0.85}>
+    <View style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
+      <TouchableOpacity
+        style={[styles.banner, { backgroundColor: colors.accent }]}
+        onPress={open}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={`You're at ${match.name}. Open notes for this place`}
+      >
         <Ionicons name="location" size={22} color="#FFFFFF" style={styles.icon} />
         <View style={styles.textCol}>
           <Text style={styles.title} numberOfLines={1}>You're at {match.name}</Text>
@@ -42,6 +48,8 @@ export function ProximityBanner() {
           onPress={dismiss}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.close}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss"
         >
           <Ionicons name="close" size={20} color="rgba(255,255,255,0.85)" />
         </TouchableOpacity>
@@ -62,18 +70,15 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0284C7',
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    shadowColor: '#000',
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg - 2,
+    ...Elevation.level2,
     shadowOpacity: 0.2,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
   },
   icon: { marginRight: 10 },
   textCol: { flex: 1 },
-  title: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },
-  sub: { color: 'rgba(255,255,255,0.9)', fontSize: 13, marginTop: 1 },
+  title: { color: '#FFFFFF', fontFamily: Fonts.bold, fontSize: 15 },
+  sub: { color: 'rgba(255,255,255,0.9)', fontFamily: Fonts.regular, fontSize: 13, marginTop: 1 },
   close: { marginLeft: 8 },
 });

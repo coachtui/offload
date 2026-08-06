@@ -1,14 +1,12 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
   FlatList,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -16,7 +14,18 @@ import { RootStackParamList } from '../navigation/types';
 import { RagSearchResult } from '../services/api';
 import { useSearch } from '../hooks/useSearch';
 import { useForYou } from '../hooks/useForYou';
-import { AppSearchBar } from '../components/ui';
+import {
+  AppSearchBar,
+  AppText,
+  AppPressable,
+  AppBadge,
+  AppButton,
+  ConfirmSheet,
+  SkeletonCard,
+  Spacing,
+  Radius,
+} from '../components/ui';
+import { Elevation, Fonts, ThemeColors, useTheme, useThemedStyles, ColorScheme } from '../theme';
 
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -24,40 +33,56 @@ interface Props {
   navigation: HomeScreenNavigationProp;
 }
 
-const NAV_ITEMS = [
+type Tint = { color: string; bg: string };
+
+const NAV_ITEMS: Array<{
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  description: string;
+  route: 'AskOffload' | 'Insights' | 'Places' | 'Objects';
+  tint: Record<ColorScheme, Tint>;
+}> = [
   {
-    icon: 'chatbubble-outline' as const,
+    icon: 'chatbubble-outline',
     label: 'Ask Offload',
     description: 'Ask questions about your notes',
-    route: 'AskOffload' as const,
-    iconColor: '#4F46E5',
-    iconBg: '#EEF2FF',
+    route: 'AskOffload',
+    tint: {
+      light: { color: '#0F6B5F', bg: '#E4F0EC' },
+      dark: { color: '#53B8A5', bg: 'rgba(83, 184, 165, 0.14)' },
+    },
   },
   {
-    icon: 'bar-chart-outline' as const,
+    icon: 'bar-chart-outline',
     label: 'Insights',
     description: 'Patterns across your notes',
-    route: 'Insights' as const,
-    iconColor: '#059669',
-    iconBg: '#D1FAE5',
+    route: 'Insights',
+    tint: {
+      light: { color: '#C2492F', bg: '#FAEEE9' },
+      dark: { color: '#F2A08B', bg: 'rgba(236, 106, 74, 0.14)' },
+    },
   },
   {
-    icon: 'location-outline' as const,
+    icon: 'location-outline',
     label: 'Places',
     description: 'Your places, notes, and arrival reminders',
-    route: 'Places' as const,
-    iconColor: '#7C3AED',
-    iconBg: '#F3E8FF',
+    route: 'Places',
+    tint: {
+      light: { color: '#5D7025', bg: '#EEF2E2' },
+      dark: { color: '#AFC27A', bg: 'rgba(148, 166, 84, 0.15)' },
+    },
   },
   {
-    icon: 'albums-outline' as const,
+    icon: 'albums-outline',
     label: 'Notes',
     description: 'Browse all your captures',
-    route: 'Objects' as const,
-    iconColor: '#B45309',
-    iconBg: '#FEF3C7',
+    route: 'Objects',
+    tint: {
+      light: { color: '#A1740C', bg: '#F7EFDD' },
+      dark: { color: '#E5C078', bg: 'rgba(217, 164, 65, 0.15)' },
+    },
   },
-] as const;
+];
 
 function formatRelativeTime(date: Date | string): string {
   const d = new Date(date);
@@ -73,16 +98,33 @@ function formatRelativeTime(date: Date | string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function greetingForNow(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 export function HomeScreen({ navigation }: Props) {
   const { logout, user } = useAuth();
+  const { colors, scheme } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const firstName = user?.name ? user.name.trim().split(' ')[0] : '';
+  const initial = (firstName || user?.email || '?').charAt(0).toUpperCase();
   const [searchQuery, setSearchQuery] = useState('');
+  const [logoutVisible, setLogoutVisible] = useState(false);
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
   const { items: forYouItems } = useForYou();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSearchMode = searchQuery.trim().length > 0;
-  const [forYouExpanded, setForYouExpanded] = useState(false);
+  const [forYouExpanded, setForYouExpanded] = useState(true);
+
+  const dateLine = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+  });
 
   const handleSearchChange = useCallback(
     (text: string) => {
@@ -100,64 +142,70 @@ export function HomeScreen({ navigation }: Props) {
   );
 
   const renderSearchResult = ({ item }: { item: RagSearchResult }) => (
-    <TouchableOpacity
+    <AppPressable
       style={styles.searchResultCard}
       onPress={() => navigation.navigate('Objects', { objectId: item.objectId })}
-      activeOpacity={0.72}
+      accessibilityRole="button"
+      accessibilityLabel={item.title ?? item.cleanedText}
     >
       <View style={styles.searchResultRow}>
         <View style={styles.searchResultContent}>
           {item.title ? (
-            <Text style={styles.searchResultTitle} numberOfLines={1}>
+            <AppText variant="secondary" style={styles.searchResultTitle} numberOfLines={1}>
               {item.title}
-            </Text>
+            </AppText>
           ) : null}
-          <Text style={styles.searchResultText} numberOfLines={2}>
+          <AppText variant="body" color="secondary" numberOfLines={2} style={styles.searchResultText}>
             {item.cleanedText}
-          </Text>
+          </AppText>
         </View>
-        <Text style={styles.searchResultScore}>{Math.round(item.score * 100)}%</Text>
+        <AppText variant="secondary" color="accent" style={styles.searchResultScore}>
+          {Math.round(item.score * 100)}%
+        </AppText>
       </View>
       <View style={styles.searchResultMeta}>
-        {item.type ? (
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText}>{item.type}</Text>
-          </View>
-        ) : null}
-        <Text style={styles.searchResultDate}>
+        {item.type ? <AppBadge label={item.type} tone="neutral" /> : null}
+        <AppText variant="secondary" color="faint">
           {new Date(item.createdAt).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
           })}
-        </Text>
+        </AppText>
       </View>
-    </TouchableOpacity>
+    </AppPressable>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
+      {/* Header: greeting + avatar */}
       <View style={styles.header}>
-        <Text style={styles.brand}>Offload</Text>
-        <TouchableOpacity
-          onPress={logout}
-          hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+        <View>
+          <AppText variant="secondary" color="muted">
+            {dateLine}
+          </AppText>
+          <AppText variant="title" style={styles.greeting}>
+            {greetingForNow()}
+            {firstName ? `, ${firstName}` : ''}
+          </AppText>
+        </View>
+        <AppPressable
+          onPress={() => setLogoutVisible(true)}
+          style={styles.avatar}
+          accessibilityRole="button"
+          accessibilityLabel="Account"
         >
-          <Text style={styles.logoutText}>Log out</Text>
-        </TouchableOpacity>
+          <AppText variant="secondary" color="inverse" style={{ fontFamily: Fonts.bold }}>
+            {initial}
+          </AppText>
+        </AppPressable>
       </View>
-
-      {/* Greeting */}
-      <Text style={styles.greeting}>
-        What are you thinking today{firstName ? `, ${firstName}` : ''}?
-      </Text>
 
       {/* Search bar — always visible */}
       <View style={styles.searchWrap}>
         <AppSearchBar
           value={searchQuery}
           onChangeText={handleSearchChange}
-          placeholder="Forget Anything?"
+          placeholder="Search notes, places, ideas…"
           loading={isSearchMode && searchLoading}
         />
       </View>
@@ -172,403 +220,360 @@ export function HomeScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
             searchResults.length > 0 ? (
-              <Text style={styles.searchResultsCount}>
+              <AppText variant="secondary" color="muted" style={styles.searchResultsCount}>
                 {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
-              </Text>
+              </AppText>
             ) : null
           }
           ListEmptyComponent={
             searchLoading ? (
-              <ActivityIndicator
-                size="small"
-                color="#9CA3AF"
-                style={{ marginTop: 32 }}
-              />
+              <View style={styles.searchSkeletons}>
+                <SkeletonCard lines={2} />
+                <SkeletonCard lines={2} style={styles.skeletonGap} />
+                <SkeletonCard lines={1} style={styles.skeletonGap} />
+              </View>
             ) : (
               <View style={styles.searchEmpty}>
-                <Ionicons name="search-outline" size={40} color="#D1D5DB" />
-                <Text style={styles.searchEmptyText}>
+                <Ionicons name="search-outline" size={40} color={colors.borderStrong} />
+                <AppText variant="body" color="faint" align="center" style={styles.searchEmptyText}>
                   No results for "{searchQuery}"
-                </Text>
+                </AppText>
               </View>
             )
           }
           ListFooterComponent={
             searchResults.length > 0 ? (
-              <TouchableOpacity
+              <AppButton
+                label="Ask Offload about these"
+                variant="accent"
+                icon="chatbubble-outline"
+                onPress={() => navigation.navigate('AskOffload', { initialQuery: searchQuery })}
                 style={styles.askOffloadBtn}
-                onPress={() =>
-                  navigation.navigate('AskOffload', { initialQuery: searchQuery })
-                }
-                activeOpacity={0.78}
-              >
-                <Ionicons
-                  name="chatbubble-outline"
-                  size={15}
-                  color="#4F46E5"
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={styles.askOffloadBtnText}>Ask Offload about these</Text>
-              </TouchableOpacity>
+              />
             ) : null
           }
         />
       ) : (
         /* ── HOME MODE ───────────────────────────────────────────────────── */
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Mic button */}
-          <View style={styles.micSection}>
-            <TouchableOpacity
-              style={styles.micButton}
-              onPress={() => navigation.navigate('Record')}
-              activeOpacity={0.82}
-            >
-              <Ionicons name="mic" size={36} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.micLabel}>Capture a thought</Text>
-          </View>
-
-          {/* Nav cards — 2 × 2 grid */}
-          <View style={styles.grid}>
-            {NAV_ITEMS.map((item) => (
-              <TouchableOpacity
-                key={item.route}
-                style={styles.card}
-                onPress={() => navigation.navigate(item.route as any)}
-                activeOpacity={0.72}
-              >
-                <View style={[styles.iconWrap, { backgroundColor: item.iconBg }]}>
-                  <Ionicons name={item.icon} size={22} color={item.iconColor} />
-                </View>
-                <Text style={styles.cardLabel}>{item.label}</Text>
-                <Text style={styles.cardDesc}>{item.description}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* For you right now */}
-          {forYouItems.length > 0 ? (
-            <View style={styles.forYouSection}>
-              <TouchableOpacity
-                style={styles.forYouSectionHeader}
-                onPress={() => setForYouExpanded((v) => !v)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.forYouTitle}>For you right now</Text>
-                <Ionicons
-                  name={forYouExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={15}
-                  color="#9CA3AF"
-                />
-              </TouchableOpacity>
-              {forYouExpanded && forYouItems.map((obj) => {
-                const badge = obj.objectType ?? obj.domain ?? null;
-                return (
-                  <TouchableOpacity
-                    key={obj.id}
-                    style={styles.forYouRow}
-                    onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.forYouContent}>
-                      <Text style={styles.forYouRowTitle} numberOfLines={1}>
-                        {obj.title ?? obj.content}
-                      </Text>
-                      <View style={styles.forYouRowMeta}>
-                        <Text style={styles.forYouRowTime}>
-                          {formatRelativeTime(obj.createdAt)}
-                        </Text>
-                        {badge ? (
-                          <>
-                            <Text style={styles.forYouMetaDot}>·</Text>
-                            <View style={styles.forYouBadge}>
-                              <Text style={styles.forYouBadgeText}>{badge}</Text>
+        <>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* For you right now */}
+            {forYouItems.length > 0 ? (
+              <View style={styles.forYouSection}>
+                <AppPressable
+                  scale={false}
+                  style={styles.forYouSectionHeader}
+                  onPress={() => setForYouExpanded((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: forYouExpanded }}
+                  accessibilityLabel="For you right now"
+                >
+                  <AppText variant="label" color="muted">
+                    For you right now
+                  </AppText>
+                  <Ionicons
+                    name={forYouExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={15}
+                    color={colors.textFaint}
+                  />
+                </AppPressable>
+                {forYouExpanded ? (
+                  <Animated.View entering={FadeInDown.duration(300)} style={styles.forYouCard}>
+                    {forYouItems.map((obj, i) => {
+                      const badge = obj.objectType ?? obj.domain ?? null;
+                      return (
+                        <AppPressable
+                          key={obj.id}
+                          scale={false}
+                          style={[styles.forYouRow, i > 0 && styles.forYouRowBorder]}
+                          onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
+                          accessibilityRole="button"
+                          accessibilityLabel={obj.title ?? obj.content}
+                        >
+                          <View style={styles.forYouContent}>
+                            <AppText variant="secondary" style={styles.forYouRowTitle} numberOfLines={1}>
+                              {obj.title ?? obj.content}
+                            </AppText>
+                            <View style={styles.forYouRowMeta}>
+                              <AppText variant="secondary" color="faint">
+                                {formatRelativeTime(obj.createdAt)}
+                              </AppText>
+                              {badge ? <AppBadge label={badge} tone="accent" /> : null}
                             </View>
-                          </>
-                        ) : null}
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color={colors.borderStrong} />
+                        </AppPressable>
+                      );
+                    })}
+                  </Animated.View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {/* Shortcuts — 2 × 2 grid */}
+            <AppText variant="label" color="muted" style={styles.sectionTitle}>
+              Shortcuts
+            </AppText>
+            <View style={styles.grid}>
+              {NAV_ITEMS.map((item, i) => {
+                const tint = item.tint[scheme];
+                return (
+                  <Animated.View
+                    key={item.route}
+                    entering={FadeInDown.duration(300).delay(i * 40)}
+                    style={styles.cardWrap}
+                  >
+                    <AppPressable
+                      style={styles.card}
+                      onPress={() => navigation.navigate(item.route as any)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.label}
+                    >
+                      <View style={[styles.iconWrap, { backgroundColor: tint.bg }]}>
+                        <Ionicons name={item.icon} size={22} color={tint.color} />
                       </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color="#D1D5DB" />
-                  </TouchableOpacity>
+                      <AppText variant="heading" style={styles.cardLabel}>
+                        {item.label}
+                      </AppText>
+                      <AppText variant="secondary" color="muted" style={styles.cardDesc}>
+                        {item.description}
+                      </AppText>
+                    </AppPressable>
+                  </Animated.View>
                 );
               })}
             </View>
-          ) : null}
+          </ScrollView>
 
-        </ScrollView>
+          {/* Docked record action */}
+          <View style={styles.micDock} pointerEvents="box-none">
+            <AppPressable
+              style={styles.micButton}
+              haptic="tap"
+              onPress={() => navigation.navigate('Record')}
+              accessibilityRole="button"
+              accessibilityLabel="Record a voice note"
+            >
+              <Ionicons name="mic" size={30} color="#FFFFFF" />
+            </AppPressable>
+            <AppText variant="secondary" color="muted" style={styles.micLabel}>
+              Offload something
+            </AppText>
+          </View>
+        </>
       )}
+
+      <ConfirmSheet
+        visible={logoutVisible}
+        onClose={() => setLogoutVisible(false)}
+        onConfirm={logout}
+        title="Log out of Offload?"
+        message="Your notes stay safely synced to your account."
+        confirmLabel="Log out"
+        destructive
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E7EB',
-  },
-  brand: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    letterSpacing: -0.4,
-  },
-  logoutText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  greeting: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#111827',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-  },
-  // Search
-  searchWrap: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F3F4F6',
-  },
-  // Home scroll content
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 48,
-  },
-  // Mic
-  micSection: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  micButton: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: '#ef4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  micLabel: {
-    fontSize: 16,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  // Cards grid
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 32,
-  },
-  card: {
-    width: '47.5%',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  iconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  cardLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
-  },
-  cardDesc: {
-    fontSize: 13,
-    color: '#6B7280',
-    lineHeight: 18,
-  },
-  // For you right now
-  forYouSection: {
-    marginBottom: 32,
-  },
-  forYouSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  forYouTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  forYouRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F3F4F6',
-  },
-  forYouContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  forYouRowTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  forYouRowMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-    gap: 4,
-  },
-  forYouRowTime: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  forYouMetaDot: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  forYouBadge: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  forYouBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  // Search mode — results list
-  searchList: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 36,
-  },
-  searchResultsCount: {
-    fontSize: 13,
-    color: '#6B7280',
-    fontWeight: '500',
-    marginBottom: 12,
-  },
-  searchResultCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  searchResultRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  searchResultContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  searchResultTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
-  },
-  searchResultText: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-  },
-  searchResultScore: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-  searchResultMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 8,
-  },
-  typeBadge: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  typeBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  searchResultDate: {
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-  searchEmpty: {
-    alignItems: 'center',
-    paddingTop: 60,
-  },
-  searchEmptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  // Ask Offload CTA
-  askOffloadBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  askOffloadBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4F46E5',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    // Header
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.md,
+      paddingBottom: Spacing.lg,
+    },
+    greeting: {
+      marginTop: 2,
+    },
+    avatar: {
+      width: 36,
+      height: 36,
+      borderRadius: Radius.full,
+      backgroundColor: c.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // Search
+    searchWrap: {
+      paddingHorizontal: Spacing.xl,
+      paddingBottom: Spacing.md,
+    },
+    // Home scroll content
+    scrollContent: {
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.sm,
+      paddingBottom: 150,
+    },
+    sectionTitle: {
+      marginBottom: Spacing.md,
+    },
+    // For you
+    forYouSection: {
+      marginBottom: Spacing.xxl,
+    },
+    forYouSectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: Spacing.md,
+      paddingVertical: 4,
+    },
+    forYouCard: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      paddingHorizontal: Spacing.lg,
+      ...Elevation.level1,
+    },
+    forYouRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.md,
+    },
+    forYouRowBorder: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
+    },
+    forYouContent: {
+      flex: 1,
+      marginRight: Spacing.sm,
+    },
+    forYouRowTitle: {
+      fontFamily: Fonts.semibold,
+      color: c.text,
+    },
+    forYouRowMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 4,
+      gap: Spacing.sm,
+    },
+    // Shortcuts grid
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.md,
+    },
+    cardWrap: {
+      width: '47.5%',
+    },
+    card: {
+      width: '100%',
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.lg,
+      padding: Spacing.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    iconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: Radius.sm + 2,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    cardLabel: {
+      marginBottom: 2,
+    },
+    cardDesc: {
+      lineHeight: 17,
+    },
+    // Docked record action
+    micDock: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: Spacing.xxl,
+      alignItems: 'center',
+    },
+    micButton: {
+      width: 64,
+      height: 64,
+      borderRadius: Radius.full,
+      backgroundColor: c.record,
+      justifyContent: 'center',
+      alignItems: 'center',
+      ...Elevation.level3,
+      shadowColor: c.record,
+    },
+    micLabel: {
+      marginTop: Spacing.sm,
+      fontFamily: Fonts.semibold,
+    },
+    // Search mode — results list
+    searchList: {
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.md,
+      paddingBottom: 36,
+    },
+    searchResultsCount: {
+      marginBottom: Spacing.md,
+    },
+    searchSkeletons: {
+      paddingTop: Spacing.xs,
+    },
+    skeletonGap: {
+      marginTop: Spacing.md,
+    },
+    searchResultCard: {
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.md,
+      padding: Spacing.lg - 2,
+      marginBottom: Spacing.sm + 2,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    searchResultRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    searchResultContent: {
+      flex: 1,
+      marginRight: Spacing.sm,
+    },
+    searchResultTitle: {
+      fontFamily: Fonts.semibold,
+      color: c.text,
+      marginBottom: 2,
+    },
+    searchResultText: {
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    searchResultScore: {
+      fontFamily: Fonts.semibold,
+    },
+    searchResultMeta: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: Spacing.sm,
+      gap: Spacing.sm,
+    },
+    searchEmpty: {
+      alignItems: 'center',
+      paddingTop: 60,
+    },
+    searchEmptyText: {
+      marginTop: Spacing.md,
+    },
+    // Ask Offload CTA
+    askOffloadBtn: {
+      marginTop: Spacing.sm,
+    },
+  });

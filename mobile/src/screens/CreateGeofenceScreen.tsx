@@ -3,7 +3,7 @@
  * Privacy-first geofence creation with map interface
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Switch,
   ActivityIndicator,
   Modal,
@@ -24,12 +23,23 @@ import { locationService, LocationUsageReason } from '../services/locationServic
 import { useGeofences } from '../hooks/useGeofences';
 import { apiService } from '../services/api';
 import { AtomicObject } from '../types';
+import {
+  AppInput,
+  ConfirmSheet,
+  useToast,
+  Spacing,
+  Radius,
+} from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 interface CreateGeofenceScreenProps {
   navigation: any;
 }
 
 export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScreenProps) {
+  const { colors, scheme } = useTheme();
+  const styles = useThemedStyles(createStyles);
+
   // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -41,6 +51,11 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStart, setQuietHoursStart] = useState('22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState('08:00');
+
+  // Inline validation state
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [radiusError, setRadiusError] = useState<string | null>(null);
 
   // Linked notes state
   const [linkedObjectIds, setLinkedObjectIds] = useState<string[]>([]);
@@ -54,7 +69,11 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   // UI state
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [locationSheetVisible, setLocationSheetVisible] = useState(false);
+  const [bgPermSheetVisible, setBgPermSheetVisible] = useState(false);
+  const bgPermResolver = useRef<(() => void) | null>(null);
 
+  const toast = useToast();
   const { createGeofence } = useGeofences();
 
   // ─── Object Picker ──────────────────────────────────────────────────────────
@@ -111,7 +130,11 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
 
   // ─── Location ───────────────────────────────────────────────────────────────
 
-  const requestLocationAccess = async () => {
+  const requestLocationAccess = () => {
+    setLocationSheetVisible(true);
+  };
+
+  const performLocationRequest = async () => {
     setLocationLoading(true);
 
     try {
@@ -121,45 +144,31 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
         requiresBackground: false,
       };
 
-      Alert.alert(
-        'Location Permission',
-        reason.description,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-            onPress: () => setLocationLoading(false),
-          },
-          {
-            text: 'Allow',
-            onPress: async () => {
-              const granted = await locationService.requestForegroundPermission(reason);
+      const granted = await locationService.requestForegroundPermission(reason);
 
-              if (granted) {
-                const currentLocation = await locationService.getCurrentLocation();
-                if (currentLocation) {
-                  setLocation({
-                    latitude: currentLocation.coords.latitude,
-                    longitude: currentLocation.coords.longitude,
-                  });
-                  console.log('[CreateGeofence] Location obtained');
-                } else {
-                  Alert.alert('Error', 'Could not get your location');
-                }
-              } else {
-                Alert.alert(
-                  'Permission Denied',
-                  'Location permission is required to create geofences. You can enable it in Settings.'
-                );
-              }
-              setLocationLoading(false);
-            },
-          },
-        ]
-      );
+      if (granted) {
+        const currentLocation = await locationService.getCurrentLocation();
+        if (currentLocation) {
+          setLocation({
+            latitude: currentLocation.coords.latitude,
+            longitude: currentLocation.coords.longitude,
+          });
+          setLocationError(null);
+          console.log('[CreateGeofence] Location obtained');
+        } else {
+          toast.show({ message: "Couldn't get your location", tone: 'error' });
+        }
+      } else {
+        toast.show({
+          message: 'Location permission needed',
+          description: 'Location permission is required to create geofences. You can enable it in Settings.',
+          tone: 'error',
+        });
+      }
     } catch (error) {
       console.error('[CreateGeofence] Error requesting location:', error);
-      Alert.alert('Error', 'Failed to get location');
+      toast.show({ message: 'Failed to get location', tone: 'error' });
+    } finally {
       setLocationLoading(false);
     }
   };
@@ -167,6 +176,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
   const handleMapPress = (event: any) => {
     const { latitude, longitude } = event.nativeEvent.coordinate;
     setLocation({ latitude, longitude });
+    setLocationError(null);
     console.log('[CreateGeofence] Location set via map:', latitude, longitude);
   };
 
@@ -174,17 +184,17 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Please enter a name for this geofence');
+      setNameError('Please enter a name for this geofence');
       return;
     }
 
     if (!location) {
-      Alert.alert('Validation Error', 'Please set a location for this geofence');
+      setLocationError('Please set a location for this geofence');
       return;
     }
 
     if (radius < 50 || radius > 5000) {
-      Alert.alert('Validation Error', 'Radius must be between 50m and 5km');
+      setRadiusError('Radius must be between 50m and 5km');
       return;
     }
 
@@ -208,7 +218,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       });
 
       if (!geofence) {
-        Alert.alert('Error', 'Failed to create geofence');
+        toast.show({ message: "Couldn't save reminder", description: 'Please try again.', tone: 'error' });
         return;
       }
 
@@ -224,57 +234,64 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
         }
       }
 
-      Alert.alert(
-        'Reminder saved',
-        `"${geofence.name}" has been saved${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      toast.show({
+        message: 'Reminder saved',
+        description: `"${geofence.name}" has been saved${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
+        tone: 'success',
+      });
+      navigation.goBack();
     } catch (error: any) {
       console.error('[CreateGeofence] Error creating:', error);
-      Alert.alert('Error', error.message || 'Failed to create geofence');
+      toast.show({
+        message: "Couldn't save reminder",
+        description: error.message || 'Failed to create geofence',
+        tone: 'error',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const explainBackgroundPermission = async () => {
+  const explainBackgroundPermission = () => {
     return new Promise<void>((resolve) => {
-      Alert.alert(
-        'Background Location Access',
-        locationService.getBackgroundPermissionExplanation(),
-        [
-          {
-            text: 'No Thanks',
-            style: 'cancel',
-            onPress: () => {
-              setNotifyOnEnter(false);
-              setNotifyOnExit(false);
-              resolve();
-            },
-          },
-          {
-            text: 'Enable Notifications',
-            onPress: async () => {
-              const granted = await locationService.requestBackgroundPermission();
-              if (!granted) {
-                Alert.alert(
-                  'Permission Required',
-                  'Background location is required for geofence notifications. You can enable it in Settings.',
-                  [{ text: 'OK', onPress: () => resolve() }]
-                );
-              } else {
-                resolve();
-              }
-            },
-          },
-        ]
-      );
+      bgPermResolver.current = resolve;
+      setBgPermSheetVisible(true);
     });
+  };
+
+  /** Sheet dismissed without confirming → treated as "No Thanks". */
+  const handleBgPermClose = () => {
+    setBgPermSheetVisible(false);
+    // Defer so a confirm (which runs synchronously right after close) can
+    // claim the resolver first.
+    setTimeout(() => {
+      if (bgPermResolver.current) {
+        setNotifyOnEnter(false);
+        setNotifyOnExit(false);
+        bgPermResolver.current();
+        bgPermResolver.current = null;
+      }
+    }, 0);
+  };
+
+  const handleBgPermConfirm = async () => {
+    const resolve = bgPermResolver.current;
+    bgPermResolver.current = null;
+    const granted = await locationService.requestBackgroundPermission();
+    if (!granted) {
+      toast.show({
+        message: 'Background location required',
+        description: 'Background location is required for geofence notifications. You can enable it in Settings.',
+        tone: 'error',
+      });
+    }
+    resolve?.();
   };
 
   // Request location on mount
   useEffect(() => {
     requestLocationAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -283,8 +300,12 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>New Reminder</Text>
@@ -296,8 +317,9 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
 
       {/* Privacy Notice */}
       <View style={styles.privacyNotice}>
+        <Ionicons name="lock-closed-outline" size={16} color={colors.accent} />
         <Text style={styles.privacyText}>
-          🔒 Your location is only used to set this geofence. We don't track your movements.
+          Your location is only used to set this geofence. We don't track your movements.
         </Text>
       </View>
 
@@ -318,49 +340,52 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
             <Circle
               center={location}
               radius={radius}
-              fillColor="rgba(79, 70, 229, 0.2)"
-              strokeColor="rgba(79, 70, 229, 0.8)"
+              fillColor={scheme === 'dark' ? 'rgba(83, 184, 165, 0.18)' : 'rgba(15, 107, 95, 0.15)'}
+              strokeColor={colors.accent}
               strokeWidth={2}
             />
           </MapView>
         ) : (
           <View style={styles.mapPlaceholder}>
             {locationLoading ? (
-              <ActivityIndicator size="large" color="#4F46E5" />
+              <ActivityIndicator size="large" color={colors.accent} />
             ) : (
               <TouchableOpacity onPress={requestLocationAccess} style={styles.locationButton}>
-                <Text style={styles.locationButtonText}>📍 Enable Location</Text>
+                <Ionicons name="location-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.locationButtonText}>Enable Location</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
       </View>
+      {locationError ? <Text style={styles.mapError}>{locationError}</Text> : null}
 
       {/* Form */}
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         {/* Name */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Name *</Text>
-          <TextInput
-            style={styles.input}
+          <AppInput
+            label="Name *"
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              if (nameError) setNameError(null);
+            }}
             placeholder="e.g., Home, Office, Gym"
-            placeholderTextColor="#9CA3AF"
+            error={nameError ?? undefined}
           />
         </View>
 
         {/* Description */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Description (Optional)</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
+          <AppInput
+            label="Description (Optional)"
             value={description}
             onChangeText={setDescription}
             placeholder="What should you remember here?"
-            placeholderTextColor="#9CA3AF"
             multiline
             numberOfLines={3}
+            style={styles.textAreaInput}
           />
         </View>
 
@@ -373,6 +398,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
                 key={t}
                 style={[styles.typeButton, type === t && styles.typeButtonActive]}
                 onPress={() => setType(t)}
+                accessibilityState={{ selected: type === t }}
               >
                 <Text style={[styles.typeButtonText, type === t && styles.typeButtonTextActive]}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -390,7 +416,10 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
               <TouchableOpacity
                 key={r}
                 style={[styles.radiusButton, radius === r && styles.radiusButtonActive]}
-                onPress={() => setRadius(r)}
+                onPress={() => {
+                  setRadius(r);
+                  if (radiusError) setRadiusError(null);
+                }}
               >
                 <Text style={[styles.radiusButtonText, radius === r && styles.radiusButtonTextActive]}>
                   {r}m
@@ -398,6 +427,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
               </TouchableOpacity>
             ))}
           </View>
+          {radiusError ? <Text style={styles.inlineError}>{radiusError}</Text> : null}
         </View>
 
         {/* Notifications */}
@@ -421,9 +451,12 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           </View>
 
           {(notifyOnEnter || notifyOnExit) && (
-            <Text style={styles.permissionNote}>
-              📱 Background location permission will be requested to enable notifications
-            </Text>
+            <View style={styles.permissionNote}>
+              <Ionicons name="phone-portrait-outline" size={16} color={colors.textMuted} />
+              <Text style={styles.permissionNoteText}>
+                Background location permission will be requested to enable notifications
+              </Text>
+            </View>
           )}
         </View>
 
@@ -485,8 +518,13 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
                   <Text style={styles.linkedChipText} numberOfLines={1}>
                     {linkedObjectsMap[id] || id}
                   </Text>
-                  <TouchableOpacity onPress={() => removeLinkedObject(id)} style={styles.linkedChipRemove}>
-                    <Text style={styles.linkedChipRemoveText}>×</Text>
+                  <TouchableOpacity
+                    onPress={() => removeLinkedObject(id)}
+                    style={styles.linkedChipRemove}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove"
+                  >
+                    <Ionicons name="close" size={14} color={colors.accent} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -505,7 +543,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.createButtonText}>Save Reminder</Text>
           )}
@@ -538,7 +576,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
             <TextInput
               style={styles.pickerSearchInput}
               placeholder="Filter notes..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textFaint}
               value={pickerSearch}
               onChangeText={setPickerSearch}
               autoCorrect={false}
@@ -548,7 +586,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           {/* Object List */}
           {pickerLoading ? (
             <View style={styles.pickerLoading}>
-              <ActivityIndicator size="large" color="#4F46E5" />
+              <ActivityIndicator size="large" color={colors.accent} />
               <Text style={styles.pickerLoadingText}>Loading notes...</Text>
             </View>
           ) : (
@@ -567,7 +605,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
                     <View style={styles.pickerItemCheck}>
                       {isSelected ? (
                         <View style={styles.pickerCheckFilled}>
-                          <Text style={styles.pickerCheckMark}>✓</Text>
+                          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
                         </View>
                       ) : (
                         <View style={styles.pickerCheckEmpty} />
@@ -601,404 +639,444 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           )}
         </SafeAreaView>
       </Modal>
+
+      {/* Foreground location permission prompt (replaces the old system alert) */}
+      <ConfirmSheet
+        visible={locationSheetVisible}
+        onClose={() => setLocationSheetVisible(false)}
+        onConfirm={performLocationRequest}
+        title="Location Permission"
+        message={locationService.getPermissionExplanation('create_geofence')}
+        confirmLabel="Allow"
+      />
+
+      {/* Background location permission prompt (replaces the old system alert) */}
+      <ConfirmSheet
+        visible={bgPermSheetVisible}
+        onClose={handleBgPermClose}
+        onConfirm={handleBgPermConfirm}
+        title="Background Location Access"
+        message={locationService.getBackgroundPermissionExplanation()}
+        confirmLabel="Enable Notifications"
+        cancelLabel="No Thanks"
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  cancelText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  privacyNotice: {
-    backgroundColor: '#EFF6FF',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#DBEAFE',
-  },
-  privacyText: {
-    fontSize: 13,
-    color: '#3B82F6',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  mapContainer: {
-    height: 250,
-    backgroundColor: '#E5E7EB',
-  },
-  map: {
-    flex: 1,
-  },
-  mapPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationButton: {
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  locationButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  form: {
-    flex: 1,
-    padding: 20,
-  },
-  formGroup: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: '#111827',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  typeButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  typeButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  typeButtonActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  typeButtonText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  typeButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  radiusButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  radiusButton: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  radiusButtonActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  radiusButtonText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  radiusButtonTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  switchLabel: {
-    flex: 1,
-  },
-  switchText: {
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  switchSubtext: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  permissionNote: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 10,
-    lineHeight: 18,
-  },
-  quietLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 12,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  // Linked Notes section
-  linkedNotesHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  linkedNotesSubtext: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 12,
-    lineHeight: 16,
-  },
-  linkButton: {
-    backgroundColor: '#4F46E5',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  linkButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  linkedChips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  linkedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    borderRadius: 10,
-    paddingLeft: 10,
-    paddingRight: 4,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-    maxWidth: '100%',
-  },
-  linkedChipText: {
-    fontSize: 13,
-    color: '#3730A3',
-    fontWeight: '500',
-    maxWidth: 220,
-  },
-  linkedChipRemove: {
-    marginLeft: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#C7D2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  linkedChipRemoveText: {
-    fontSize: 14,
-    color: '#3730A3',
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  linkedEmptyState: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    padding: 14,
-    alignItems: 'center',
-  },
-  linkedEmptyText: {
-    fontSize: 13,
-    color: '#9CA3AF',
-  },
-  createButton: {
-    backgroundColor: '#4F46E5',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 32,
-  },
-  createButtonDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
-  createButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Object Picker Modal
-  pickerContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  pickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  pickerCancel: {
-    fontSize: 16,
-    color: '#6B7280',
-  },
-  pickerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  pickerDone: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  pickerSearchContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  pickerSearchInput: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#111827',
-  },
-  pickerLoading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  pickerLoadingText: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  pickerList: {
-    paddingVertical: 8,
-  },
-  pickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  pickerItemSelected: {
-    backgroundColor: '#F5F3FF',
-  },
-  pickerItemCheck: {
-    marginRight: 14,
-  },
-  pickerCheckEmpty: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#D1D5DB',
-  },
-  pickerCheckFilled: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#4F46E5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pickerCheckMark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  pickerItemContent: {
-    flex: 1,
-  },
-  pickerItemLabel: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  pickerItemMeta: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 4,
-  },
-  pickerItemBadge: {
-    fontSize: 11,
-    color: '#6B7280',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    textTransform: 'capitalize',
-    overflow: 'hidden',
-  },
-  pickerItemDomainBadge: {
-    color: '#4F46E5',
-    backgroundColor: '#EEF2FF',
-  },
-  pickerEmpty: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  pickerEmptyText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.lg,
+      backgroundColor: c.bgSurface,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    headerTitleContainer: {
+      flex: 1,
+      marginLeft: Spacing.lg,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      color: c.text,
+      textAlign: 'center',
+    },
+    cancelText: {
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+      color: c.error,
+    },
+    privacyNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      backgroundColor: c.accentLight,
+      paddingVertical: 14,
+      paddingHorizontal: Spacing.xl,
+      borderBottomWidth: 1,
+      borderBottomColor: c.accentBorder,
+    },
+    privacyText: {
+      flexShrink: 1,
+      fontSize: 13,
+      fontFamily: Fonts.regular,
+      color: c.accent,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
+    mapContainer: {
+      height: 250,
+      backgroundColor: c.bgMuted,
+    },
+    map: {
+      flex: 1,
+    },
+    mapPlaceholder: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    mapError: {
+      fontSize: 13,
+      fontFamily: Fonts.medium,
+      color: c.error,
+      paddingHorizontal: Spacing.xl,
+      paddingTop: Spacing.sm,
+    },
+    locationButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+      backgroundColor: c.accent,
+      paddingHorizontal: Spacing.xxl,
+      paddingVertical: Spacing.md,
+      borderRadius: Radius.md,
+    },
+    locationButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+    },
+    form: {
+      flex: 1,
+      padding: Spacing.xl,
+    },
+    formGroup: {
+      marginBottom: Spacing.xxl,
+    },
+    label: {
+      fontSize: 15,
+      fontFamily: Fonts.semibold,
+      color: c.text,
+      marginBottom: 10,
+    },
+    textAreaInput: {
+      flex: 1,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      paddingVertical: 12,
+      minHeight: 80,
+      textAlignVertical: 'top',
+    },
+    inlineError: {
+      fontSize: 13,
+      fontFamily: Fonts.medium,
+      color: c.error,
+      marginTop: Spacing.sm,
+    },
+    typeButtons: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    typeButton: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: Radius.full,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    typeButtonActive: {
+      backgroundColor: c.accent,
+      borderColor: c.accent,
+    },
+    typeButtonText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontFamily: Fonts.medium,
+    },
+    typeButtonTextActive: {
+      color: '#FFFFFF',
+      fontFamily: Fonts.semibold,
+    },
+    radiusButtons: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    radiusButton: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: Radius.full,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    radiusButtonActive: {
+      backgroundColor: c.accent,
+      borderColor: c.accent,
+    },
+    radiusButtonText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontFamily: Fonts.medium,
+    },
+    radiusButtonTextActive: {
+      color: '#FFFFFF',
+      fontFamily: Fonts.semibold,
+    },
+    switchRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: c.bgSurface,
+      padding: 14,
+      borderRadius: Radius.md,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    switchLabel: {
+      flex: 1,
+    },
+    switchText: {
+      fontSize: 15,
+      color: c.text,
+      fontFamily: Fonts.semibold,
+    },
+    switchSubtext: {
+      fontSize: 13,
+      color: c.textMuted,
+      marginTop: 4,
+    },
+    permissionNote: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: Spacing.sm,
+      marginTop: 10,
+    },
+    permissionNoteText: {
+      flex: 1,
+      fontSize: 13,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      lineHeight: 18,
+    },
+    quietLabel: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      marginTop: 12,
+      marginBottom: 8,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    // Linked Notes section
+    linkedNotesHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    linkedNotesSubtext: {
+      fontSize: 12,
+      color: c.textMuted,
+      marginBottom: 12,
+      lineHeight: 16,
+    },
+    linkButton: {
+      backgroundColor: c.accent,
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: Radius.sm,
+    },
+    linkButtonText: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+    },
+    linkedChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    linkedChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.accentLight,
+      borderRadius: Radius.sm,
+      paddingLeft: 10,
+      paddingRight: 4,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+      maxWidth: '100%',
+    },
+    linkedChipText: {
+      fontSize: 13,
+      color: c.accent,
+      fontFamily: Fonts.medium,
+      maxWidth: 220,
+    },
+    linkedChipRemove: {
+      marginLeft: 6,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      backgroundColor: c.accentBorder,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    linkedEmptyState: {
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: Radius.sm,
+      padding: 14,
+      alignItems: 'center',
+    },
+    linkedEmptyText: {
+      fontSize: 13,
+      color: c.textFaint,
+    },
+    createButton: {
+      backgroundColor: c.accent,
+      padding: Spacing.lg,
+      borderRadius: Radius.md,
+      alignItems: 'center',
+      marginTop: 12,
+      marginBottom: 32,
+    },
+    createButtonDisabled: {
+      backgroundColor: c.borderStrong,
+    },
+    createButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+    },
+    // Object Picker Modal
+    pickerContainer: {
+      flex: 1,
+      backgroundColor: c.bgSurface,
+    },
+    pickerHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.lg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    pickerCancel: {
+      fontSize: 16,
+      color: c.textMuted,
+    },
+    pickerTitle: {
+      fontSize: 17,
+      fontFamily: Fonts.bold,
+      color: c.text,
+    },
+    pickerDone: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+      color: c.accent,
+    },
+    pickerSearchContainer: {
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: c.bgMuted,
+    },
+    pickerSearchInput: {
+      backgroundColor: c.bgMuted,
+      borderRadius: Radius.sm,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.text,
+    },
+    pickerLoading: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: Spacing.md,
+    },
+    pickerLoadingText: {
+      fontSize: 14,
+      color: c.textMuted,
+    },
+    pickerList: {
+      paddingVertical: Spacing.sm,
+    },
+    pickerItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: c.bgMuted,
+    },
+    pickerItemSelected: {
+      backgroundColor: c.accentLight,
+    },
+    pickerItemCheck: {
+      marginRight: 14,
+    },
+    pickerCheckEmpty: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: c.borderStrong,
+    },
+    pickerCheckFilled: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: c.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pickerItemContent: {
+      flex: 1,
+    },
+    pickerItemLabel: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      lineHeight: 20,
+    },
+    pickerItemMeta: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 4,
+    },
+    pickerItemBadge: {
+      fontSize: 11,
+      color: c.textMuted,
+      backgroundColor: c.bgMuted,
+      borderRadius: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      textTransform: 'capitalize',
+      overflow: 'hidden',
+    },
+    pickerItemDomainBadge: {
+      color: c.accent,
+      backgroundColor: c.accentLight,
+    },
+    pickerEmpty: {
+      padding: 40,
+      alignItems: 'center',
+    },
+    pickerEmptyText: {
+      fontSize: 14,
+      color: c.textFaint,
+    },
+  });
