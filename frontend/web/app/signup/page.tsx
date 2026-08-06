@@ -8,7 +8,7 @@ import { setAuthToken } from '@/lib/auth';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Footer from '@/components/Footer';
-import { MicIcon } from '@/components/ui/icons';
+import { LogoGlyph } from '@/components/ui/icons';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,7 +64,7 @@ export default function SignupPage() {
           {/* Brand mark — mirrors the mobile login */}
           <Link href="/" className="flex flex-col items-center text-center mb-10 group">
             <span className="flex items-center justify-center w-12 h-12 bg-accent text-white rounded-md shadow-level2 mb-4 group-hover:opacity-90 transition-opacity">
-              <MicIcon className="w-6 h-6" />
+              <LogoGlyph className="w-7 h-7" />
             </span>
             <span className="text-2xl font-bold text-ink tracking-tight">Offload</span>
             <span className="text-sm text-ink-muted mt-1">

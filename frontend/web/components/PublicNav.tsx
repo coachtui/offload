@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { MicIcon } from '@/components/ui/icons';
+import { LogoGlyph } from '@/components/ui/icons';
 
 export default function PublicNav() {
   return (
@@ -11,7 +11,7 @@ export default function PublicNav() {
           className="flex items-center gap-2 text-lg sm:text-xl font-bold text-ink tracking-tight hover:opacity-80 transition-opacity"
         >
           <span className="flex items-center justify-center w-7 h-7 bg-accent text-white rounded-sm">
-            <MicIcon className="w-4 h-4" />
+            <LogoGlyph className="w-4 h-4" />
           </span>
           Offload
         </Link>
