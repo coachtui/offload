@@ -16,7 +16,11 @@
  *   • paths draw in on mount via pathLength
  *   • ribbons enter a slow, independent vertical drift
  *   • left and right node groups breathe with gentle opposite phase
- *   • one indigo accent node pulses softly every ~7 s
+ *   • one sea-teal accent node pulses softly every ~7 s
+ *
+ * Colors come from the Deep Lagoon tokens via Tailwind stroke/fill classes
+ * (ink family for structure, accent for the insight node), so the
+ * illustration follows light/dark automatically.
  *
  * Reduced-motion: all animation skipped; static composition retained.
  */
@@ -51,7 +55,7 @@ type WaveDef = {
 }
 
 // Rendered back-to-front — outer wisps first, thick core last.
-// Outer pair uses a cooler tint (#334155) for depth; core pair is darkest.
+// Outer pair uses the muted ink tint for depth; core pair is full ink.
 const WAVES: WaveDef[] = [
   { cy:  98, amp: 11, sw:  2,  op: 0.040, drift: [-2.5,  2.5], dd: 11.2 },
   { cy: 192, amp: 11, sw:  2,  op: 0.040, drift: [ 2.5, -2.5], dd: 11.8 },
@@ -63,8 +67,12 @@ const WAVES: WaveDef[] = [
   { cy: 145, amp: 17, sw: 22,  op: 0.07,  drift: [ 4.0, -2.5], dd:  7.9 },
 ]
 
-// Wave stroke colours — outer wisps cooler, core strokes darker
-const WAVE_STROKE = ['#334155', '#334155', '#1e293b', '#1e293b', '#0f172a', '#0f172a', '#0f172a', '#0f172a']
+// Wave stroke classes — outer wisps muted, core strokes full ink
+const WAVE_STROKE = [
+  'stroke-ink-muted', 'stroke-ink-muted',
+  'stroke-ink-secondary', 'stroke-ink-secondary',
+  'stroke-ink', 'stroke-ink', 'stroke-ink', 'stroke-ink',
+]
 
 // ── Node / edge geometry ─────────────────────────────────────────────────────
 type Pt = { x: number; y: number }
@@ -88,7 +96,7 @@ const L_EDGES: [number, number][] = [
 
 // Right mesh — denser, more structured (organised memory).
 // Three approximate rows with deliberate size variance;
-// one indigo accent hub marks the "surfaced insight" node.
+// one sea-teal accent hub marks the "surfaced insight" node.
 const R_NODES: NodeDef[] = [
   // top row
   { x: 338, y: 100, r:  5         },
@@ -97,7 +105,7 @@ const R_NODES: NodeDef[] = [
   { x: 464, y:  87, r:  9         },
   // middle row — accent hub here
   { x: 332, y: 150, r:  6         },
-  { x: 374, y: 147, r: 11, accent: true },  // Offload indigo accent
+  { x: 374, y: 147, r: 11, accent: true },  // Offload sea-teal accent
   { x: 414, y: 143, r:  5         },
   { x: 456, y: 150, r:  8         },
   // bottom row
@@ -133,7 +141,7 @@ export interface OffloadBackgroundPathsProps {
   className?: string
   /** Override reduced-motion behaviour (defaults to system preference) */
   reducedMotion?: boolean
-  /** Enable the soft indigo pulse on the accent node (default: true) */
+  /** Enable the soft accent pulse on the insight node (default: true) */
   nodePulse?: boolean
 }
 
@@ -167,7 +175,7 @@ export function OffloadBackgroundPaths({
         <motion.path
           key={`w${i}`}
           d={wavePath(w.cy, w.amp)}
-          stroke={WAVE_STROKE[i]}
+          className={WAVE_STROKE[i]}
           strokeWidth={w.sw}
           strokeLinecap="round"
           initial={skip ? false : { pathLength: 0, opacity: 0 }}
@@ -194,7 +202,7 @@ export function OffloadBackgroundPaths({
           signal → structure transition legible. */}
       <motion.path
         d={`M 210,145 L ${L_NODES[0].x},${L_NODES[0].y}`}
-        stroke="#64748b"
+        className="stroke-ink-muted"
         strokeWidth="0.7"
         strokeLinecap="round"
         strokeDasharray="3 4"
@@ -214,7 +222,7 @@ export function OffloadBackgroundPaths({
           <motion.path
             key={`le${i}`}
             d={line(L_NODES[ai], L_NODES[bi])}
-            stroke="#64748b"
+            className="stroke-ink-muted"
             strokeWidth="0.9"
             strokeLinecap="round"
             initial={skip ? false : { pathLength: 0, opacity: 0 }}
@@ -229,7 +237,7 @@ export function OffloadBackgroundPaths({
             cx={n.x}
             cy={n.y}
             r={n.r}
-            fill="#1e293b"
+            className="fill-ink-secondary"
             initial={skip ? false : { opacity: 0, scale: 0.25 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={tx({ duration: 0.55, ease: 'easeOut', delay: 1.4 + i * 0.09 })}
@@ -251,7 +259,7 @@ export function OffloadBackgroundPaths({
           <motion.path
             key={`rp${i}`}
             d={line(R_NODES[ai], R_NODES[bi])}
-            stroke="#64748b"
+            className="stroke-ink-muted"
             strokeWidth="0.9"
             strokeLinecap="round"
             initial={skip ? false : { pathLength: 0, opacity: 0 }}
@@ -265,7 +273,7 @@ export function OffloadBackgroundPaths({
           <motion.path
             key={`rs${i}`}
             d={line(R_NODES[ai], R_NODES[bi])}
-            stroke="#94a3b8"
+            className="stroke-ink-faint"
             strokeWidth="0.55"
             strokeLinecap="round"
             initial={skip ? false : { pathLength: 0, opacity: 0 }}
@@ -284,7 +292,7 @@ export function OffloadBackgroundPaths({
                 cy={n.y}
                 r={n.r + 10}
                 fill="none"
-                stroke="#4f46e5"
+                className="stroke-accent"
                 strokeWidth="1.5"
                 animate={{ scale: [1, 1.65], opacity: [0.45, 0] }}
                 transition={{
@@ -298,12 +306,12 @@ export function OffloadBackgroundPaths({
               />
             )}
 
-            {/* Node fill — accent hub uses Offload indigo */}
+            {/* Node fill — accent hub uses the Offload sea-teal */}
             <motion.circle
               cx={n.x}
               cy={n.y}
               r={n.r}
-              fill={n.accent ? '#4f46e5' : '#1e293b'}
+              className={n.accent ? 'fill-accent' : 'fill-ink-secondary'}
               initial={skip ? false : { opacity: 0, scale: 0.25 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={tx({ duration: 0.55, ease: 'easeOut', delay: 2.55 + i * 0.07 })}

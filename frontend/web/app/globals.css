@@ -2,6 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Deep Lagoon palette — mirrors mobile/src/theme. Light is the default;
+   dark flips via prefers-color-scheme (darkMode: 'media' in Tailwind). */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-muted: #edebe4;
+  --ink: #17211e;
+  --ink-secondary: #3d4a45;
+  --ink-muted: #5f6b66;
+  --ink-faint: #9aa39e;
+  --line: #e8e6df;
+  --line-strong: #d6d3c9;
+  --accent: #0f6b5f;
+  --accent-tint: #e4f0ec;
+  --accent-line: #bfdcd4;
+  --record: #d23f28;
+  --record-bright: #ec6a4a;
+  --record-tint: #faeee9;
+  --danger: #c2492f;
+  --danger-tint: #faeae5;
+  --danger-line: #f0cfc5;
+  --success: #1e6b4f;
+  --warning: #a1740c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1413;
+    --surface: #17201e;
+    --surface-muted: #1e2926;
+    --ink: #edefeb;
+    --ink-secondary: #c3cbc5;
+    --ink-muted: #9ba6a0;
+    --ink-faint: #6f7b76;
+    --line: #263230;
+    --line-strong: #34423e;
+    --accent: #53b8a5;
+    --accent-tint: rgba(83, 184, 165, 0.14);
+    --accent-line: rgba(83, 184, 165, 0.35);
+    --record: #ec6a4a;
+    --record-bright: #f28a6e;
+    --record-tint: rgba(236, 106, 74, 0.15);
+    --danger: #e0755a;
+    --danger-tint: rgba(224, 117, 90, 0.14);
+    --danger-line: rgba(224, 117, 90, 0.35);
+    --success: #8fd4c6;
+    --warning: #e5c078;
+  }
+}
+
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
@@ -9,11 +59,16 @@
   }
 
   body {
-    @apply text-gray-900 bg-white;
+    @apply bg-bg text-ink;
   }
 
   * {
     box-sizing: border-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 

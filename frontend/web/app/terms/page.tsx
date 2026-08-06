@@ -2,49 +2,31 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import PublicNav from '@/components/PublicNav';
 import Footer from '@/components/Footer';
+import { Section, Ul } from '@/components/Prose';
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
   description: 'Offload Terms of Service — the rules and conditions for using Offload.',
 };
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mb-10">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">{title}</h2>
-      <div className="space-y-3 text-gray-600 leading-relaxed text-sm">{children}</div>
-    </section>
-  );
-}
-
-function Ul({ items }: { items: string[] }) {
-  return (
-    <ul className="list-disc list-inside space-y-1.5 text-gray-600 text-sm ml-1">
-      {items.map((item, i) => (
-        <li key={i}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-bg flex flex-col">
       <PublicNav />
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-6 py-20">
         {/* Header */}
         <div className="mb-14">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+          <p className="text-xs font-semibold text-ink-faint uppercase tracking-widest mb-3">
             Legal
           </p>
-          <h1 className="text-4xl font-bold text-gray-900 tracking-tight mb-3">
+          <h1 className="text-4xl font-bold text-ink tracking-tight mb-3">
             Terms of Service
           </h1>
-          <p className="text-sm text-gray-400">Last updated: March 9, 2026</p>
+          <p className="text-sm text-ink-faint">Last updated: March 9, 2026</p>
         </div>
 
-        <div className="divide-y divide-gray-100 space-y-10">
+        <div className="divide-y divide-line space-y-10">
           <Section title="Agreement to Terms">
             <p>
               By accessing or using Offload (the &ldquo;Service&rdquo;), you agree to be bound by
@@ -56,7 +38,7 @@ export default function TermsPage() {
               &ldquo;us&rdquo;). If you have questions, contact us at{' '}
               <a
                 href="mailto:support@useoffload.app"
-                className="text-gray-900 underline hover:no-underline"
+                className="text-ink underline hover:no-underline"
               >
                 support@useoffload.app
               </a>
@@ -154,7 +136,7 @@ export default function TermsPage() {
           <Section title="Privacy">
             <p>
               Your use of the Service is also governed by our{' '}
-              <Link href="/privacy" className="text-gray-900 underline hover:no-underline">
+              <Link href="/privacy" className="text-ink underline hover:no-underline">
                 Privacy Policy
               </Link>
               , which is incorporated into these Terms. Please review the Privacy Policy to
@@ -216,7 +198,7 @@ export default function TermsPage() {
               You may delete your account at any time by contacting us at{' '}
               <a
                 href="mailto:support@useoffload.app"
-                className="text-gray-900 underline hover:no-underline"
+                className="text-ink underline hover:no-underline"
               >
                 support@useoffload.app
               </a>
@@ -250,7 +232,7 @@ export default function TermsPage() {
             <p className="mt-2">
               <a
                 href="mailto:support@useoffload.app"
-                className="text-gray-900 font-medium underline hover:no-underline"
+                className="text-ink font-medium underline hover:no-underline"
               >
                 support@useoffload.app
               </a>
@@ -258,8 +240,8 @@ export default function TermsPage() {
           </Section>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-gray-100">
-          <Link href="/" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
+        <div className="mt-12 pt-8 border-t border-line">
+          <Link href="/" className="text-sm text-ink-muted hover:text-ink transition-colors">
             ← Back to Offload
           </Link>
         </div>

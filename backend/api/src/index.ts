@@ -30,9 +30,15 @@ const server = createServer(app);
 
 // Middleware
 app.use(helmet());
+// Tolerate spaces and trailing slashes in the ALLOWED_ORIGINS env value —
+// "https://a.com, https://b.com/" must not silently fail CORS matching.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
