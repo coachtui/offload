@@ -36,7 +36,7 @@ import {
   Spacing,
   Radius,
 } from '../components/ui';
-import { Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
+import { Elevation, Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -354,8 +354,21 @@ export function ObjectsScreen({ navigation }: Props) {
     if (selected && !visible.some((c) => c.id === selected.id)) {
       visible = [...visible.slice(0, VISIBLE_CHIPS - 1), selected];
     }
-    const hiddenCount = Math.max(0, categories.length - visible.length);
+    // With no user categories yet, fall back to the AI-detected areas so the
+    // row is never bare — the colored chips are the heart of this screen.
+    const usingDomains = categories.length === 0;
+    const domainChips = usingDomains ? DOMAINS.slice(0, VISIBLE_CHIPS) : [];
+    const hiddenCount = usingDomains
+      ? Math.max(0, DOMAINS.length - domainChips.length)
+      : Math.max(0, categories.length - visible.length);
     const moreLabel = hiddenCount > 0 ? `+${hiddenCount} more` : 'Filters';
+    const allActive = !filters.categoryId && selectedDomains.length === 0;
+
+    const selectDomain = (domain: string) => {
+      const next = selectedDomains.includes(domain) ? [] : [domain];
+      setSelectedDomains(next);
+      triggerBrowse(next, selectedTypes);
+    };
 
     return (
       <View style={styles.chipsBar}>
@@ -365,28 +378,52 @@ export function ObjectsScreen({ navigation }: Props) {
           contentContainerStyle={styles.filterChipsContent}
         >
           <TouchableOpacity
-            style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
-            onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
+            style={[styles.filterChip, allActive && styles.filterChipActive]}
+            onPress={() => {
+              if (filters.categoryId) setFilters({ ...filters, categoryId: undefined });
+              if (selectedDomains.length) {
+                setSelectedDomains([]);
+                triggerBrowse([], selectedTypes);
+              }
+            }}
             accessibilityRole="button"
-            accessibilityState={{ selected: !filters.categoryId }}
+            accessibilityState={{ selected: allActive }}
           >
-            <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
+            <Text style={[styles.filterChipText, allActive && styles.filterChipTextActive]}>All</Text>
           </TouchableOpacity>
-          {visible.map((c) => {
-            const isActive = filters.categoryId === c.id;
-            return (
-              <TouchableOpacity
-                key={c.id}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
-                onPress={() => setFilters({ ...filters, categoryId: isActive ? undefined : c.id })}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-              >
-                <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
-                <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>{c.name}</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {usingDomains
+            ? domainChips.map((domain) => {
+                const isActive = selectedDomains.includes(domain);
+                return (
+                  <TouchableOpacity
+                    key={domain}
+                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    onPress={() => selectDomain(domain)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                  >
+                    <View style={[styles.swatchSm, { backgroundColor: DOMAIN_COLORS[domain] }]} />
+                    <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+                      {DOMAIN_LABELS[domain] || domain}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            : visible.map((c) => {
+                const isActive = filters.categoryId === c.id;
+                return (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    onPress={() => setFilters({ ...filters, categoryId: isActive ? undefined : c.id })}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                  >
+                    <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+                    <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>{c.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
           <TouchableOpacity
             style={[styles.filterChip, styles.moreChip, hasActiveFilters && styles.moreChipActive]}
             onPress={handleOpenFilterSheet}
@@ -400,7 +437,7 @@ export function ObjectsScreen({ navigation }: Props) {
         </ScrollView>
       </View>
     );
-  }, [categories, filters, setFilters, hasActiveFilters, handleOpenFilterSheet, styles, colors]);
+  }, [categories, filters, setFilters, selectedDomains, selectedTypes, triggerBrowse, hasActiveFilters, handleOpenFilterSheet, styles, colors]);
 
   // ─── Modal / detail actions ───────────────────────────────────────────────
 
@@ -1468,10 +1505,14 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Context banners (geofence + stale)
   geofenceBanner: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-    backgroundColor: c.accentLight,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    backgroundColor: c.bgSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.accentBorder,
+    borderRadius: Radius.lg,
     paddingBottom: 12,
+    ...Elevation.level1,
   },
   geofenceBannerHeader: {
     flexDirection: 'row',
@@ -1486,9 +1527,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   geofenceCardLabel: { color: c.accent, fontSize: 10, fontFamily: Fonts.bold, marginBottom: 4, textTransform: 'uppercase' },
 
   staleBanner: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
-    backgroundColor: c.warningBg,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    backgroundColor: c.bgSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    borderRadius: Radius.lg,
+    ...Elevation.level1,
   },
   staleBannerHeader: {
     flexDirection: 'row',
@@ -1505,20 +1550,24 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   contextCardsRow: { paddingHorizontal: 16, paddingBottom: 12, gap: 10, flexDirection: 'row' },
   contextCard: {
     width: 148,
-    backgroundColor: c.bgSurface,
-    borderRadius: 10,
+    backgroundColor: c.bgMuted,
+    borderRadius: Radius.sm,
     padding: 12,
-    borderWidth: 1,
-    borderColor: c.warningBorder,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
   },
   contextCardContent: { color: c.text, fontSize: 12, lineHeight: 16, marginBottom: 4 },
   contextCardAction: { color: c.textMuted, fontSize: 11, fontStyle: 'italic' },
 
   // Dashboard
   dashboardCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
     backgroundColor: c.bgSurface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: c.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+    borderRadius: Radius.lg,
+    ...Elevation.level1,
   },
   dashboardHeader: {
     flexDirection: 'row',
