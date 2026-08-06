@@ -95,7 +95,7 @@ export function useForYou() {
         if (cancelled) return;
 
         const surfaced = res.objects
-          .filter((obj) => (obj as any).state !== 'archived')
+          .filter((obj) => (obj as any).state !== 'archived' && (obj as any).state !== 'resolved')
           .map((obj) => ({ obj, score: scoreObject(obj, userLat, userLon) }))
           .filter(({ score }) => score > 0)
           .sort((a, b) => b.score - a.score)
