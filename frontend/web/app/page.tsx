@@ -3,6 +3,7 @@ import PublicNav from '@/components/PublicNav';
 import Footer from '@/components/Footer';
 import {
   MicIcon,
+  LocationIcon,
   ShieldIcon,
   CheckIcon,
   AppleIcon,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/icons';
 import HeroStrands from '@/components/marketing/HeroStrands';
 import PhoneRecord from '@/components/marketing/PhoneRecord';
+import PhoneLock from '@/components/marketing/PhoneLock';
 import PhoneHome from '@/components/marketing/PhoneHome';
 import PhoneNotes from '@/components/marketing/PhoneNotes';
 
@@ -132,7 +134,44 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── 2 · Your day, sorted ──────────────────────────────────────── */}
+      {/* ── 2 · Place-based reminders (the differentiator) ────────────── */}
+      <section id="places" className="scroll-mt-20 px-6 py-24 border-t border-line">
+        <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="flex justify-center order-2 lg:order-1">
+            <PhoneLock className="scale-[0.8] sm:scale-90 origin-top" />
+          </div>
+          <div className="order-1 lg:order-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-accent bg-accent-tint border border-accent-line px-3 py-1.5 rounded-full mb-5">
+              <LocationIcon className="w-3 h-3" />
+              Reminders with a sense of place
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight text-balance mb-4">
+              The reminder finds you — at the right place, not just the right time.
+            </h2>
+            <p className="text-lg text-ink-muted leading-relaxed mb-7 max-w-lg">
+              Timed reminders fire while you&apos;re stuck in a meeting. Offload pins your notes
+              to places instead — and you never set that up. Mention Costco in a ramble, and
+              when you pull into the car park, the list is already on your lock screen.
+            </p>
+            <ul className="space-y-3">
+              <li className="flex gap-3 text-ink-secondary">
+                <span className="font-bold text-accent shrink-0 w-14">Say it</span>
+                <span>&quot;Grab paper towels next time I&apos;m at Costco&quot;</span>
+              </li>
+              <li className="flex gap-3 text-ink-secondary">
+                <span className="font-bold text-accent shrink-0 w-14">Pinned</span>
+                <span>Offload links the note to the place — no forms, no setup</span>
+              </li>
+              <li className="flex gap-3 text-ink-secondary">
+                <span className="font-bold text-accent shrink-0 w-14">Arrive</span>
+                <span>The notification meets you at the door, list ready</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 3 · Your day, sorted ──────────────────────────────────────── */}
       <section id="product" className="scroll-mt-20 px-6 py-24 border-t border-line">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">

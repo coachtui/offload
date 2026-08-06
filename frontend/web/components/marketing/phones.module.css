@@ -781,3 +781,78 @@
   font-weight: 700;
   color: #53b8a5;
 }
+
+/* ── Lock screen (place-reminder section) ─────────────────────────────── */
+.sLock {
+  background: linear-gradient(165deg, #10201c 0%, #0e1413 55%, #101a2a 100%);
+  color: #edefeb;
+  display: flex;
+  flex-direction: column;
+}
+.sLock .statusbar { color: #edefeb; }
+.sLock .homebar { background: rgba(237, 239, 235, 0.8); }
+.lkTime { text-align: center; margin-top: 54px; }
+.lkClock {
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.lkDate {
+  font-size: 13px;
+  color: rgba(237, 239, 235, 0.75);
+  margin-top: 6px;
+  font-weight: 500;
+}
+.lkNotif {
+  margin: 34px 14px 0;
+  background: rgba(237, 239, 235, 0.92);
+  border-radius: 18px;
+  padding: 12px 13px;
+  color: #17211e;
+  display: flex;
+  gap: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lkNotif {
+    animation: notifin 7s cubic-bezier(0.2, 0.9, 0.3, 1.1) infinite;
+  }
+}
+@keyframes notifin {
+  0% { opacity: 0; transform: translateY(-46px) scale(0.96); }
+  7% { opacity: 1; transform: translateY(0) scale(1); }
+  93% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+}
+.lkAppicon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #0f6b5f;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lkAppiconGlyph { width: 20px; height: 20px; color: #ffffff; }
+.lkBody { flex: 1; min-width: 0; }
+.lkRow1 { display: flex; justify-content: space-between; align-items: baseline; }
+.lkApp {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #5f6b66;
+  text-transform: uppercase;
+}
+.lkWhen { font-size: 10px; color: #9aa39e; }
+.lkTitle { font-size: 12.5px; font-weight: 700; margin-top: 2px; }
+.lkText { font-size: 11.5px; color: #3d4a45; line-height: 1.4; margin-top: 1px; }
+.lkHint {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(237, 239, 235, 0.5);
+  margin-top: auto;
+  padding-bottom: 26px;
+}
