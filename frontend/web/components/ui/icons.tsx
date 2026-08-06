@@ -99,3 +99,49 @@ export function AppleIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Offload brand mark — the vessel glyph (thoughts distilled). Viewbox 96. */
+export function LogoGlyph(props: IconProps) {
+  return (
+    <svg
+      width={24}
+      height={24}
+      viewBox="0 0 96 96"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={8}
+      strokeLinecap="round"
+      aria-hidden
+      {...props}
+    >
+      <path d="M26 30 L26 50 A22 22 0 0 0 70 50 L70 30" />
+      <line x1="38" y1="48" x2="58" y2="48" />
+      <line x1="42" y1="60" x2="54" y2="60" />
+    </svg>
+  );
+}
+
+/** Full brand mark — thought-strands flowing into the vessel. Viewbox 96. */
+export function LogoMark(props: IconProps) {
+  return (
+    <svg
+      width={32}
+      height={32}
+      viewBox="0 0 96 96"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={7}
+      strokeLinecap="round"
+      aria-hidden
+      {...props}
+    >
+      <circle cx="12" cy="14" r="3.5" fill="currentColor" stroke="none" />
+      <circle cx="22" cy="7" r="2.5" fill="currentColor" stroke="none" />
+      <path d="M22 20 C36 14 40 26 54 22" strokeWidth={5.5} />
+      <path d="M34 32 C46 27 50 36 62 32" strokeWidth={5.5} />
+      <path d="M26 36 L26 52 A22 22 0 0 0 70 52 L70 36" />
+      <line x1="38" y1="50" x2="58" y2="50" strokeWidth={5.5} />
+      <line x1="42" y1="60" x2="54" y2="60" strokeWidth={5.5} />
+    </svg>
+  );
+}

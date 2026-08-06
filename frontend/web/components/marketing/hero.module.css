@@ -1,0 +1,54 @@
+/*
+ * Hero thought-strand animation — ported from the approved design mock.
+ * Stroke uses the accent CSS variable so it adapts to dark mode; the flow
+ * animation only runs when the visitor has no reduced-motion preference.
+ */
+
+.strands {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
+}
+
+.strand {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.35;
+}
+
+.strand2 {
+  opacity: 0.22;
+}
+
+.strand3 {
+  opacity: 0.14;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .strandDraw {
+    stroke-dasharray: 240 600;
+    animation: strandflow 7s linear infinite;
+  }
+
+  .strandDrawD2 {
+    animation-delay: 2.3s;
+  }
+
+  .strandDrawD3 {
+    animation-delay: 4.6s;
+  }
+}
+
+@keyframes strandflow {
+  from {
+    stroke-dashoffset: 840;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
