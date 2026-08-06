@@ -1,15 +1,20 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { View, Text, SectionList, TouchableOpacity, ActivityIndicator, StyleSheet, RefreshControl, Alert } from 'react-native';
+import { View, Text, SectionList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService, PlaceOverviewItem } from '../services/api';
+import { Spacing, SkeletonCard, useToast } from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Places'>;
 
 export default function PlacesScreen({ navigation }: { navigation: Nav }) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
+  const toast = useToast();
   const [items, setItems] = useState<PlaceOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const inFlight = useRef<Set<string>>(new Set());
@@ -53,7 +58,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     } catch (e) {
       console.warn('[PlacesScreen] toggle failed', e);
       setItems(prev); // rollback
-      Alert.alert('Could not update reminder', 'Please try again.');
+      toast.show({ message: 'Could not update reminder', description: 'Please try again.', tone: 'error' });
     } finally {
       inFlight.current.delete(key);
     }
@@ -72,8 +77,12 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
 
   const header = (
     <View style={styles.header}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#111827" />
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Back"
+      >
+        <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
       </TouchableOpacity>
       <View style={styles.headerTitleContainer}>
         <Text style={styles.headerTitle}>Places</Text>
@@ -86,7 +95,11 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         {header}
-        <ActivityIndicator style={{ marginTop: 40 }} color="#4F46E5" />
+        <View style={styles.skeletonList}>
+          <SkeletonCard lines={1} />
+          <SkeletonCard lines={1} style={styles.skeletonGap} />
+          <SkeletonCard lines={1} style={styles.skeletonGap} />
+        </View>
       </SafeAreaView>
     );
   }
@@ -97,7 +110,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
       <SectionList
         sections={sections}
         keyExtractor={(item) => `${item.kind}:${item.id}`}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor="#4F46E5" />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.accent} />}
         renderSectionHeader={({ section }) => (
           <Text style={styles.sectionHeader}>{section.title}</Text>
         )}
@@ -112,11 +125,18 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
                   {item.kind === 'place' ? ' · detected' : ''}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => toggleBell(item)} activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity
+                onPress={() => toggleBell(item)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel="Toggle arrival reminders"
+                accessibilityState={{ selected: bellOn }}
+              >
                 <Ionicons
                   name={bellOn ? 'notifications' : 'notifications-off-outline'}
                   size={22}
-                  color={bellOn ? '#0284C7' : '#9CA3AF'}
+                  color={bellOn ? colors.accent : colors.textFaint}
                 />
               </TouchableOpacity>
             </View>
@@ -134,34 +154,48 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    marginLeft: 16,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  sectionHeader: { color: '#6B7280', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 16, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardMain: { flex: 1, marginRight: 12 },
-  name: { color: '#111827', fontSize: 16, fontWeight: '600' },
-  count: { color: '#6B7280', fontSize: 13 },
-  empty: { color: '#6B7280', textAlign: 'center', marginTop: 40 },
-  manage: { padding: 16, alignItems: 'center' },
-  manageText: { color: '#4F46E5', fontSize: 15, fontWeight: '600' },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.bg },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      backgroundColor: c.bg,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    headerTitleContainer: {
+      flex: 1,
+      marginLeft: 16,
+      alignItems: 'center',
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      color: c.text,
+    },
+    sectionHeader: { color: c.textMuted, fontSize: 12, fontFamily: Fonts.bold, textTransform: 'uppercase', marginTop: 16, marginBottom: 8 },
+    card: {
+      backgroundColor: c.bgSurface,
+      borderRadius: 10,
+      padding: 16,
+      marginBottom: 10,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    cardMain: { flex: 1, marginRight: 12 },
+    name: { color: c.text, fontSize: 16, fontFamily: Fonts.semibold },
+    count: { color: c.textMuted, fontSize: 13 },
+    empty: { color: c.textMuted, textAlign: 'center', marginTop: 40 },
+    manage: { padding: 16, alignItems: 'center' },
+    manageText: { color: c.accent, fontSize: 15, fontFamily: Fonts.semibold },
+    skeletonList: { padding: Spacing.lg },
+    skeletonGap: { marginTop: Spacing.md },
+  });

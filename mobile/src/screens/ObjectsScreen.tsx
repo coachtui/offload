@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Alert,
   TouchableOpacity,
   FlatList,
   SectionList,
@@ -26,7 +25,17 @@ import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
-import { AppScreen, AppHeader, AppSearchBar, Colors, Spacing, Radius } from '../components/ui';
+import {
+  AppScreen,
+  AppHeader,
+  AppSearchBar,
+  AppSheet,
+  ConfirmSheet,
+  useToast,
+  Spacing,
+  Radius,
+} from '../components/ui';
+import { Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,14 +61,15 @@ const PRIMARY_FILTERS: Array<{ key: PrimaryFilter; label: string }> = [
   { key: 'saved', label: 'Saved' },
 ];
 
+// Category hues harmonized with the Deep Lagoon palette
 const DOMAIN_COLORS: Record<string, string> = {
-  work: '#3b82f6',
-  personal: '#8b5cf6',
-  health: '#22c55e',
-  family: '#f59e0b',
-  finance: '#06b6d4',
-  project: '#ec4899',
-  misc: '#6b7280',
+  work: '#2C6E8F',
+  personal: '#7A5FB0',
+  health: '#1E7B54',
+  family: '#A1740C',
+  finance: '#0F6B5F',
+  project: '#B0508A',
+  misc: '#5F6B66',
 };
 
 const DOMAIN_LABELS: Record<string, string> = {
@@ -94,16 +104,16 @@ const STATUS_LABELS: Record<NoteStatus, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  open: '#6b7280',
-  active: '#3b82f6',
-  resolved: '#22c55e',
-  archived: '#9ca3af',
+  open: '#5F6B66',
+  active: '#2C6E8F',
+  resolved: '#1E6B4F',
+  archived: '#9AA39E',
 };
 
 const URGENCY_COLORS: Record<string, string> = {
-  high: '#ef4444',
-  medium: '#f59e0b',
-  low: '#22c55e',
+  high: '#C2492F',
+  medium: '#A1740C',
+  low: '#1E6B4F',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -194,6 +204,8 @@ function groupNotesByDate(items: AtomicObject[]): NoteSection[] {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ObjectsScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const route = useRoute<RouteProp<RootStackParamList, 'Objects'>>();
   const geofenceId = route.params?.geofenceId;
   const initialObjectId = route.params?.objectId;
@@ -230,6 +242,12 @@ export function ObjectsScreen({ navigation }: Props) {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // Confirmation / move sheets (replace Alert.alert)
+  const toast = useToast();
+  const [confirmBulkVisible, setConfirmBulkVisible] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [moveSheetVisible, setMoveSheetVisible] = useState(false);
+
   const toggleSelected = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -243,26 +261,20 @@ export function ObjectsScreen({ navigation }: Props) {
     setSelectedIds(new Set());
   }, []);
 
-  const handleBulkDelete = useCallback(() => {
+  const handleBulkDelete = useCallback(async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    Alert.alert(
-      `Delete ${ids.length} note${ids.length === 1 ? '' : 's'}?`,
-      "This can't be undone from the app.",
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await bulkDeleteObjects(ids);
-            if (ok) exitSelection();
-            else Alert.alert("Couldn't delete", 'Please try again.');
-          },
-        },
-      ]
-    );
-  }, [selectedIds, bulkDeleteObjects, exitSelection]);
+    const ok = await bulkDeleteObjects(ids);
+    if (ok) {
+      exitSelection();
+      toast.show({
+        message: `Deleted ${ids.length} note${ids.length === 1 ? '' : 's'}`,
+        tone: 'success',
+      });
+    } else {
+      toast.show({ message: "Couldn't delete", description: 'Please try again.', tone: 'error' });
+    }
+  }, [selectedIds, bulkDeleteObjects, exitSelection, toast]);
 
   const isSearchMode = searchText.trim().length > 0;
   const hasActiveFilters = selectedDomains.length > 0 || selectedTypes.length > 0;
@@ -375,6 +387,8 @@ export function ObjectsScreen({ navigation }: Props) {
         <TouchableOpacity
           style={[styles.filterChip, !filters.categoryId && styles.filterChipActive]}
           onPress={() => { if (filters.categoryId) setFilters({ ...filters, categoryId: undefined }); }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !filters.categoryId }}
         >
           <Text style={[styles.filterChipText, !filters.categoryId && styles.filterChipTextActive]}>All</Text>
         </TouchableOpacity>
@@ -383,6 +397,8 @@ export function ObjectsScreen({ navigation }: Props) {
             key={c.id}
             style={[styles.filterChip, filters.categoryId === c.id && styles.filterChipActive]}
             onPress={() => setFilters({ ...filters, categoryId: c.id })}
+            accessibilityRole="button"
+            accessibilityState={{ selected: filters.categoryId === c.id }}
           >
             <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
             <Text style={[styles.filterChipText, filters.categoryId === c.id && styles.filterChipTextActive]}>{c.name}</Text>
@@ -390,7 +406,7 @@ export function ObjectsScreen({ navigation }: Props) {
         ))}
       </ScrollView>
     );
-  }, [categories, filters, setFilters]);
+  }, [categories, filters, setFilters, styles]);
 
   // ─── Modal / detail actions ───────────────────────────────────────────────
 
@@ -448,30 +464,20 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [selectedObject, handleStatusChange]);
 
-  const handleDeleteNote = useCallback(
-    (objectId: string) => {
-      Alert.alert(
-        'Delete note?',
-        "This note will be removed. You can't undo this from the app.",
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              const ok = await deleteObject(objectId);
-              if (ok) {
-                handleCloseModal();
-              } else {
-                Alert.alert("Couldn't delete", 'Please try again.');
-              }
-            },
-          },
-        ]
-      );
-    },
-    [deleteObject, handleCloseModal]
-  );
+  const handleDeleteNote = useCallback((objectId: string) => {
+    setConfirmDeleteId(objectId);
+  }, []);
+
+  const performDeleteNote = useCallback(async () => {
+    if (!confirmDeleteId) return;
+    const ok = await deleteObject(confirmDeleteId);
+    if (ok) {
+      handleCloseModal();
+      toast.show({ message: 'Note deleted', tone: 'success' });
+    } else {
+      toast.show({ message: "Couldn't delete", description: 'Please try again.', tone: 'error' });
+    }
+  }, [confirmDeleteId, deleteObject, handleCloseModal, toast]);
 
   // ─── Renders: list screen ─────────────────────────────────────────────────
 
@@ -489,6 +495,8 @@ export function ObjectsScreen({ navigation }: Props) {
               key={f.key}
               style={[styles.primaryPill, isActive && styles.primaryPillActive]}
               onPress={() => handlePrimaryFilterPress(f.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
             >
               <Text style={[styles.primaryPillText, isActive && styles.primaryPillTextActive]}>
                 {f.label}
@@ -500,15 +508,18 @@ export function ObjectsScreen({ navigation }: Props) {
       <TouchableOpacity
         style={[styles.filterIconBtn, hasActiveFilters && styles.filterIconBtnActive]}
         onPress={handleOpenFilterSheet}
+        accessibilityRole="button"
+        accessibilityLabel="Filter notes"
+        accessibilityState={{ selected: hasActiveFilters }}
       >
         <Ionicons
           name="options-outline"
           size={18}
-          color={hasActiveFilters ? Colors.accent : Colors.textMuted}
+          color={hasActiveFilters ? colors.accent : colors.textMuted}
         />
       </TouchableOpacity>
     </View>
-  ), [primaryFilter, hasActiveFilters, handlePrimaryFilterPress, handleOpenFilterSheet]);
+  ), [primaryFilter, hasActiveFilters, handlePrimaryFilterPress, handleOpenFilterSheet, styles, colors]);
 
   const renderGeofenceContext = useCallback(() => {
     if (!geofenceId || geofenceObjects.length === 0) return null;
@@ -538,12 +549,13 @@ export function ObjectsScreen({ navigation }: Props) {
         </ScrollView>
       </View>
     );
-  }, [geofenceId, geofenceObjects, handleObjectPress]);
+  }, [geofenceId, geofenceObjects, handleObjectPress, styles]);
 
   const renderDashboardCard = useCallback(() => {
     if (!dashboard) return null;
     const loadLevel = dashboard.cognitiveLoad.level;
-    const loadColor = loadLevel === 'low' ? '#22c55e' : loadLevel === 'moderate' ? '#f59e0b' : '#ef4444';
+    const loadColor =
+      loadLevel === 'low' ? colors.success : loadLevel === 'moderate' ? colors.warning : colors.error;
     const totalNeedsAttention = dashboard.activeCommitments + dashboard.openLoops;
     const message = totalNeedsAttention > 0
       ? `${totalNeedsAttention} item${totalNeedsAttention !== 1 ? 's' : ''} need your attention`
@@ -559,7 +571,7 @@ export function ObjectsScreen({ navigation }: Props) {
             <View style={[styles.dashboardDot, { backgroundColor: loadColor }]} />
             <Text style={styles.dashboardTitle}>{message}</Text>
           </View>
-          <Ionicons name={dashboardExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textFaint} />
+          <Ionicons name={dashboardExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textFaint} />
         </TouchableOpacity>
         {dashboardExpanded && (
           <View style={styles.dashboardBody}>
@@ -580,7 +592,7 @@ export function ObjectsScreen({ navigation }: Props) {
         )}
       </View>
     );
-  }, [dashboard, dashboardExpanded]);
+  }, [dashboard, dashboardExpanded, styles, colors]);
 
   const renderStaleBanner = useCallback(() => {
     if (staleObjects.length === 0) return null;
@@ -595,7 +607,7 @@ export function ObjectsScreen({ navigation }: Props) {
             <View style={styles.staleDot} />
             <Text style={styles.staleBannerTitle}>Don't forget ({staleObjects.length})</Text>
           </View>
-          <Ionicons name={staleExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={Colors.textFaint} />
+          <Ionicons name={staleExpanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textFaint} />
         </TouchableOpacity>
         {staleExpanded && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextCardsRow}>
@@ -620,7 +632,7 @@ export function ObjectsScreen({ navigation }: Props) {
         )}
       </View>
     );
-  }, [staleObjects, staleExpanded, handleObjectPress]);
+  }, [staleObjects, staleExpanded, handleObjectPress, styles, colors]);
 
   const renderNoteCard = useCallback(({ item }: { item: AtomicObject }) => {
     const title = item.title || item.content;
@@ -636,12 +648,15 @@ export function ObjectsScreen({ navigation }: Props) {
         style={[styles.noteRow, isDone && styles.noteRowDone, selectionMode && styles.noteRowSelecting]}
         onPress={() => selectionMode ? toggleSelected(item.id) : handleObjectPress(item)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+        accessibilityState={selectionMode ? { selected: isSelected } : undefined}
       >
         {selectionMode && (
           <Ionicons
             name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
             size={22}
-            color={isSelected ? Colors.accent : '#9ca3af'}
+            color={isSelected ? colors.accent : colors.textFaint}
             style={styles.noteCheckbox}
           />
         )}
@@ -674,7 +689,7 @@ export function ObjectsScreen({ navigation }: Props) {
         </View>
       </TouchableOpacity>
     );
-  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress]);
+  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress, styles, colors]);
 
   const renderSearchResultCard = useCallback(({ item }: { item: RagSearchResult }) => {
     const subtitle = buildCardSubtitle(item.type, item.domain);
@@ -711,14 +726,19 @@ export function ObjectsScreen({ navigation }: Props) {
         </View>
       </TouchableOpacity>
     );
-  }, [handleSearchResultPress]);
+  }, [handleSearchResultPress, styles]);
 
   const renderEmpty = useCallback(() => {
     if (isLoading || searchLoading) return null;
     const hasFilters = isSearchMode || selectedDomains.length > 0 || selectedTypes.length > 0;
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyStateIcon}>{hasFilters ? '🔍' : '📝'}</Text>
+        <Ionicons
+          name={hasFilters ? 'search-outline' : 'document-text-outline'}
+          size={48}
+          color={colors.borderStrong}
+          style={styles.emptyStateIcon}
+        />
         <Text style={styles.emptyStateTitle}>{hasFilters ? 'Nothing here' : 'No notes yet'}</Text>
         <Text style={styles.emptyStateText}>
           {hasFilters
@@ -732,7 +752,7 @@ export function ObjectsScreen({ navigation }: Props) {
         )}
       </View>
     );
-  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, handleClearAllFilters]);
+  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, handleClearAllFilters, styles, colors]);
 
   const renderSectionHeader = useCallback(
     ({ section: { title } }: { section: NoteSection }) => (
@@ -740,17 +760,17 @@ export function ObjectsScreen({ navigation }: Props) {
         <Text style={styles.listSectionHeaderText}>{title}</Text>
       </View>
     ),
-    []
+    [styles]
   );
 
   const renderFooter = useCallback(() => {
     if (!hasMore || isLoading) return null;
     return (
       <View style={styles.loadingFooter}>
-        <ActivityIndicator color={Colors.accent} />
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
-  }, [hasMore, isLoading]);
+  }, [hasMore, isLoading, styles, colors]);
 
   // ─── Filter Sheet ─────────────────────────────────────────────────────────
 
@@ -777,7 +797,7 @@ export function ObjectsScreen({ navigation }: Props) {
           <View style={styles.sheetChipsWrap}>
             {DOMAINS.map((domain) => {
               const isSelected = pendingDomains.includes(domain);
-              const color = DOMAIN_COLORS[domain] ?? '#6b7280';
+              const color = DOMAIN_COLORS[domain] ?? colors.textMuted;
               return (
                 <TouchableOpacity
                   key={domain}
@@ -785,6 +805,8 @@ export function ObjectsScreen({ navigation }: Props) {
                   onPress={() => setPendingDomains(prev =>
                     prev.includes(domain) ? prev.filter(d => d !== domain) : [...prev, domain]
                   )}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
                     {DOMAIN_LABELS[domain] || domain}
@@ -805,6 +827,8 @@ export function ObjectsScreen({ navigation }: Props) {
                   onPress={() => setPendingTypes(prev =>
                     prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
                   )}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text style={[styles.sheetChipText, isSelected && styles.sheetChipTextSelected]}>
                     {TYPE_LABELS[type] || type}
@@ -859,7 +883,7 @@ export function ObjectsScreen({ navigation }: Props) {
               ) : editMode ? (
                 <TouchableOpacity onPress={handleSaveEdit} disabled={isUpdating}>
                   {isUpdating
-                    ? <ActivityIndicator size="small" color={Colors.accent} />
+                    ? <ActivityIndicator size="small" color={colors.accent} />
                     : <Text style={styles.headerEditBtn}>Save</Text>
                   }
                 </TouchableOpacity>
@@ -869,7 +893,7 @@ export function ObjectsScreen({ navigation }: Props) {
 
           {isLoadingDetail ? (
             <View style={styles.modalLoading}>
-              <ActivityIndicator size="large" color={Colors.accent} />
+              <ActivityIndicator size="large" color={colors.accent} />
             </View>
           ) : selectedObject ? (
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
@@ -891,7 +915,7 @@ export function ObjectsScreen({ navigation }: Props) {
                     multiline
                     autoFocus
                     placeholder="Edit your note..."
-                    placeholderTextColor={Colors.textFaint}
+                    placeholderTextColor={colors.textFaint}
                   />
                   {updateError && <Text style={styles.updateError}>{updateError}</Text>}
                 </View>
@@ -917,12 +941,12 @@ export function ObjectsScreen({ navigation }: Props) {
                     <QuickAction
                       icon="notifications-outline"
                       label="Remind Me"
-                      onPress={() => Alert.alert('Coming soon', 'Reminders are coming in a future update.')}
+                      onPress={() => toast.show({ message: 'Coming soon', description: 'Reminders are on the way.' })}
                     />
                     <QuickAction
                       icon="bookmark-outline"
                       label="Pin"
-                      onPress={() => Alert.alert('Coming soon', 'Pinning notes is coming in a future update.')}
+                      onPress={() => toast.show({ message: 'Coming soon', description: 'Pinning notes is on the way.' })}
                     />
                     <QuickAction
                       icon="pencil-outline"
@@ -934,8 +958,8 @@ export function ObjectsScreen({ navigation }: Props) {
                       onPress={() => selectedObject && handleDeleteNote(selectedObject.id)}
                       activeOpacity={0.7}
                     >
-                      <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                      <Text style={[styles.quickActionLabel, { color: '#ef4444' }]}>Delete</Text>
+                      <Ionicons name="trash-outline" size={20} color={colors.error} />
+                      <Text style={[styles.quickActionLabel, { color: colors.error }]}>Delete</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -944,11 +968,14 @@ export function ObjectsScreen({ navigation }: Props) {
                     style={styles.dotsToggle}
                     onPress={() => setDetailsExpanded((v) => !v)}
                     activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel={detailsExpanded ? 'Hide details' : 'Show details'}
+                    accessibilityState={{ expanded: detailsExpanded }}
                   >
                     <Ionicons
                       name={detailsExpanded ? 'chevron-up' : 'ellipsis-horizontal'}
                       size={18}
-                      color={Colors.textFaint}
+                      color={colors.textFaint}
                     />
                   </TouchableOpacity>
 
@@ -963,6 +990,8 @@ export function ObjectsScreen({ navigation }: Props) {
                         <TouchableOpacity
                           style={[styles.categoryChip, !selectedObject?.categoryId && styles.categoryChipActive]}
                           onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: null } as any)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: !selectedObject?.categoryId }}
                         >
                           <Text style={[styles.categoryChipText, !selectedObject?.categoryId && styles.categoryChipTextActive]}>None</Text>
                         </TouchableOpacity>
@@ -971,6 +1000,8 @@ export function ObjectsScreen({ navigation }: Props) {
                             key={c.id}
                             style={[styles.categoryChip, selectedObject?.categoryId === c.id && styles.categoryChipActive, { borderColor: c.color }]}
                             onPress={() => selectedObject && updateObject(selectedObject.id, { categoryId: c.id } as any)}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: selectedObject?.categoryId === c.id }}
                           >
                             <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
                             <Text style={[styles.categoryChipText, selectedObject?.categoryId === c.id && styles.categoryChipTextActive]}>{c.name}</Text>
@@ -1040,6 +1071,17 @@ export function ObjectsScreen({ navigation }: Props) {
             </ScrollView>
           ) : null}
         </KeyboardAvoidingView>
+
+        {/* Rendered inside the modal subtree so it stacks above the pageSheet */}
+        <ConfirmSheet
+          visible={confirmDeleteId != null}
+          onClose={() => setConfirmDeleteId(null)}
+          onConfirm={performDeleteNote}
+          title="Delete note?"
+          message="This note will be removed. You can't undo this from the app."
+          confirmLabel="Delete"
+          destructive
+        />
       </SafeAreaView>
     </Modal>
   );
@@ -1051,14 +1093,22 @@ export function ObjectsScreen({ navigation }: Props) {
       <AppHeader
         title="Notes"
         left={
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={Colors.textSecondary} />
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
           </TouchableOpacity>
         }
         right={
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => navigation.navigate('Categories')}>
-              <Ionicons name="pricetags-outline" size={22} color={Colors.textSecondary} />
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Categories')}
+              accessibilityRole="button"
+              accessibilityLabel="Manage categories"
+            >
+              <Ionicons name="pricetags-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => selectionMode ? exitSelection() : setSelectionMode(true)}>
               <Text style={styles.headerActionText}>{selectionMode ? 'Cancel' : 'Select'}</Text>
@@ -1085,7 +1135,7 @@ export function ObjectsScreen({ navigation }: Props) {
 
       {(isLoading || searchLoading) && (isSearchMode ? searchResults.length === 0 : objects.length === 0) ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.accent} />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : !isSearchMode && error && objects.length === 0 ? (
         <View style={styles.errorContainer}>
@@ -1119,8 +1169,8 @@ export function ObjectsScreen({ navigation }: Props) {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={refresh}
-              tintColor={Colors.accent}
-              colors={[Colors.accent]}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
             />
           }
           showsVerticalScrollIndicator={false}
@@ -1134,25 +1184,15 @@ export function ObjectsScreen({ navigation }: Props) {
             <TouchableOpacity
               style={[styles.selectionMoveBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
               disabled={selectedIds.size === 0}
-              onPress={() => {
-                const ids = Array.from(selectedIds);
-                Alert.alert('Move to category', undefined, [
-                  { text: 'None (uncategorize)', onPress: async () => { if (await bulkMoveObjects(ids, null)) exitSelection(); } },
-                  ...categories.map((c) => ({
-                    text: c.name,
-                    onPress: async () => { if (await bulkMoveObjects(ids, c.id)) exitSelection(); },
-                  })),
-                  { text: 'Cancel', style: 'cancel' as const },
-                ]);
-              }}
+              onPress={() => setMoveSheetVisible(true)}
             >
-              <Ionicons name="pricetag-outline" size={20} color="#3b82f6" />
+              <Ionicons name="pricetag-outline" size={20} color={colors.accent} />
               <Text style={styles.selectionMoveText}>Move</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.selectionDeleteBtn, selectedIds.size === 0 && { opacity: 0.5 }]}
               disabled={selectedIds.size === 0}
-              onPress={handleBulkDelete}
+              onPress={() => setConfirmBulkVisible(true)}
             >
               <Ionicons name="trash-outline" size={20} color="#fff" />
               <Text style={styles.selectionDeleteText}>Delete</Text>
@@ -1163,6 +1203,48 @@ export function ObjectsScreen({ navigation }: Props) {
 
       {renderDetailModal()}
       {renderFilterSheet()}
+
+      <ConfirmSheet
+        visible={confirmBulkVisible}
+        onClose={() => setConfirmBulkVisible(false)}
+        onConfirm={handleBulkDelete}
+        title={`Delete ${selectedIds.size} note${selectedIds.size === 1 ? '' : 's'}?`}
+        message="This can't be undone from the app."
+        confirmLabel="Delete"
+        destructive
+      />
+
+      <AppSheet
+        visible={moveSheetVisible}
+        onClose={() => setMoveSheetVisible(false)}
+        title="Move to category"
+      >
+        <ScrollView style={styles.moveSheetList}>
+          <TouchableOpacity
+            style={styles.moveSheetRow}
+            onPress={async () => {
+              setMoveSheetVisible(false);
+              if (await bulkMoveObjects(Array.from(selectedIds), null)) exitSelection();
+            }}
+          >
+            <Ionicons name="remove-circle-outline" size={18} color={colors.textMuted} />
+            <Text style={styles.moveSheetRowText}>None (uncategorize)</Text>
+          </TouchableOpacity>
+          {categories.map((c) => (
+            <TouchableOpacity
+              key={c.id}
+              style={styles.moveSheetRow}
+              onPress={async () => {
+                setMoveSheetVisible(false);
+                if (await bulkMoveObjects(Array.from(selectedIds), c.id)) exitSelection();
+              }}
+            >
+              <View style={[styles.swatchSm, { backgroundColor: c.color }]} />
+              <Text style={styles.moveSheetRowText}>{c.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </AppSheet>
     </AppScreen>
   );
 }
@@ -1170,6 +1252,7 @@ export function ObjectsScreen({ navigation }: Props) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function DashStat({ label, value }: { label: string; value: number }) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={styles.dashStat}>
       <Text style={styles.dashStatValue}>{value}</Text>
@@ -1187,6 +1270,8 @@ interface QuickActionProps {
 }
 
 function QuickAction({ icon, label, onPress, disabled, active }: QuickActionProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   return (
     <TouchableOpacity
       style={[styles.quickAction, disabled && styles.quickActionDisabled]}
@@ -1196,7 +1281,7 @@ function QuickAction({ icon, label, onPress, disabled, active }: QuickActionProp
       <Ionicons
         name={icon as any}
         size={20}
-        color={active ? Colors.success : disabled ? Colors.textFaint : Colors.textSecondary}
+        color={active ? colors.success : disabled ? colors.textFaint : colors.textSecondary}
       />
       <Text style={[
         styles.quickActionLabel,
@@ -1219,6 +1304,7 @@ interface DetailRowProps {
 }
 
 function DetailRow({ label, value, valueColor, capitalize, isLast, customValue }: DetailRowProps) {
+  const styles = useThemedStyles(createStyles);
   return (
     <View style={[styles.detailRow, !isLast && styles.detailRowDivider]}>
       <Text style={styles.detailRowLabel}>{label}</Text>
@@ -1242,9 +1328,11 @@ interface StatusPickerProps {
 }
 
 function StatusPicker({ currentState, onChangeState, updating }: StatusPickerProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const statuses: NoteStatus[] = ['open', 'resolved', 'archived'];
   if (updating) {
-    return <ActivityIndicator size="small" color={Colors.accent} />;
+    return <ActivityIndicator size="small" color={colors.accent} />;
   }
   return (
     <View style={styles.statusPicker}>
@@ -1255,6 +1343,8 @@ function StatusPicker({ currentState, onChangeState, updating }: StatusPickerPro
             key={s}
             style={[styles.statusPill, isActive && { backgroundColor: STATUS_COLORS[s], borderColor: STATUS_COLORS[s] }]}
             onPress={() => !isActive && onChangeState(s)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
           >
             <Text style={[styles.statusPillText, isActive && styles.statusPillTextActive]}>
               {STATUS_LABELS[s]}
@@ -1268,13 +1358,13 @@ function StatusPicker({ currentState, onChangeState, updating }: StatusPickerPro
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const createStyles = (c: ThemeColors) => StyleSheet.create({
   // Search
   searchContainer: {
     paddingHorizontal: Spacing.xxl,
     paddingTop: Spacing.sm,
     paddingBottom: Spacing.md,
-    backgroundColor: Colors.bg,
+    backgroundColor: c.bg,
   },
 
   // Primary filter bar
@@ -1282,8 +1372,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.bg,
+    borderBottomColor: c.border,
+    backgroundColor: c.bg,
   },
   primaryFilterContent: {
     paddingHorizontal: Spacing.lg,
@@ -1296,18 +1386,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: Radius.full,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
   primaryPillActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   primaryPillText: {
-    color: Colors.textMuted,
+    color: c.textMuted,
     fontSize: 13,
-    fontWeight: '500',
+    fontFamily: Fonts.medium,
   },
   primaryPillTextActive: {
     color: '#FFFFFF',
@@ -1316,31 +1406,31 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
   filterIconBtnActive: {
-    backgroundColor: Colors.accentLight,
-    borderColor: Colors.accentBorder,
+    backgroundColor: c.accentLight,
+    borderColor: c.accentBorder,
   },
 
   // Loading / Error
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
-  errorText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 16 },
+  errorText: { fontSize: 14, color: c.textMuted, textAlign: 'center', marginBottom: 16 },
   retryBtn: {
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
-  retryBtnText: { color: Colors.textSecondary, fontWeight: '500' },
+  retryBtnText: { color: c.textSecondary, fontFamily: Fonts.medium },
 
   // List
   listContent: {
@@ -1351,28 +1441,28 @@ const styles = StyleSheet.create({
   listEmpty: { flex: 1 },
   loadingFooter: { paddingVertical: 16, alignItems: 'center' },
   listSectionHeader: {
-    backgroundColor: Colors.bg,
+    backgroundColor: c.bg,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xs,
   },
   listSectionHeaderText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textMuted,
+    fontFamily: Fonts.semibold,
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
 
   // Note row (card)
   noteRow: {
-    backgroundColor: Colors.bg,
+    backgroundColor: c.bgSurface,
     paddingHorizontal: Spacing.md,
     paddingVertical: 14,
     borderRadius: Radius.md,
     marginBottom: Spacing.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -1382,18 +1472,18 @@ const styles = StyleSheet.create({
   noteRowDone: { opacity: 0.5 },
   noteTitle: {
     fontSize: 15,
-    fontWeight: '500',
-    color: Colors.text,
+    fontFamily: Fonts.medium,
+    color: c.text,
     lineHeight: 22,
     marginBottom: 5,
   },
   noteTitleDone: {
     textDecorationLine: 'line-through',
-    color: Colors.textMuted,
+    color: c.textMuted,
   },
   noteBody: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: c.textSecondary,
     lineHeight: 19,
     marginBottom: 5,
   },
@@ -1402,36 +1492,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
   },
-  noteSubtitle: { fontSize: 12, color: Colors.textMuted },
-  noteDot: { fontSize: 12, color: Colors.textFaint },
-  noteDate: { fontSize: 12, color: Colors.textFaint },
+  noteSubtitle: { fontSize: 12, color: c.textMuted },
+  noteDot: { fontSize: 12, color: c.textFaint },
+  noteDate: { fontSize: 12, color: c.textFaint },
   urgencyDot: { width: 6, height: 6, borderRadius: 3, marginRight: 3 },
-  noteUrgency: { fontSize: 11, fontWeight: '500' },
-  noteWhy: { color: '#6B7280', fontSize: 12, fontStyle: 'italic', marginTop: 2 },
-  noteNextAction: { fontSize: 12, color: Colors.accent, marginTop: 5 },
-  matchScore: { fontSize: 12, color: Colors.accent, fontWeight: '500' },
+  noteUrgency: { fontSize: 11, fontFamily: Fonts.medium },
+  noteWhy: { color: c.textMuted, fontSize: 12, fontStyle: 'italic', marginTop: 2 },
+  noteNextAction: { fontSize: 12, color: c.accent, marginTop: 5 },
+  matchScore: { fontSize: 12, color: c.accent, fontFamily: Fonts.medium },
 
   // Empty State
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 48 },
-  emptyStateIcon: { fontSize: 52, marginBottom: 16 },
-  emptyStateTitle: { fontSize: 18, fontWeight: '600', color: Colors.text, marginBottom: 8 },
-  emptyStateText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  emptyStateIcon: { marginBottom: 16 },
+  emptyStateTitle: { fontSize: 18, fontFamily: Fonts.semibold, color: c.text, marginBottom: 8 },
+  emptyStateText: { fontSize: 14, color: c.textMuted, textAlign: 'center', lineHeight: 20 },
   clearFiltersBtn: {
     marginTop: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderRadius: Radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
-  clearFiltersBtnText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '500' },
+  clearFiltersBtnText: { color: c.textSecondary, fontSize: 14, fontFamily: Fonts.medium },
 
   // Context banners (geofence + stale)
   geofenceBanner: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: '#EFF6FF',
+    borderBottomColor: c.border,
+    backgroundColor: c.accentLight,
     paddingBottom: 12,
   },
   geofenceBannerHeader: {
@@ -1441,15 +1531,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  geofenceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#3b82f6' },
-  geofenceBannerTitle: { color: '#1d4ed8', fontSize: 13, fontWeight: '600' },
-  geofenceCard: { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' },
-  geofenceCardLabel: { color: '#3b82f6', fontSize: 10, fontWeight: '700', marginBottom: 4, textTransform: 'uppercase' },
+  geofenceDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.accent },
+  geofenceBannerTitle: { color: c.accent, fontSize: 13, fontFamily: Fonts.semibold },
+  geofenceCard: { backgroundColor: c.bgSurface, borderColor: c.accentBorder },
+  geofenceCardLabel: { color: c.accent, fontSize: 10, fontFamily: Fonts.bold, marginBottom: 4, textTransform: 'uppercase' },
 
   staleBanner: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.warningBg,
+    borderBottomColor: c.border,
+    backgroundColor: c.warningBg,
   },
   staleBannerHeader: {
     flexDirection: 'row',
@@ -1459,27 +1549,27 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   staleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  staleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f59e0b' },
-  staleBannerTitle: { color: Colors.warning, fontSize: 13, fontWeight: '600' },
-  staleCardAge: { color: Colors.warning, fontSize: 10, fontWeight: '700', marginBottom: 4 },
+  staleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.warning },
+  staleBannerTitle: { color: c.warning, fontSize: 13, fontFamily: Fonts.semibold },
+  staleCardAge: { color: c.warning, fontSize: 10, fontFamily: Fonts.bold, marginBottom: 4 },
 
   contextCardsRow: { paddingHorizontal: 16, paddingBottom: 12, gap: 10, flexDirection: 'row' },
   contextCard: {
     width: 148,
-    backgroundColor: Colors.bg,
+    backgroundColor: c.bgSurface,
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: Colors.warningBorder,
+    borderColor: c.warningBorder,
   },
-  contextCardContent: { color: Colors.text, fontSize: 12, lineHeight: 16, marginBottom: 4 },
-  contextCardAction: { color: Colors.textMuted, fontSize: 11, fontStyle: 'italic' },
+  contextCardContent: { color: c.text, fontSize: 12, lineHeight: 16, marginBottom: 4 },
+  contextCardAction: { color: c.textMuted, fontSize: 11, fontStyle: 'italic' },
 
   // Dashboard
   dashboardCard: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: c.bgSurface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    borderBottomColor: c.border,
   },
   dashboardHeader: {
     flexDirection: 'row',
@@ -1490,22 +1580,22 @@ const styles = StyleSheet.create({
   },
   dashboardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dashboardDot: { width: 8, height: 8, borderRadius: 4 },
-  dashboardTitle: { color: Colors.text, fontSize: 13, fontWeight: '500' },
+  dashboardTitle: { color: c.text, fontSize: 13, fontFamily: Fonts.medium },
   dashboardBody: { paddingHorizontal: 16, paddingBottom: 12 },
   dashboardGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   dashStat: {
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderRadius: Radius.sm,
     padding: 10,
     minWidth: 80,
     alignItems: 'center',
   },
-  dashStatValue: { color: Colors.text, fontSize: 18, fontWeight: '700' },
-  dashStatLabel: { color: Colors.textMuted, fontSize: 10, marginTop: 2 },
-  dashboardMeta: { color: Colors.textMuted, fontSize: 12 },
+  dashStatValue: { color: c.text, fontSize: 18, fontFamily: Fonts.bold },
+  dashStatLabel: { color: c.textMuted, fontSize: 10, marginTop: 2 },
+  dashboardMeta: { color: c.textMuted, fontSize: 12 },
 
   // Filter sheet
-  sheetContainer: { flex: 1, backgroundColor: Colors.bg },
+  sheetContainer: { flex: 1, backgroundColor: c.bg },
   sheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1513,16 +1603,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xxl,
     paddingVertical: Spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    borderBottomColor: c.border,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
-  sheetCancel: { color: Colors.textMuted, fontSize: 15 },
-  sheetReset: { color: Colors.accent, fontSize: 15 },
+  sheetTitle: { fontSize: 16, fontFamily: Fonts.semibold, color: c.text },
+  sheetCancel: { color: c.textMuted, fontSize: 15 },
+  sheetReset: { color: c.accent, fontSize: 15 },
   sheetBody: { flex: 1, padding: Spacing.xxl },
   sheetSectionLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textMuted,
+    fontFamily: Fonts.semibold,
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: Spacing.md,
@@ -1532,63 +1622,63 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: Radius.full,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
-  sheetChipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  sheetChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  sheetChipSelected: { backgroundColor: c.primary, borderColor: c.primary },
+  sheetChipText: { fontSize: 13, color: c.textSecondary, fontFamily: Fonts.medium },
   sheetChipTextSelected: { color: '#FFFFFF' },
   sheetFooter: {
     padding: Spacing.xxl,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.border,
+    borderTopColor: c.border,
   },
   applyBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: Radius.md,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  applyBtnText: { color: '#fff', fontWeight: '600', fontSize: 16 },
+  applyBtnText: { color: '#fff', fontFamily: Fonts.semibold, fontSize: 16 },
 
   // Detail modal
-  modalContainer: { flex: 1, backgroundColor: Colors.bg },
+  modalContainer: { flex: 1, backgroundColor: c.bg },
   modalKeyboardView: { flex: 1 },
   modalLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   modalScroll: { flex: 1, paddingHorizontal: Spacing.xxl },
-  headerCloseBtn: { color: Colors.textMuted, fontSize: 15 },
-  headerCancelBtn: { color: Colors.textMuted, fontSize: 15 },
-  headerEditBtn: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
+  headerCloseBtn: { color: c.textMuted, fontSize: 15 },
+  headerCancelBtn: { color: c.textMuted, fontSize: 15 },
+  headerEditBtn: { color: c.accent, fontSize: 15, fontFamily: Fonts.semibold },
 
   noteSummaryLine: {
     fontSize: 13,
-    color: Colors.textMuted,
+    color: c.textMuted,
     marginTop: Spacing.md,
     marginBottom: Spacing.lg,
     textTransform: 'capitalize',
   },
   detailNoteContent: {
     fontSize: 17,
-    color: Colors.text,
+    color: c.text,
     lineHeight: 27,
     marginBottom: Spacing.xxl,
   },
 
   editSection: { marginBottom: Spacing.xxl },
   editInput: {
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderRadius: Radius.sm,
     padding: Spacing.lg,
-    color: Colors.text,
+    color: c.text,
     fontSize: 16,
     lineHeight: 24,
     minHeight: 140,
     textAlignVertical: 'top',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
-  updateError: { color: Colors.error, fontSize: 13, marginTop: 8 },
+  updateError: { color: c.error, fontSize: 13, marginTop: 8 },
 
   // Quick actions
   quickActionsRow: {
@@ -1600,20 +1690,20 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: Spacing.md,
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: c.bgSurface,
     borderRadius: Radius.md,
     gap: 4,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
   quickActionDisabled: { opacity: 0.35 },
-  quickActionLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '500' },
-  quickActionLabelActive: { color: Colors.success },
-  quickActionLabelDisabled: { color: Colors.textFaint },
+  quickActionLabel: { fontSize: 11, color: c.textSecondary, fontFamily: Fonts.medium },
+  quickActionLabelActive: { color: c.success },
+  quickActionLabelDisabled: { color: c.textFaint },
 
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.border,
+    backgroundColor: c.border,
     marginBottom: Spacing.xxl,
   },
   dotsToggle: {
@@ -1624,17 +1714,17 @@ const styles = StyleSheet.create({
   // Details section
   sectionLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textMuted,
+    fontFamily: Fonts.semibold,
+    color: c.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: Spacing.md,
   },
   detailsCard: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: c.bgSurface,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
     overflow: 'hidden',
   },
   detailRow: {
@@ -1646,13 +1736,13 @@ const styles = StyleSheet.create({
   },
   detailRowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    borderBottomColor: c.border,
   },
-  detailRowLabel: { fontSize: 14, color: Colors.textMuted },
+  detailRowLabel: { fontSize: 14, color: c.textMuted },
   detailRowValue: {
     fontSize: 14,
-    color: Colors.text,
-    fontWeight: '500',
+    color: c.text,
+    fontFamily: Fonts.medium,
     flex: 1,
     textAlign: 'right',
   },
@@ -1660,7 +1750,7 @@ const styles = StyleSheet.create({
 
   // Header action (Select / Cancel toggle + Categories icon)
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  headerActionText: { color: Colors.accent, fontSize: 15, fontWeight: '600' },
+  headerActionText: { color: c.accent, fontSize: 15, fontFamily: Fonts.semibold },
 
   // Selection mode card layout
   noteRowSelecting: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -1675,39 +1765,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#fff',
+    borderTopColor: c.border,
+    backgroundColor: c.bgSurface,
   },
-  selectionCount: { fontSize: 15, color: '#374151', fontWeight: '600' },
+  selectionCount: { fontSize: 15, color: c.textSecondary, fontFamily: Fonts.semibold },
   selectionActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   selectionMoveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: c.bgSurface,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.md,
     gap: 6,
     borderWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: c.accentBorder,
   },
-  selectionMoveText: { color: '#3b82f6', fontWeight: '600' },
+  selectionMoveText: { color: c.accent, fontFamily: Fonts.semibold },
   selectionDeleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ef4444',
+    backgroundColor: c.error,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.md,
     gap: 6,
   },
-  selectionDeleteText: { color: '#fff', fontWeight: '600' },
+  selectionDeleteText: { color: '#FFFFFF', fontFamily: Fonts.semibold },
+
+  // Move-to-category sheet
+  moveSheetList: { maxHeight: 360 },
+  moveSheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
+  },
+  moveSheetRowText: { fontSize: 15, color: c.text, fontFamily: Fonts.medium },
 
   // Category filter chips (list screen)
   filterChipsRow: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.bg,
+    borderBottomColor: c.border,
+    backgroundColor: c.bg,
   },
   filterChipsContent: {
     paddingHorizontal: Spacing.lg,
@@ -1722,19 +1824,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: Radius.full,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
     gap: 5,
   },
   filterChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   filterChipText: {
     fontSize: 13,
-    color: Colors.textSecondary,
-    fontWeight: '500',
+    color: c.textSecondary,
+    fontFamily: Fonts.medium,
   },
   filterChipTextActive: {
     color: '#FFFFFF',
@@ -1748,16 +1850,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: Radius.full,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: c.border,
     gap: 5,
   },
   categoryChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
-  categoryChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '500' },
+  categoryChipText: { fontSize: 13, color: c.textSecondary, fontFamily: Fonts.medium },
   categoryChipTextActive: { color: '#FFFFFF' },
   swatchSm: { width: 10, height: 10, borderRadius: 5 },
 
@@ -1768,23 +1870,23 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.bgMuted,
+    borderColor: c.border,
+    backgroundColor: c.bgMuted,
   },
-  statusPillText: { fontSize: 12, color: Colors.textMuted },
-  statusPillTextActive: { color: '#fff', fontWeight: '600' },
+  statusPillText: { fontSize: 12, color: c.textMuted },
+  statusPillTextActive: { color: '#fff', fontFamily: Fonts.semibold },
 
   // Keywords
   keywordsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   keywordPill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: Colors.bgMuted,
+    backgroundColor: c.bgMuted,
     borderRadius: Radius.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
   },
-  keywordText: { fontSize: 12, color: Colors.textSecondary },
+  keywordText: { fontSize: 12, color: c.textSecondary },
 
   // Advanced details
   advancedToggle: {
@@ -1794,12 +1896,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.lg,
     marginTop: Spacing.lg,
   },
-  advancedToggleText: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' },
+  advancedToggleText: { fontSize: 13, color: c.textMuted, fontFamily: Fonts.medium },
   advancedCard: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: c.bgSurface,
     borderRadius: Radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderColor: c.border,
     overflow: 'hidden',
     marginBottom: Spacing.lg,
   },
@@ -1807,9 +1909,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    borderBottomColor: c.border,
   },
   entitiesList: { marginTop: 6 },
-  entityItem: { fontSize: 13, color: Colors.text, lineHeight: 20 },
-  entityTypeLabel: { color: Colors.textMuted, textTransform: 'capitalize' },
+  entityItem: { fontSize: 13, color: c.text, lineHeight: 20 },
+  entityTypeLabel: { color: c.textMuted, textTransform: 'capitalize' },
 });

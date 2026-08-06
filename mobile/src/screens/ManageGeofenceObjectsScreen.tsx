@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +20,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService } from '../services/api';
 import { AtomicObject } from '../types';
+import { useToast, Spacing, Radius } from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type ManageRoute = RouteProp<RootStackParamList, 'ManageGeofenceObjects'>;
 type ManageNav = NativeStackNavigationProp<RootStackParamList, 'ManageGeofenceObjects'>;
@@ -32,6 +33,9 @@ interface Props {
 export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
   const route = useRoute<ManageRoute>();
   const { geofenceId, geofenceName } = route.params;
+  const toast = useToast();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
 
   // Currently linked objects (loaded from API on mount)
   const [linkedObjects, setLinkedObjects] = useState<AtomicObject[]>([]);
@@ -94,9 +98,9 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
     } catch (err: any) {
       console.error('[ManageGeofenceObjects] Failed to link object:', err.message);
       setLinkedIds((prev) => prev.filter((x) => x !== objectId));
-      Alert.alert('Error', 'Failed to link note. Please try again.');
+      toast.show({ message: "Couldn't link note", description: 'Please try again.', tone: 'error' });
     }
-  }, [geofenceId]);
+  }, [geofenceId, toast]);
 
   const handleUnlink = useCallback(async (objectId: string) => {
     // Optimistic update
@@ -109,9 +113,9 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
       console.error('[ManageGeofenceObjects] Failed to unlink object:', err.message);
       // Re-fetch to restore correct state
       await loadLinked();
-      Alert.alert('Error', 'Failed to unlink note. Please try again.');
+      toast.show({ message: "Couldn't unlink note", description: 'Please try again.', tone: 'error' });
     }
-  }, [geofenceId, loadLinked]);
+  }, [geofenceId, loadLinked, toast]);
 
   // ─── Filter ────────────────────────────────────────────────────────────────
 
@@ -128,7 +132,7 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
     if (linkedLoading) {
       return (
         <View style={styles.sectionLoading}>
-          <ActivityIndicator color="#4F46E5" />
+          <ActivityIndicator color={colors.accent} />
         </View>
       );
     }
@@ -152,8 +156,13 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
                 {obj.domain && <Text style={[styles.badge, styles.domainBadge]}>{obj.domain}</Text>}
               </View>
             </View>
-            <TouchableOpacity onPress={() => handleUnlink(obj.id)} style={styles.unlinkButton}>
-              <Ionicons name="close-circle" size={22} color="#EF4444" />
+            <TouchableOpacity
+              onPress={() => handleUnlink(obj.id)}
+              style={styles.unlinkButton}
+              accessibilityRole="button"
+              accessibilityLabel="Unlink note"
+            >
+              <Ionicons name="close-circle" size={22} color={colors.error} />
             </TouchableOpacity>
           </View>
         ))}
@@ -165,8 +174,12 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
           <Text style={styles.headerTitle}>Linked Notes</Text>
@@ -197,7 +210,7 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
               <TextInput
                 style={styles.searchInput}
                 placeholder="Filter notes..."
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={colors.textFaint}
                 value={searchText}
                 onChangeText={setSearchText}
                 autoCorrect={false}
@@ -213,6 +226,9 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
               style={[styles.objectRow, isLinked && styles.objectRowLinked]}
               onPress={() => isLinked ? handleUnlink(item.id) : handleLink(item.id)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${isLinked ? 'Unlink' : 'Link'} note: ${label}`}
+              accessibilityState={{ selected: isLinked }}
             >
               <View style={styles.objectRowContent}>
                 <Text style={styles.objectRowLabel} numberOfLines={2}>{label}</Text>
@@ -225,7 +241,7 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
                 <Ionicons
                   name={isLinked ? 'checkmark-circle' : 'add-circle-outline'}
                   size={24}
-                  color={isLinked ? '#4F46E5' : '#9CA3AF'}
+                  color={isLinked ? colors.accent : colors.textFaint}
                 />
               </View>
             </TouchableOpacity>
@@ -234,7 +250,7 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
         ListEmptyComponent={
           allLoading ? (
             <View style={styles.sectionLoading}>
-              <ActivityIndicator color="#4F46E5" />
+              <ActivityIndicator color={colors.accent} />
               <Text style={styles.loadingText}>Loading notes...</Text>
             </View>
           ) : (
@@ -251,160 +267,169 @@ export default function ManageGeofenceObjectsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTextContainer: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  headerSpacer: {
-    width: 24,
-  },
-  listContent: {
-    paddingBottom: 40,
-  },
-  section: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  sectionLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 16,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#9CA3AF',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-    marginHorizontal: 0,
-  },
-  // Linked rows
-  linkedEmpty: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    padding: 16,
-    alignItems: 'center',
-  },
-  linkedEmptyText: {
-    fontSize: 13,
-    color: '#9CA3AF',
-  },
-  linkedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  linkedRowContent: {
-    flex: 1,
-  },
-  linkedRowLabel: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  linkedRowMeta: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 4,
-  },
-  unlinkButton: {
-    marginLeft: 10,
-    padding: 4,
-  },
-  // All objects list
-  searchInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#111827',
-    marginBottom: 4,
-  },
-  objectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  objectRowLinked: {
-    backgroundColor: '#F5F3FF',
-  },
-  objectRowContent: {
-    flex: 1,
-  },
-  objectRowLabel: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  objectRowMeta: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 4,
-  },
-  badge: {
-    fontSize: 11,
-    color: '#6B7280',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    textTransform: 'capitalize',
-    overflow: 'hidden',
-  },
-  domainBadge: {
-    color: '#4F46E5',
-    backgroundColor: '#EEF2FF',
-  },
-  linkedIndicator: {
-    marginLeft: 12,
-  },
-  addIndicator: {
-    marginLeft: 12,
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 14,
+      backgroundColor: c.bg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    headerTextContainer: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    headerTitle: {
+      fontSize: 17,
+      fontFamily: Fonts.bold,
+      color: c.text,
+    },
+    headerSubtitle: {
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      marginTop: 2,
+    },
+    headerSpacer: {
+      width: 24,
+    },
+    listContent: {
+      paddingBottom: 40,
+    },
+    section: {
+      padding: Spacing.lg,
+      paddingBottom: Spacing.sm,
+    },
+    sectionTitle: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 12,
+    },
+    sectionLoading: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: Spacing.lg,
+    },
+    loadingText: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.textFaint,
+    },
+    divider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: c.border,
+      marginHorizontal: 0,
+    },
+    // Linked rows
+    linkedEmpty: {
+      backgroundColor: c.bgMuted,
+      borderRadius: Radius.sm,
+      padding: Spacing.lg,
+      alignItems: 'center',
+    },
+    linkedEmptyText: {
+      fontSize: 13,
+      fontFamily: Fonts.regular,
+      color: c.textFaint,
+    },
+    linkedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.bgSurface,
+      borderRadius: Radius.sm,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    linkedRowContent: {
+      flex: 1,
+    },
+    linkedRowLabel: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      lineHeight: 20,
+    },
+    linkedRowMeta: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 4,
+    },
+    unlinkButton: {
+      marginLeft: 10,
+      padding: 4,
+    },
+    // All objects list
+    searchInput: {
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderRadius: Radius.sm,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      marginBottom: 4,
+    },
+    objectRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: 14,
+      backgroundColor: c.bgSurface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    objectRowLinked: {
+      backgroundColor: c.accentLight,
+    },
+    objectRowContent: {
+      flex: 1,
+    },
+    objectRowLabel: {
+      fontSize: 14,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      lineHeight: 20,
+    },
+    objectRowMeta: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 4,
+    },
+    badge: {
+      fontSize: 11,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      backgroundColor: c.bgMuted,
+      borderRadius: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      textTransform: 'capitalize',
+      overflow: 'hidden',
+    },
+    domainBadge: {
+      color: c.accent,
+      backgroundColor: c.accentLight,
+    },
+    linkedIndicator: {
+      marginLeft: 12,
+    },
+    addIndicator: {
+      marginLeft: 12,
+    },
+  });

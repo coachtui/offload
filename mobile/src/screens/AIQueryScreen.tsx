@@ -14,9 +14,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAI, AIMessage } from '../hooks/useAI';
 import { useVoiceDictation } from '../hooks/useVoiceDictation';
-import { AppScreen, AppHeader, Colors, Spacing } from '../components/ui';
+import { AppScreen, AppHeader, Spacing } from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 export default function AIQueryScreen({ navigation, route }: any) {
+  const styles = useThemedStyles(createStyles);
+  const { colors } = useTheme();
   const initialQuery: string | undefined = route?.params?.initialQuery;
   const [inputText, setInputText] = useState(initialQuery ?? '');
   const { messages, loading, error, askQuestion, clearConversation } = useAI();
@@ -123,7 +126,10 @@ export default function AIQueryScreen({ navigation, route }: any) {
               </Text>
             )}
             {item.hasContradictions && (
-              <Text style={styles.contradictionText}>⚠ Contradictions found</Text>
+              <View style={styles.contradictionRow}>
+                <Ionicons name="alert-circle-outline" size={13} color={colors.warning} />
+                <Text style={styles.contradictionText}>Contradictions found</Text>
+              </View>
             )}
             <Text style={styles.timestamp}>
               {new Date(item.timestamp).toLocaleTimeString(undefined, {
@@ -140,7 +146,7 @@ export default function AIQueryScreen({ navigation, route }: any) {
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="chatbubbles-outline" size={80} color="#C7D2FE" />
+      <Ionicons name="chatbubbles-outline" size={80} color={colors.accentBorder} />
       <Text style={styles.emptyStateTitle}>Ask Offload</Text>
       <Text style={styles.emptyStateText}>
         Ask anything about your notes.
@@ -166,14 +172,22 @@ export default function AIQueryScreen({ navigation, route }: any) {
         title="Ask Offload"
         subtitle={messages.length === 0 ? 'Ask me anything' : `${messages.length} messages`}
         left={
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={Colors.textSecondary} />
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.textSecondary} />
           </TouchableOpacity>
         }
         right={
           messages.length > 0 ? (
-            <TouchableOpacity onPress={clearConversation}>
-              <Ionicons name="trash-outline" size={22} color={Colors.error} />
+            <TouchableOpacity
+              onPress={clearConversation}
+              accessibilityRole="button"
+              accessibilityLabel="Clear conversation"
+            >
+              <Ionicons name="trash-outline" size={22} color={colors.error} />
             </TouchableOpacity>
           ) : undefined
         }
@@ -182,7 +196,7 @@ export default function AIQueryScreen({ navigation, route }: any) {
       {/* Error Banner */}
       {error && (
         <View style={styles.errorBanner}>
-          <Ionicons name="alert-circle" size={20} color="#DC2626" />
+          <Ionicons name="alert-circle" size={20} color={colors.error} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
@@ -207,7 +221,7 @@ export default function AIQueryScreen({ navigation, route }: any) {
         {/* Loading Indicator */}
         {loading && (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color="#4F46E5" />
+            <ActivityIndicator size="small" color={colors.accent} />
             <Text style={styles.loadingText}>Thinking...</Text>
           </View>
         )}
@@ -221,7 +235,7 @@ export default function AIQueryScreen({ navigation, route }: any) {
           <TextInput
             style={styles.input}
             placeholder="Ask about your notes..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textFaint}
             value={inputText}
             onChangeText={setInputText}
             multiline
@@ -234,22 +248,26 @@ export default function AIQueryScreen({ navigation, route }: any) {
             style={styles.micButton}
             onPress={handleMicPress}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel={isDictating ? 'Stop dictation' : 'Start dictation'}
           >
             <Ionicons
               name={isDictating ? 'stop-circle' : 'mic-outline'}
               size={24}
-              color={loading ? '#9CA3AF' : isDictating ? '#EF4444' : '#6B7280'}
+              color={loading ? colors.textFaint : isDictating ? colors.error : colors.textMuted}
             />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.sendButton, (!inputText.trim() || loading || isDictating) && styles.sendButtonDisabled]}
             onPress={handleSend}
             disabled={!inputText.trim() || loading || isDictating}
+            accessibilityRole="button"
+            accessibilityLabel="Send question"
           >
             <Ionicons
               name="send"
               size={20}
-              color={!inputText.trim() || loading || isDictating ? '#9CA3AF' : '#FFFFFF'}
+              color={!inputText.trim() || loading || isDictating ? colors.textFaint : '#FFFFFF'}
             />
           </TouchableOpacity>
         </View>
@@ -265,197 +283,198 @@ const EXAMPLE_QUESTIONS = [
   'What ideas have I been thinking about?',
 ];
 
-const styles = StyleSheet.create({
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#FECACA',
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#DC2626',
-    marginLeft: 8,
-  },
-  messagesContainer: {
-    flex: 1,
-  },
-  messagesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-    flexGrow: 1,
-  },
-  messageContainer: {
-    marginBottom: 16,
-    alignItems: 'flex-start',
-  },
-  userMessageContainer: {
-    alignItems: 'flex-end',
-  },
-  messageBubble: {
-    maxWidth: '80%',
-    borderRadius: 16,
-    padding: 12,
-  },
-  userBubble: {
-    backgroundColor: '#4F46E5',
-    borderBottomRightRadius: 4,
-  },
-  aiBubble: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  messageText: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#374151',
-  },
-  userMessageText: {
-    color: '#FFFFFF',
-  },
-  metaSection: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  metaLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#6B7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  themeChip: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  themeChipText: { fontSize: 12, color: '#4F46E5', fontWeight: '500' },
-  gapText: { fontSize: 12, color: '#6B7280', lineHeight: 18, marginTop: 2 },
-  messageFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 8,
-  },
-  citedText: { fontSize: 11, color: '#9CA3AF' },
-  contradictionText: { fontSize: 11, color: '#F59E0B', fontWeight: '600' },
-  timestamp: { fontSize: 11, color: '#9CA3AF', marginLeft: 'auto' },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyStateTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 15,
-    color: '#6B7280',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  exampleQuestionsContainer: {
-    marginTop: 32,
-    width: '100%',
-  },
-  exampleQuestionsTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  exampleQuestionChip: {
-    backgroundColor: '#EEF2FF',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  exampleQuestionText: {
-    fontSize: 14,
-    color: '#4F46E5',
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#6B7280',
-    marginLeft: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  input: {
-    flex: 1,
-    maxHeight: 100,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#111827',
-    marginRight: 8,
-  },
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#4F46E5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#E5E7EB',
-  },
-  micButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  dictationError: {
-    color: '#DC2626',
-    fontSize: 13,
-    paddingHorizontal: 16,
-    paddingBottom: 4,
-    backgroundColor: '#FFFFFF',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.errorBg,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: c.errorBorder,
+    },
+    errorText: {
+      flex: 1,
+      fontSize: 14,
+      color: c.error,
+      marginLeft: 8,
+    },
+    messagesContainer: {
+      flex: 1,
+    },
+    messagesList: {
+      paddingHorizontal: 16,
+      paddingVertical: 20,
+      flexGrow: 1,
+    },
+    messageContainer: {
+      marginBottom: 16,
+      alignItems: 'flex-start',
+    },
+    userMessageContainer: {
+      alignItems: 'flex-end',
+    },
+    messageBubble: {
+      maxWidth: '80%',
+      borderRadius: 16,
+      padding: 12,
+    },
+    userBubble: {
+      backgroundColor: c.accent,
+      borderBottomRightRadius: 4,
+    },
+    aiBubble: {
+      backgroundColor: c.bgSurface,
+      borderBottomLeftRadius: 4,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    messageText: {
+      fontSize: 15,
+      lineHeight: 21,
+      color: c.textSecondary,
+    },
+    userMessageText: {
+      color: '#FFFFFF',
+    },
+    metaSection: {
+      marginTop: 10,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    metaLabel: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+      marginBottom: 6,
+    },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    themeChip: {
+      backgroundColor: c.accentLight,
+      borderRadius: 12,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+    },
+    themeChipText: { fontSize: 12, color: c.accent, fontFamily: Fonts.medium },
+    gapText: { fontSize: 12, color: c.textMuted, lineHeight: 18, marginTop: 2 },
+    messageFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginTop: 8,
+      gap: 8,
+    },
+    citedText: { fontSize: 11, color: c.textFaint },
+    contradictionRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    contradictionText: { fontSize: 11, color: c.warning, fontFamily: Fonts.semibold },
+    timestamp: { fontSize: 11, color: c.textFaint, marginLeft: 'auto' },
+    emptyState: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 40,
+    },
+    emptyStateTitle: {
+      fontSize: 24,
+      fontFamily: Fonts.bold,
+      color: c.text,
+      marginTop: 20,
+      marginBottom: 8,
+    },
+    emptyStateText: {
+      fontSize: 15,
+      color: c.textMuted,
+      textAlign: 'center',
+      lineHeight: 22,
+    },
+    exampleQuestionsContainer: {
+      marginTop: 32,
+      width: '100%',
+    },
+    exampleQuestionsTitle: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      marginBottom: 12,
+      textAlign: 'center',
+    },
+    exampleQuestionChip: {
+      backgroundColor: c.accentLight,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+    },
+    exampleQuestionText: {
+      fontSize: 14,
+      color: c.accent,
+      fontFamily: Fonts.medium,
+      textAlign: 'center',
+    },
+    loadingContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+    },
+    loadingText: {
+      fontSize: 14,
+      color: c.textMuted,
+      marginLeft: 8,
+    },
+    inputContainer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      backgroundColor: c.bgSurface,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    input: {
+      flex: 1,
+      maxHeight: 100,
+      backgroundColor: c.bgMuted,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      fontSize: 15,
+      fontFamily: Fonts.regular,
+      color: c.text,
+      marginRight: 8,
+    },
+    sendButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: c.accent,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sendButtonDisabled: {
+      backgroundColor: c.border,
+    },
+    micButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 8,
+    },
+    dictationError: {
+      color: c.error,
+      fontSize: 13,
+      paddingHorizontal: 16,
+      paddingBottom: 4,
+      backgroundColor: c.bgSurface,
+    },
+  });

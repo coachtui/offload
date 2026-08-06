@@ -9,10 +9,8 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Switch,
   ActivityIndicator,
 } from 'react-native';
@@ -22,6 +20,8 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useGeofences } from '../hooks/useGeofences';
+import { AppInput, useToast, Spacing, Radius } from '../components/ui';
+import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type EditRoute = RouteProp<RootStackParamList, 'EditGeofence'>;
 type EditNav = NativeStackNavigationProp<RootStackParamList, 'EditGeofence'>;
@@ -32,6 +32,8 @@ interface Props {
 
 export default function EditGeofenceScreen({ navigation }: Props) {
   const route = useRoute<EditRoute>();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(createStyles);
   const {
     geofenceId,
     geofenceName,
@@ -45,6 +47,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
   } = route.params;
 
   const [name, setName] = useState(geofenceName);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [type, setType] = useState<'home' | 'work' | 'gym' | 'store' | 'custom'>(initialType);
   const [radius, setRadius] = useState(initialRadius);
   const [notifyOnEnter, setNotifyOnEnter] = useState(initialNotifyOnEnter);
@@ -56,11 +59,12 @@ export default function EditGeofenceScreen({ navigation }: Props) {
   const [quietHoursEnd, setQuietHoursEnd] = useState(initialQHEnd || '08:00');
   const [saving, setSaving] = useState(false);
 
+  const toast = useToast();
   const { updateGeofence } = useGeofences();
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Please enter a name');
+      setNameError('Please enter a name');
       return;
     }
 
@@ -79,10 +83,14 @@ export default function EditGeofenceScreen({ navigation }: Props) {
       if (updated) {
         navigation.goBack();
       } else {
-        Alert.alert('Error', 'Failed to save changes');
+        toast.show({ message: "Couldn't save changes", description: 'Please try again.', tone: 'error' });
       }
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save changes');
+      toast.show({
+        message: "Couldn't save changes",
+        description: err.message || 'Failed to save changes',
+        tone: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -92,15 +100,19 @@ export default function EditGeofenceScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Edit Reminder</Text>
         </View>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
           {saving ? (
-            <ActivityIndicator size="small" color="#4F46E5" />
+            <ActivityIndicator size="small" color={colors.accent} />
           ) : (
             <Text style={styles.saveText}>Save</Text>
           )}
@@ -110,7 +122,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
         {/* Location (read-only) */}
         <View style={styles.locationBanner}>
-          <Ionicons name="location" size={16} color="#6B7280" />
+          <Ionicons name="location" size={16} color={colors.textMuted} />
           <Text style={styles.locationText}>
             {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
             {'  ·  '}To change location, delete and recreate.
@@ -119,13 +131,15 @@ export default function EditGeofenceScreen({ navigation }: Props) {
 
         {/* Name */}
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
+          <AppInput
+            label="Name"
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              if (nameError) setNameError(null);
+            }}
             placeholder="e.g., Home, Office, Gym"
-            placeholderTextColor="#9CA3AF"
+            error={nameError ?? undefined}
           />
         </View>
 
@@ -138,6 +152,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
                 key={t}
                 style={[styles.chip, type === t && styles.chipActive]}
                 onPress={() => setType(t)}
+                accessibilityState={{ selected: type === t }}
               >
                 <Text style={[styles.chipText, type === t && styles.chipTextActive]}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -230,7 +245,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color="#FFFFFF" />
           ) : (
             <Text style={styles.saveButtonText}>Save Changes</Text>
           )}
@@ -240,146 +255,142 @@ export default function EditGeofenceScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  headerTitleContainer: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-  },
-  saveText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4F46E5',
-  },
-  locationBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  locationText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#6B7280',
-    lineHeight: 18,
-  },
-  form: {
-    flex: 1,
-    padding: 20,
-  },
-  formGroup: {
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 10,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: '#111827',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  chipActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  chipText: {
-    fontSize: 14,
-    color: '#6B7280',
-    fontWeight: '500',
-  },
-  chipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  switchLabel: {
-    flex: 1,
-  },
-  switchText: {
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '600',
-  },
-  switchSubtext: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  quietLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 12,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  saveButton: {
-    backgroundColor: '#4F46E5',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 32,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#D1D5DB',
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-});
+const createStyles = (c: ThemeColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.bg,
+    },
+    header: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.xl,
+      paddingVertical: Spacing.lg,
+      backgroundColor: c.bgSurface,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    headerTitleContainer: {
+      flex: 1,
+      marginLeft: Spacing.lg,
+    },
+    headerTitle: {
+      fontSize: 18,
+      fontFamily: Fonts.bold,
+      color: c.text,
+      textAlign: 'center',
+    },
+    saveText: {
+      fontSize: 16,
+      fontFamily: Fonts.bold,
+      color: c.accent,
+    },
+    locationBanner: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 6,
+      backgroundColor: c.bgMuted,
+      padding: Spacing.md,
+      borderRadius: Radius.sm,
+      borderWidth: 1,
+      borderColor: c.border,
+      marginBottom: Spacing.xxl,
+    },
+    locationText: {
+      flex: 1,
+      fontSize: 12,
+      fontFamily: Fonts.regular,
+      color: c.textMuted,
+      lineHeight: 18,
+    },
+    form: {
+      flex: 1,
+      padding: Spacing.xl,
+    },
+    formGroup: {
+      marginBottom: Spacing.xxl,
+    },
+    label: {
+      fontSize: 15,
+      fontFamily: Fonts.semibold,
+      color: c.text,
+      marginBottom: 10,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: Spacing.sm,
+    },
+    chip: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      borderRadius: Radius.full,
+      backgroundColor: c.bgSurface,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    chipActive: {
+      backgroundColor: c.accent,
+      borderColor: c.accent,
+    },
+    chipText: {
+      fontSize: 14,
+      color: c.textMuted,
+      fontFamily: Fonts.medium,
+    },
+    chipTextActive: {
+      color: '#FFFFFF',
+      fontFamily: Fonts.semibold,
+    },
+    switchRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: c.bgSurface,
+      padding: 14,
+      borderRadius: Radius.md,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    switchLabel: {
+      flex: 1,
+    },
+    switchText: {
+      fontSize: 15,
+      color: c.text,
+      fontFamily: Fonts.semibold,
+    },
+    switchSubtext: {
+      fontSize: 13,
+      color: c.textMuted,
+      marginTop: 4,
+    },
+    quietLabel: {
+      fontSize: 13,
+      fontFamily: Fonts.semibold,
+      color: c.textMuted,
+      marginTop: 12,
+      marginBottom: 8,
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    saveButton: {
+      backgroundColor: c.accent,
+      padding: Spacing.lg,
+      borderRadius: Radius.md,
+      alignItems: 'center',
+      marginTop: 12,
+      marginBottom: 32,
+    },
+    saveButtonDisabled: {
+      backgroundColor: c.borderStrong,
+    },
+    saveButtonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontFamily: Fonts.semibold,
+    },
+  });
