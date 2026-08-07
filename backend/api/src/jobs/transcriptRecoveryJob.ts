@@ -31,21 +31,19 @@ let running = false;
 
 /** Re-run abandoned sessions. Returns how many were picked up. */
 export async function recoverStuckTranscripts(): Promise<{ found: number; recovered: number }> {
-  const stuck = await Session.findStuckProcessing(STUCK_AFTER_MS, BATCH_SIZE);
+  const result = { found: 0, recovered: 0 };
 
-  const result = { found: stuck.length, recovered: 0 };
-  if (stuck.length === 0) return result;
+  // Claim one at a time rather than reading a batch and looping over it. The
+  // claim is atomic, so a concurrent sweep on another instance takes different
+  // rows instead of duplicating this one's work. Sequential on purpose too:
+  // these are already-late jobs competing with live traffic, and each one
+  // internally fans out its own object writes.
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    const session = await Session.claimStuckProcessing(STUCK_AFTER_MS);
+    if (!session) break;
 
-  console.log(`[transcriptRecovery] Found ${stuck.length} stuck session(s)`);
-
-  // Sequential on purpose: these are already-late background jobs competing with
-  // live traffic, and each one internally fans out its own object writes.
-  for (const session of stuck) {
+    result.found++;
     try {
-      // Re-stamp updated_at first. processSessionInBackground can run for
-      // minutes, and without this the next sweep would see the same row still
-      // sitting past the threshold and start a duplicate run.
-      await session.update({ status: 'processing' });
       await processSessionInBackground(session);
       result.recovered++;
       console.log(`[transcriptRecovery] ✅ ${session.id}`);
@@ -54,7 +52,9 @@ export async function recoverStuckTranscripts(): Promise<{ found: number; recove
     }
   }
 
-  console.log(`[transcriptRecovery] Done — ${result.recovered}/${result.found} recovered`);
+  if (result.found > 0) {
+    console.log(`[transcriptRecovery] Done — ${result.recovered}/${result.found} recovered`);
+  }
   return result;
 }
 

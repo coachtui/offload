@@ -69,13 +69,45 @@ describe('Session transcript storage', () => {
     expect(session.transcript).toBeUndefined();
   });
 
-  it('only finds stuck sessions that still carry a transcript', async () => {
-    mockQueries.queryMany.mockResolvedValue([] as any);
+  describe('claimStuckProcessing', () => {
+    it('only claims stuck sessions that still carry a transcript', async () => {
+      mockQueries.queryOne.mockResolvedValue(null as any);
 
-    await Session.findStuckProcessing(600000, 20);
+      await Session.claimStuckProcessing(600000);
 
-    const sql = mockQueries.queryMany.mock.calls[0][0] as string;
-    expect(sql).toContain("status = 'processing'");
-    expect(sql).toContain("metadata->>'transcript' IS NOT NULL");
+      const sql = mockQueries.queryOne.mock.calls[0][0] as string;
+      expect(sql).toContain("status = 'processing'");
+      expect(sql).toContain("metadata->>'transcript' IS NOT NULL");
+    });
+
+    // Railway runs the old and new instance concurrently through a deploy, so
+    // two sweeps overlap on every release. Without an atomic claim both would
+    // take the same row and sort the user's note twice into duplicate objects.
+    it('claims atomically so concurrent sweeps cannot take the same row', async () => {
+      mockQueries.queryOne.mockResolvedValue(null as any);
+
+      await Session.claimStuckProcessing(600000);
+
+      const sql = mockQueries.queryOne.mock.calls[0][0] as string;
+      expect(sql).toContain('FOR UPDATE SKIP LOCKED');
+      // Selection and claim must be one statement, not a read then a write.
+      expect(sql.trimStart().startsWith('UPDATE')).toBe(true);
+      expect(sql).toContain('SET updated_at = NOW()');
+      expect(sql).toContain('LIMIT 1');
+    });
+
+    it('returns null when there is nothing to claim', async () => {
+      mockQueries.queryOne.mockResolvedValue(null as any);
+      await expect(Session.claimStuckProcessing(600000)).resolves.toBeNull();
+    });
+
+    it('returns a hydrated session when it claims one', async () => {
+      mockQueries.queryOne.mockResolvedValue(
+        row({ metadata: { transcript: 'stranded note' } }) as any
+      );
+
+      const claimed = await Session.claimStuckProcessing(600000);
+      expect(claimed?.transcript).toBe('stranded note');
+    });
   });
 });

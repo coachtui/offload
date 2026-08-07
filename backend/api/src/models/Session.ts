@@ -178,26 +178,40 @@ export class Session {
   }
 
   /**
-   * Sessions left in 'processing' longer than `olderThanMs`, oldest first.
+   * Atomically claim one session stranded in 'processing' longer than
+   * `olderThanMs`, oldest first. Returns null when there is nothing to claim.
    *
    * Processing runs in-process, so a deploy or crash mid-parse strands the row.
    * The transcript is already persisted at that point, so these are safely
-   * re-runnable — that is the whole reason the column exists.
+   * re-runnable — that is the whole reason it is stored.
+   *
+   * This is a worker queue, and it has more than one worker: Railway runs the
+   * old and new instances concurrently during a deploy, so two sweeps overlap
+   * on every release. A plain SELECT would hand the same row to both and the
+   * user's note would be sorted twice, producing duplicate objects. The claim
+   * therefore has to be the same statement as the selection — SKIP LOCKED lets
+   * a second worker move to the next row instead of blocking on the first.
+   *
+   * Bumping updated_at is what constitutes the claim: it pushes the row out of
+   * the stuck window, so the next sweep ignores it while this run works on it.
    */
-  static async findStuckProcessing(
-    olderThanMs: number,
-    limit: number = 20
-  ): Promise<Session[]> {
-    const rows = await queryMany<SessionRow>(
-      `SELECT * FROM hub.sessions
-       WHERE status = 'processing'
-         AND metadata->>'transcript' IS NOT NULL
-         AND updated_at < NOW() - ($1::bigint * INTERVAL '1 millisecond')
-       ORDER BY updated_at ASC
-       LIMIT $2`,
-      [olderThanMs, limit]
+  static async claimStuckProcessing(olderThanMs: number): Promise<Session | null> {
+    const row = await queryOne<SessionRow>(
+      `UPDATE hub.sessions
+       SET updated_at = NOW()
+       WHERE id = (
+         SELECT id FROM hub.sessions
+         WHERE status = 'processing'
+           AND metadata->>'transcript' IS NOT NULL
+           AND updated_at < NOW() - ($1::bigint * INTERVAL '1 millisecond')
+         ORDER BY updated_at ASC
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING *`,
+      [olderThanMs]
     );
-    return rows.map((row) => new Session(row));
+    return row ? new Session(row) : null;
   }
 
   /**
