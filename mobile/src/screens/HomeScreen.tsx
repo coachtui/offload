@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,6 +14,11 @@ import { RootStackParamList } from '../navigation/types';
 import { RagSearchResult } from '../services/api';
 import { useSearch } from '../hooks/useSearch';
 import { useForYou } from '../hooks/useForYou';
+import { usePermissionStatus } from '../hooks/usePermissionStatus';
+import { PermissionBanner } from '../components/PermissionBanner';
+import { ArrivalPermissionSheet } from '../components/ArrivalPermissionSheet';
+import { subscribeArrivalPrompt } from '../services/arrivalPromptBus';
+import { hasSeenArrivalPrompt, canDeliverArrivalReminders } from '../services/permissionService';
 import {
   AppSearchBar,
   AppText,
@@ -120,6 +125,24 @@ export function HomeScreen({ navigation }: Props) {
   const isSearchMode = searchQuery.trim().length > 0;
   const [forYouExpanded, setForYouExpanded] = useState(true);
 
+  // ── Permission surfacing ──────────────────────────────────────────────────
+  const { status: permissions, loading: permissionsLoading, refresh: refreshPermissions } =
+    usePermissionStatus();
+  const [arrivalPrompt, setArrivalPrompt] = useState<{ placeName?: string } | null>(null);
+
+  // A saved note produced a place. Offer the "Always" escalation — but only if
+  // it would actually change anything, and only once per account.
+  useEffect(() => {
+    return subscribeArrivalPrompt(async (placeNames) => {
+      const [current, alreadyAsked] = await Promise.all([
+        refreshPermissions(),
+        hasSeenArrivalPrompt(),
+      ]);
+      if (alreadyAsked || canDeliverArrivalReminders(current)) return;
+      setArrivalPrompt({ placeName: placeNames[0] });
+    });
+  }, [refreshPermissions]);
+
   const dateLine = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
     day: 'numeric',
@@ -209,6 +232,16 @@ export function HomeScreen({ navigation }: Props) {
           loading={isSearchMode && searchLoading}
         />
       </View>
+
+      {/* Standing notice when a permission the app depends on is missing.
+          Hidden during search so it never pushes results off screen. */}
+      {!isSearchMode ? (
+        <PermissionBanner
+          status={permissions}
+          loading={permissionsLoading}
+          onChanged={() => void refreshPermissions()}
+        />
+      ) : null}
 
       {isSearchMode ? (
         /* ── SEARCH MODE ─────────────────────────────────────────────────── */
@@ -374,6 +407,15 @@ export function HomeScreen({ navigation }: Props) {
         message="Your notes stay safely synced to your account."
         confirmLabel="Log out"
         destructive
+      />
+
+      <ArrivalPermissionSheet
+        visible={arrivalPrompt !== null}
+        placeName={arrivalPrompt?.placeName}
+        onClose={() => {
+          setArrivalPrompt(null);
+          void refreshPermissions();
+        }}
       />
     </SafeAreaView>
   );

@@ -28,7 +28,7 @@ interface TranscriptionState {
 
 interface UseDeepgramTranscriptionReturn extends TranscriptionState {
   startRecording: (location?: GeoPoint) => Promise<void>;
-  stopRecording: (opts?: { onGeofencesNeeded?: () => void }) => Promise<void>;
+  stopRecording: (opts?: { onGeofencesNeeded?: (placeNames: string[]) => void }) => Promise<void>;
   reset: () => void;
   // Late-arriving location (fetched in parallel with startRecording) can be
   // handed to the hook after the fact; it's only read at save time, so this
@@ -350,7 +350,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     }
   }, [handleAuthError]);
 
-  const stopRecording = useCallback(async (opts?: { onGeofencesNeeded?: () => void }) => {
+  const stopRecording = useCallback(async (opts?: { onGeofencesNeeded?: (placeNames: string[]) => void }) => {
     // Re-entrancy guard: a double-tap-stop's second call returns immediately so the
     // CloseStream flush, state transition, and save pipeline run exactly once.
     if (stopInFlightRef.current) {
@@ -499,7 +499,7 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           // Called here (after save, in the background) so it fires regardless of whether
           // RecordScreen is still mounted.
           if (result.hasGeofenceCandidates) {
-            opts?.onGeofencesNeeded?.();
+            opts?.onGeofencesNeeded?.(result.placeNames ?? []);
           }
 
           setState(prev => ({

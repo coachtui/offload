@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { DefaultTheme, DarkTheme, NavigationContainer, Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import { hasCompletedPermissionOnboarding } from '../services/permissionService';
 import {
   LoginScreen,
   RegisterScreen,
+  PermissionsScreen,
   HomeScreen,
   RecordScreen,
   ObjectsScreen,
@@ -57,15 +59,23 @@ function AuthStack() {
   );
 }
 
-function MainStack() {
+function MainStack({ needsPermissionOnboarding }: { needsPermissionOnboarding: boolean }) {
   const { colors } = useTheme();
   return (
     <Stack.Navigator
+      initialRouteName={needsPermissionOnboarding ? 'Permissions' : 'Home'}
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
+      {/* Gesture-locked: the ladder is skippable via its own "Not right now",
+          not by swiping back into an app with no permissions. */}
+      <Stack.Screen
+        name="Permissions"
+        component={PermissionsScreen}
+        options={{ gestureEnabled: false }}
+      />
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen
         name="Record"
@@ -106,7 +116,33 @@ export function AppNavigator() {
   const { colors } = useTheme();
   const navTheme = useNavTheme();
 
-  if (isLoading) {
+  // Resolved before the main stack mounts so initialRouteName is correct on the
+  // first render — React Navigation reads it once and ignores later changes.
+  // `null` means "still reading", which is why it gates the spinner below.
+  const [needsPermissionOnboarding, setNeedsPermissionOnboarding] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      // Re-arm for the next sign-in so a fresh account gets the ladder.
+      setNeedsPermissionOnboarding(null);
+      return;
+    }
+    let cancelled = false;
+    hasCompletedPermissionOnboarding()
+      .then((done) => {
+        if (!cancelled) setNeedsPermissionOnboarding(!done);
+      })
+      .catch(() => {
+        // Can't read the flag — send them through the ladder. A second ask is a
+        // far cheaper failure than an app that silently never works.
+        if (!cancelled) setNeedsPermissionOnboarding(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  if (isLoading || (isAuthenticated && needsPermissionOnboarding === null)) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.accent} />
@@ -118,7 +154,7 @@ export function AppNavigator() {
     <NavigationContainer ref={navigationRef} theme={navTheme}>
       {isAuthenticated ? (
         <>
-          <MainStack />
+          <MainStack needsPermissionOnboarding={needsPermissionOnboarding === true} />
           <ErrorBoundary label="ProximityBanner">
             <ProximityBanner />
           </ErrorBoundary>

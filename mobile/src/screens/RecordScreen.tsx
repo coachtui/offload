@@ -18,6 +18,7 @@ import { AppText, AppPressable } from '../components/ui';
 import { darkColors, Fonts, Radius, Spacing } from '../theme';
 import { haptic } from '../theme/haptics';
 import { locationService } from '../services/locationService';
+import { emitArrivalPromptCandidate } from '../services/arrivalPromptBus';
 
 type RecordScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Record'>;
 
@@ -138,12 +139,15 @@ export function RecordScreen({ navigation }: Props) {
       await stopRecording({
         // Geofence re-sync: schedule here (inside the background save callback) so it
         // fires even after RecordScreen has been popped from the stack on navigation.
-        onGeofencesNeeded: () => {
+        onGeofencesNeeded: (placeNames) => {
           console.log('[RecordScreen] Geofence candidates detected — scheduling re-sync in 6s (persists through navigation)');
           setTimeout(() => {
             console.log('[RecordScreen] Re-fetching geofences to pick up inferred places');
             fetchGeofences();
           }, 6000);
+          // Hand the place off to Home, which is what's on screen by now, so it
+          // can offer the "Always" location escalation with the place named.
+          emitArrivalPromptCandidate(placeNames);
         },
       });
       navigation.navigate('Home');
