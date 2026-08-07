@@ -485,6 +485,9 @@ export function ObjectsScreen({ navigation }: Props) {
     try {
       await apiService.updateObjectState(objectId, newState);
       await fetchObjectDetail(objectId);
+      if (newState === 'resolved') {
+        setStaleObjects((prev) => prev.filter((o) => o.id !== objectId));
+      }
     } catch { /* silent */ }
     finally { setUpdatingState(false); }
   }, [fetchObjectDetail]);

@@ -553,6 +553,7 @@ export class AtomicObjectModel {
          AND is_actionable = true
          AND created_at < NOW() - INTERVAL '7 days'
          AND cardinality(linked_object_ids) = 0
+         AND state IS DISTINCT FROM 'resolved'
          AND deleted_at IS NULL
        ORDER BY created_at ASC`,
       [userId]
