@@ -125,7 +125,12 @@ export async function parseTranscript(
         context: request.context,
       },
       {
-        timeout: 60000,
+        // Must stay ABOVE the ml-service's own 90s LLM budget (parser.py), plus
+        // FastAPI overhead. When these two were both 60s this client always gave
+        // up first — a parse that would have succeeded at ~58s was reported as a
+        // failure, and nested budgets that don't decrease inward can never
+        // surface the inner error.
+        timeout: 105000,
         headers: {
           'Content-Type': 'application/json',
           ...(ML_SERVICE_API_KEY ? { 'X-Service-Key': ML_SERVICE_API_KEY } : {}),

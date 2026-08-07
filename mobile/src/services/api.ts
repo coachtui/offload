@@ -656,8 +656,13 @@ class ApiService {
           channels: opts.channels ?? 1,
         }),
       },
-      // Upload + transcription can take longer than a normal request — allow 60s.
-      60000
+      // Upload + transcription can take longer than a normal request. The body is
+      // base64 raw PCM, so it grows with recording length — roughly 1.3MB per
+      // 30 seconds — and 60s was not enough to upload and transcribe a long note
+      // on cellular. Timing out here is silent (the caller keeps the less
+      // accurate Deepgram text), so a tight budget quietly degraded exactly the
+      // long notes that need the accuracy most.
+      120000
     );
   }
 
@@ -686,8 +691,16 @@ class ApiService {
     // The server LLM-parses the transcript into atomic objects, then writes each
     // one sequentially. Long notes exceed the default 30s, so the client aborts
     // and (wrongly) reports "Couldn't save your note" — even though the server
-    // finishes the save. Allow 90s to match the other LLM-bearing calls.
-    90000);
+    // finishes the save.
+    //
+    // 90s was still short: the parse alone is now allowed 105s server-side, and
+    // the sequential per-object writes (Postgres + vector store + category
+    // rules, ~1s each) run after it. This budget must exceed that whole chain or
+    // we resurrect the same false failure. Nothing waits on it — RecordScreen
+    // navigates to Home immediately and the notification fires whenever this
+    // resolves — so a long tail costs the user nothing and a premature abort
+    // costs them a note.
+    180000);
   }
 
   // Synthesis methods
