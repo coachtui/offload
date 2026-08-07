@@ -122,6 +122,11 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
     // Parse transcript and create atomic objects
     const objectIds: string[] = [];
     let hasGeofenceCandidates = false;
+    // Place names the note referred to, echoed back so the client can name the
+    // place in its "remind you at X?" permission prompt. Resolution itself is
+    // async and may still fail — these are what the user *said*, not confirmed
+    // geofences, so the client must treat them as a label only.
+    const candidatePlaceNames: string[] = [];
 
     try {
       if (transcript.trim()) {
@@ -189,6 +194,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             // Fire-and-forget place resolution for objects mentioning places
             if (effectiveGeofenceCandidate && parsedPlaces.length > 0) {
               hasGeofenceCandidates = true;
+              candidatePlaceNames.push(...parsedPlaces);
               resolveObjectPlaces(
                 userId,
                 object.id,
@@ -220,6 +226,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             const places = extractPlacesFromText(transcript);
             if (places.length > 0) {
               hasGeofenceCandidates = true;
+              candidatePlaceNames.push(...places);
               console.log(`[Voice] ML-fallback deterministic trigger — places detected: ${places.join(', ')}`);
               resolveObjectPlaces(userId, object.id, places, geoLocation).catch(err =>
                 console.warn('[Voice] Place resolution failed silently (ML fallback) for object', object.id, ':', err)
@@ -267,6 +274,7 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
       objectIds,
       objectCount: objectIds.length,
       hasGeofenceCandidates: hasGeofenceCandidates ?? false,
+      placeNames: [...new Set(candidatePlaceNames)],
     });
   } catch (error) {
     console.error('[Voice] save-transcript error:', error);
