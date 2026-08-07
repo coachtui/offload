@@ -12,6 +12,9 @@ export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   name: z.string().trim().max(100).optional(),
+  acceptedTerms: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the Terms of Service and Privacy Policy' }),
+  }),
 });
 
 export const loginSchema = z.object({
@@ -23,6 +26,7 @@ export interface RegisterInput {
   email: string;
   password: string;
   name?: string;
+  acceptedTerms: true;
 }
 
 export interface LoginInput {
@@ -54,7 +58,12 @@ export async function register(input: RegisterInput): Promise<AuthResponse> {
   }
 
   // Create user
-  const user = await User.create(input);
+  const user = await User.create({
+    email: input.email,
+    password: input.password,
+    name: input.name,
+    termsAcceptedAt: new Date(),
+  });
 
   // Generate tokens
   const accessToken = generateAccessToken(user.id, user.email);

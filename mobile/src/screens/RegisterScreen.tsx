@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +33,7 @@ export function RegisterScreen({ navigation }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [fieldError, setFieldError] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const clearField = (key: keyof FieldErrors) =>
     setFieldError((e) => (e[key] ? { ...e, [key]: undefined } : e));
@@ -45,6 +47,10 @@ export function RegisterScreen({ navigation }: Props) {
     setFieldError(errors);
     setFormError(null);
     if (Object.keys(errors).length > 0) return;
+    if (!acceptedTerms) {
+      setFormError('Please accept the Terms of Service and Privacy Policy to continue');
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -52,6 +58,7 @@ export function RegisterScreen({ navigation }: Props) {
         email: email.trim(),
         password,
         name: name.trim() || undefined,
+        acceptedTerms: true,
       });
     } catch (error) {
       const message =
@@ -143,6 +150,39 @@ export function RegisterScreen({ navigation }: Props) {
             editable={!isLoading}
           />
 
+          <AppPressable
+            style={styles.termsRow}
+            onPress={() => setAcceptedTerms((v) => !v)}
+            disabled={isLoading}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: acceptedTerms }}
+            accessibilityLabel="Accept Terms of Service and Privacy Policy"
+          >
+            <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+              {acceptedTerms ? (
+                <Ionicons name="checkmark" size={14} color={colors.onPrimary} />
+              ) : null}
+            </View>
+            <AppText variant="secondary" color="muted" style={styles.termsText}>
+              I agree to the{' '}
+              <AppText
+                variant="secondary"
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://useoffload.app/terms')}
+              >
+                Terms of Service
+              </AppText>{' '}
+              and{' '}
+              <AppText
+                variant="secondary"
+                style={styles.termsLink}
+                onPress={() => Linking.openURL('https://useoffload.app/privacy')}
+              >
+                Privacy Policy
+              </AppText>
+            </AppText>
+          </AppPressable>
+
           {formError ? (
             <View style={styles.formError} accessibilityRole="alert">
               <Ionicons name="alert-circle" size={16} color={colors.error} />
@@ -211,6 +251,33 @@ const createStyles = (c: ThemeColors) =>
   },
   form: {
     gap: Spacing.lg,
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  checkbox: {
+    width: 19,
+    height: 19,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: c.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxChecked: {
+    backgroundColor: c.accent,
+    borderColor: c.accent,
+  },
+  termsText: {
+    flex: 1,
+  },
+  termsLink: {
+    color: c.text,
+    fontFamily: Fonts.semibold,
+    textDecorationLine: 'underline',
   },
   formError: {
     flexDirection: 'row',

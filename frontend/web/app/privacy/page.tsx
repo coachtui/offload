@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           <h1 className="text-4xl font-bold text-ink tracking-tight mb-3">
             Privacy Policy
           </h1>
-          <p className="text-sm text-ink-faint">Last updated: March 9, 2026</p>
+          <p className="text-sm text-ink-faint">Last updated: August 6, 2026</p>
         </div>
 
         <div className="divide-y divide-line space-y-10">
@@ -56,9 +56,11 @@ export default function PrivacyPage() {
 
             <p className="font-medium text-ink mt-4">Voice recordings and transcripts</p>
             <p>
-              When you use the voice capture feature, audio is streamed directly to Deepgram (our
-              transcription provider) and is not stored on our servers. The resulting transcript
-              text is stored and associated with your account.
+              When you use the voice capture feature, audio is streamed to Deepgram (our
+              transcription provider) for transcription and is also stored securely in our cloud
+              storage (Amazon S3), associated with your account, for as long as your account
+              remains active. The resulting transcript text is stored and associated with your
+              account as well.
             </p>
 
             <p className="font-medium text-ink mt-4">Notes and structured content</p>

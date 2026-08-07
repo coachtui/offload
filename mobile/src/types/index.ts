@@ -114,6 +114,7 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name?: string;
+  acceptedTerms: true;
 }
 
 // Matches backend AuthResponse from userService.ts

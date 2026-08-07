@@ -10,6 +10,7 @@ export interface UserRow {
   email: string;
   password_hash: string;
   name: string | null;
+  terms_accepted_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -18,6 +19,7 @@ export interface UserCreateInput {
   email: string;
   password: string;
   name?: string;
+  termsAcceptedAt: Date;
 }
 
 export class User {
@@ -25,6 +27,7 @@ export class User {
   email: string;
   passwordHash: string;
   name: string | null;
+  termsAcceptedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -33,6 +36,7 @@ export class User {
     this.email = row.email;
     this.passwordHash = row.password_hash;
     this.name = row.name ?? null;
+    this.termsAcceptedAt = row.terms_accepted_at ?? null;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
   }
@@ -65,10 +69,10 @@ export class User {
   static async create(input: UserCreateInput): Promise<User> {
     const passwordHash = await bcrypt.hash(input.password, 10);
     const row = await queryOne<UserRow>(
-      `INSERT INTO hub.users (email, password_hash, name)
-       VALUES ($1, $2, $3)
+      `INSERT INTO hub.users (email, password_hash, name, terms_accepted_at)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [input.email, passwordHash, input.name ?? null]
+      [input.email, passwordHash, input.name ?? null, input.termsAcceptedAt]
     );
     if (!row) {
       throw new Error('Failed to create user');
