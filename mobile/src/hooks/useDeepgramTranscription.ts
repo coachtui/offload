@@ -483,76 +483,56 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
           return;
         }
 
+        // Only the save call itself may decide what the user is told. Everything
+        // below it runs against a note that is already stored server-side, so a
+        // failure there must never be reported as a lost note — that was the old
+        // shape here, and it told the user their note was gone when it wasn't.
+        let result: Awaited<ReturnType<typeof apiService.saveTranscript>>;
         try {
           console.log('[Recording] saving transcript to backend...');
-          const result = await apiService.saveTranscript({
+          result = await apiService.saveTranscript({
             transcript: transcriptToSave,
             duration: finalDuration,
             location: locationRef.current,
             metadata: { transcriptionMethod },
           });
-
-          console.log('[Recording] transcript saved — sessionId:', result.sessionId,
-            '— objectCount:', result.objectCount);
-
-          // Trigger geofence re-sync if the saved note has location-triggered reminders.
-          // Called here (after save, in the background) so it fires regardless of whether
-          // RecordScreen is still mounted.
-          if (result.hasGeofenceCandidates) {
-            opts?.onGeofencesNeeded?.(result.placeNames ?? []);
-          }
-
-          setState(prev => ({
-            ...prev,
-            status: 'done',
-            savedObjectIds: result.objectIds,
-            relatedNotes: [],
-            contradictions: [],
-            hasGeofenceCandidates: result.hasGeofenceCandidates ?? false,
-          }));
-
-          // ── Hint computation: contradiction check + related notes ──────
-          // Run both in parallel for speed; apply contradiction hint first
-          // (it takes priority over the related-notes hint).
-          let hint: string | undefined;
-
-          if (transcriptToSave.trim().length > 50) {
-            const [contrSettled, ragSettled] = await Promise.allSettled([
-              apiService.ragCheckContradictions(transcriptToSave, result.objectIds),
-              apiService.ragSearch(transcriptToSave, { topK: 5, minScore: 0.6 }),
-            ]);
-
-            if (contrSettled.status === 'fulfilled' && contrSettled.value.hasConflict) {
-              if (sessionIdRef.current === stopSession) {
-                setState(prev => ({ ...prev, contradictions: contrSettled.value.conflicts }));
-              }
-              hint = '⚠️ may conflict with an earlier note';
-            }
-
-            if (!hint && ragSettled.status === 'fulfilled') {
-              const related = (ragSettled.value.results ?? [])
-                .filter((r) => !result.objectIds.includes(r.objectId))
-                .slice(0, 3);
-              if (related.length > 0) {
-                if (sessionIdRef.current === stopSession) {
-                  setState(prev => ({ ...prev, relatedNotes: related }));
-                }
-                hint = `relates to ${related.length} earlier note${related.length === 1 ? '' : 's'}`;
-              }
-            }
-          }
-
-          await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim(), hint });
-
         } catch (error) {
-          console.error('[Recording] saveTranscript failed:', error instanceof Error ? error.message : error);
+          const reason = error instanceof Error ? error.message : 'Unknown error';
+          console.error('[Recording] saveTranscript failed:', reason);
           handleAuthError(error);
-          setState(prev => ({
-            ...prev,
-            status: 'error',
-            error: error instanceof Error ? error.message : 'Failed to save transcript',
-          }));
-          await notifySaveResult({ ok: false });
+          setState(prev => ({ ...prev, status: 'error', error: reason }));
+          await notifySaveResult({ ok: false, reason });
+          return;
+        }
+
+        console.log('[Recording] transcript stored — sessionId:', result.sessionId,
+          '— status:', result.status ?? 'completed');
+
+        setState(prev => ({
+          ...prev,
+          status: 'done',
+          savedObjectIds: result.objectIds,
+          relatedNotes: [],
+          contradictions: [],
+          hasGeofenceCandidates: result.hasGeofenceCandidates ?? false,
+        }));
+
+        // The server returns as soon as the transcript is durably stored and
+        // sorts it in the background, so this confirmation is both immediate and
+        // true at any recording length. The follow-up ("Sorted into 6 notes")
+        // arrives as a push when the parse finishes; that push also carries the
+        // geofence hand-off, which used to happen here off the save response.
+        await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim() });
+
+        // Only reachable against a server still running the old synchronous
+        // contract — a deploy lag, or a rollback. Keep honouring it so the
+        // arrival prompt is not silently dead in that window.
+        if (result.status !== 'processing' && result.hasGeofenceCandidates) {
+          try {
+            opts?.onGeofencesNeeded?.(result.placeNames ?? []);
+          } catch (err) {
+            console.warn('[Recording] geofence hand-off failed (note is saved):', err);
+          }
         }
       })();
     } finally {

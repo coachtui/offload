@@ -12,10 +12,14 @@ export async function notifySaveResult({
   ok,
   title,
   hint,
+  reason,
 }: {
   ok: boolean;
   title?: string;
   hint?: string;
+  /** Why the save failed. Shown as the notification body — a bare "couldn't
+   *  save" is undiagnosable once the user has walked away from the screen. */
+  reason?: string;
 }): Promise<void> {
   try {
     if (ok) {
@@ -34,6 +38,7 @@ export async function notifySaveResult({
       await Notifications.scheduleNotificationAsync({
         content: {
           title: "⚠️ Couldn't save your note",
+          body: reason,
           data: { screen: 'Home' },
         },
         trigger: null,

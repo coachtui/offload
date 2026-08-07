@@ -85,6 +85,7 @@ import { startMonthlyLongTermSynthesisJob } from './jobs/monthlyLongTermSynthesi
 import { startWeeklySynthesisJob } from './jobs/weeklySynthesisJob';
 import { startTimeReminderJob } from './jobs/timeReminderJob';
 import { startLifecycleJob } from './jobs/lifecycleJob';
+import { startTranscriptRecoveryJob } from './jobs/transcriptRecoveryJob';
 
 // API routes
 import authRoutes from './routes/auth';
@@ -214,4 +215,5 @@ server.listen(PORT, async () => {
   startWeeklySynthesisJob();
   startTimeReminderJob();
   startLifecycleJob();
+  startTranscriptRecoveryJob();
 });

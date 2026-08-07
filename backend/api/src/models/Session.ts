@@ -24,6 +24,15 @@ export interface SessionCreateInput {
   deviceId: string;
   location?: GeoPoint;
   metadata?: Record<string, any>;
+  /**
+   * Raw transcript, persisted before any parsing so the note survives a parse
+   * failure. Lives inside `metadata` rather than its own column: migrations on
+   * this project are run by hand and are not part of the deploy, so a schema
+   * change would ship broken. jsonb holds it fine.
+   */
+  transcript?: string;
+  /** Defaults to 'recording'. The async save path creates rows as 'processing'. */
+  status?: Session['status'];
 }
 
 export class Session {
@@ -33,6 +42,7 @@ export class Session {
   location?: GeoPoint;
   metadata: Record<string, any>;
   status: 'recording' | 'processing' | 'completed' | 'failed';
+  transcript?: string;
   createdAt: Date;
   updatedAt: Date;
 
@@ -55,6 +65,8 @@ export class Session {
         : undefined;
     this.metadata = row.metadata || {};
     this.status = row.status;
+    this.transcript =
+      typeof this.metadata.transcript === 'string' ? this.metadata.transcript : undefined;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
   }
@@ -151,8 +163,10 @@ export class Session {
         input.location?.longitude || null,
         input.location?.accuracy || null,
         input.location?.altitude || null,
-        input.metadata || {},
-        'recording',
+        input.transcript !== undefined
+          ? { ...(input.metadata || {}), transcript: input.transcript }
+          : input.metadata || {},
+        input.status ?? 'recording',
       ]
     );
 
@@ -161,6 +175,29 @@ export class Session {
     }
 
     return new Session(row);
+  }
+
+  /**
+   * Sessions left in 'processing' longer than `olderThanMs`, oldest first.
+   *
+   * Processing runs in-process, so a deploy or crash mid-parse strands the row.
+   * The transcript is already persisted at that point, so these are safely
+   * re-runnable — that is the whole reason the column exists.
+   */
+  static async findStuckProcessing(
+    olderThanMs: number,
+    limit: number = 20
+  ): Promise<Session[]> {
+    const rows = await queryMany<SessionRow>(
+      `SELECT * FROM hub.sessions
+       WHERE status = 'processing'
+         AND metadata->>'transcript' IS NOT NULL
+         AND updated_at < NOW() - ($1::bigint * INTERVAL '1 millisecond')
+       ORDER BY updated_at ASC
+       LIMIT $2`,
+      [olderThanMs, limit]
+    );
+    return rows.map((row) => new Session(row));
   }
 
   /**

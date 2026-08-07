@@ -2,7 +2,9 @@
 Transcript parser service using LLM — v2 rich schema
 """
 
+import asyncio
 import json
+import re
 import time
 import os
 from typing import List, Optional
@@ -21,6 +23,53 @@ from .transcript_cleaner import get_cleaner
 # 60s long notes timed out, which the API surfaced as an outright save failure.
 # The API's own budget for this service must stay above this value.
 LLM_TIMEOUT_SECONDS = 90.0
+
+# Transcripts longer than this are split and parsed concurrently.
+#
+# One call for a five-minute note is slow (output tokens scale with the number
+# of objects, and generation is serial) and risks truncation — a truncated JSON
+# body fails to parse, which reads as a total failure rather than a partial one.
+# ~1200 characters is roughly 45-60 seconds of speech, which parses well inside
+# the budget and keeps each response comfortably short.
+CHUNK_CHAR_THRESHOLD = 1200
+MAX_PARALLEL_CHUNKS = 4
+
+# Claude's output cap. 4096 truncated long notes mid-JSON; chunking makes a large
+# value unnecessary, but the headroom removes the failure mode entirely.
+CLAUDE_MAX_TOKENS = 8192
+
+
+def split_transcript(text: str, max_chars: int = CHUNK_CHAR_THRESHOLD) -> List[str]:
+    """
+    Split on sentence boundaries into chunks of at most `max_chars`.
+
+    Splitting mid-sentence would hand the parser a fragment with no verb or no
+    subject, and it would either drop it or invent context. Sentence boundaries
+    keep each chunk independently meaningful. A single sentence longer than
+    max_chars is left intact rather than cut — an oversized chunk is a much
+    smaller problem than a mangled one.
+    """
+    stripped = text.strip()
+    if len(stripped) <= max_chars:
+        return [stripped] if stripped else []
+
+    sentences = re.split(r'(?<=[.!?])\s+', stripped)
+
+    chunks: List[str] = []
+    current = ""
+    for sentence in sentences:
+        if not sentence:
+            continue
+        if current and len(current) + 1 + len(sentence) > max_chars:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip() if current else sentence
+
+    if current:
+        chunks.append(current)
+
+    return chunks
 
 
 class TranscriptParser:
@@ -70,10 +119,7 @@ class TranscriptParser:
             context=context if context else None,
         )
 
-        if self.use_anthropic:
-            atomic_objects = await self._parse_with_claude(parse_request)
-        else:
-            atomic_objects = await self._parse_with_openai(parse_request)
+        atomic_objects = await self._parse_chunked(parse_request)
 
         # Flag low-confidence objects for user review
         for obj in atomic_objects:
@@ -82,6 +128,69 @@ class TranscriptParser:
 
         processing_time = time.time() - start_time
         return atomic_objects, self.model, processing_time, request.transcript
+
+    async def _parse_chunked(
+        self,
+        request: TranscriptParseRequest
+    ) -> List[AtomicObjectParsed]:
+        """
+        Parse a transcript, splitting long ones into concurrent calls.
+
+        Short transcripts take the single-call path unchanged. Long ones are cut
+        on sentence boundaries and parsed in parallel, so wall-clock tracks the
+        slowest chunk rather than the sum — which is what makes a five-minute
+        note cost about the same as a one-minute one.
+        """
+        chunks = split_transcript(request.transcript)
+
+        if len(chunks) <= 1:
+            return await self._parse_one(request)
+
+        print(f"Parsing {len(chunks)} chunks concurrently ({len(request.transcript)} chars)")
+        semaphore = asyncio.Semaphore(MAX_PARALLEL_CHUNKS)
+
+        async def parse_chunk(chunk: str) -> List[AtomicObjectParsed]:
+            async with semaphore:
+                chunk_request = request.model_copy(update={"transcript": chunk})
+                return await self._parse_one(chunk_request)
+
+        results = await asyncio.gather(
+            *(parse_chunk(chunk) for chunk in chunks),
+            return_exceptions=True,
+        )
+
+        # One failed chunk must not discard the rest — losing a quarter of a note
+        # beats losing all of it. A total failure still raises, so the caller's
+        # unparsed-save fallback takes over.
+        atomic_objects: List[AtomicObjectParsed] = []
+        failures = 0
+        for index, result in enumerate(results):
+            if isinstance(result, BaseException):
+                failures += 1
+                print(f"Chunk {index} failed: {result}")
+                continue
+            atomic_objects.extend(result)
+
+        if failures == len(chunks):
+            raise RuntimeError(f"All {failures} transcript chunks failed to parse")
+        if failures:
+            print(f"Recovered {len(chunks) - failures}/{len(chunks)} chunks")
+
+        # sequence_index is assigned per-chunk, so it restarts at 0 on every
+        # chunk. Renumber across the whole transcript to restore spoken order.
+        for position, obj in enumerate(atomic_objects):
+            obj.sequence_index = position
+
+        return atomic_objects
+
+    async def _parse_one(
+        self,
+        request: TranscriptParseRequest
+    ) -> List[AtomicObjectParsed]:
+        """Single LLM call for one transcript (or one chunk of one)."""
+        if self.use_anthropic:
+            return await self._parse_with_claude(request)
+        return await self._parse_with_openai(request)
 
     async def _parse_with_openai(
         self,
@@ -145,7 +254,7 @@ class TranscriptParser:
 
         payload = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": CLAUDE_MAX_TOKENS,
             "temperature": 0.2,
             "system": SYSTEM_PROMPT,
             "messages": messages,
