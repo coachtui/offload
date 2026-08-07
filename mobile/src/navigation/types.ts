@@ -1,6 +1,7 @@
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
+  Permissions: undefined;
   Home: undefined;
   Record: undefined;
   Objects: { geofenceId?: string; objectId?: string } | undefined;

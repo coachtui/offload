@@ -3,6 +3,7 @@ import { LoginRequest, RegisterRequest, AuthResponse } from '../types';
 import { apiService, AuthError } from '../services/api';
 import { registerPushTokenWithBackend } from '../services/pushRegistration';
 import { geofenceMonitoringService } from '../services/geofenceMonitoringService';
+import { resetPermissionOnboarding } from '../services/permissionService';
 
 interface AuthState {
   user: AuthResponse['user'] | null;
@@ -108,6 +109,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       geofenceMonitoringService
         .teardownForSignOut()
         .catch(e => console.warn('[AuthContext] geofence teardown failed:', e))
+        .then(() => resetPermissionOnboarding())
+        .catch(e => console.warn('[AuthContext] permission reset failed:', e))
         .then(() => apiService.clearToken())
         .then(() => {
           setState({ user: null, isAuthenticated: false, isLoading: false });
@@ -138,6 +141,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Tear down geofences BEFORE dropping the token: OS region registrations
     // outlive the session, so without this the next account inherits them.
     await geofenceMonitoringService.teardownForSignOut();
+    // Clear the "already onboarded" flags too — they're device-local, so without
+    // this the next account to sign in on this phone silently skips the ladder.
+    await resetPermissionOnboarding();
     await apiService.logout();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }

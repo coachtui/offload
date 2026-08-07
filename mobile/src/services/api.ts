@@ -671,7 +671,14 @@ class ApiService {
       altitude?: number;
     };
     metadata?: Record<string, any>;
-  }): Promise<{ sessionId: string; objectIds: string[]; objectCount: number; hasGeofenceCandidates?: boolean }> {
+  }): Promise<{
+    sessionId: string;
+    objectIds: string[];
+    objectCount: number;
+    hasGeofenceCandidates?: boolean;
+    /** Place names the note mentioned — a label for prompts, not confirmed geofences. */
+    placeNames?: string[];
+  }> {
     return this.request('/api/v1/voice/save-transcript', {
       method: 'POST',
       body: JSON.stringify(data),
