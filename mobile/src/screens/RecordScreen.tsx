@@ -127,6 +127,8 @@ export function RecordScreen({ navigation }: Props) {
     prefetchDeepgramToken();
   }, []);
 
+  const transcriptScrollRef = useRef<ScrollView>(null);
+
   const isRecording = status === 'recording';
   const isConnecting = status === 'connecting';
   const isProcessing = status === 'processing';
@@ -261,7 +263,19 @@ export function RecordScreen({ navigation }: Props) {
       {/* Transcript */}
       {hasTranscript || isRecording ? (
         <View style={styles.transcriptCard}>
-          <ScrollView style={styles.transcriptScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={transcriptScrollRef}
+            style={styles.transcriptScroll}
+            showsVerticalScrollIndicator={false}
+            // The card is capped at 190px, so a note of any length outgrows it
+            // within seconds. Without this the view stays pinned at the top and
+            // the user watches their own words disappear off the bottom while
+            // they are still talking. Only follow along while recording — once
+            // stopped, leave the scroll position under the user's control.
+            onContentSizeChange={() => {
+              if (isRecording) transcriptScrollRef.current?.scrollToEnd({ animated: true });
+            }}
+          >
             <AppText variant="body" style={styles.transcriptText}>
               {finalTranscript ? <AppText style={styles.finalText}>{finalTranscript} </AppText> : null}
               {partialTranscript ? <AppText style={styles.liveText}>{partialTranscript}</AppText> : null}

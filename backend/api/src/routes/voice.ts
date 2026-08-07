@@ -6,19 +6,10 @@
 import { Router, Request, Response, json } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
-import { parseTranscript, checkMLServiceHealth } from '../services/mlService';
-import type { ParseTranscriptResponse } from '../services/mlService';
-import { createObject } from '../services/objectService';
 import { Session } from '../models/Session';
-import { resolveObjectPlaces } from '../services/placeService';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
 import { transcribeWithGpt4o } from '../services/transcriptionService';
-import { typeEntities } from '../services/entityTyping';
-import {
-  textHasArrivalTrigger,
-  extractPlacesFromText,
-  shouldResolvePlaces,
-} from '../services/arrivalTrigger';
+import { processSessionInBackground } from '../services/transcriptProcessingService';
 
 const router = Router();
 
@@ -111,196 +102,39 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
       altitude: location.altitude,
     } : undefined;
 
-    // Create a session record (initial status: 'recording')
+    // Persist the transcript and hand off. The parse and the per-object writes
+    // scale with how long the user talked, so keeping them on the request path
+    // made the client's timeout a function of note length — an unwinnable race
+    // that showed up as "Couldn't save your note" on notes that had, in fact,
+    // saved. The transcript is durable at this point; everything after it is
+    // recoverable work.
     const session = await Session.create({
       userId,
       deviceId: 'mobile-deepgram',
       location: geoLocation,
       metadata: { duration, transcriptionMethod: 'deepgram', ...metadata },
+      transcript,
+      status: 'processing',
     });
-    console.log('[Voice] session created:', session.id);
+    console.log('[Voice] session created:', session.id, '— processing in background');
 
-    // Parse transcript and create atomic objects
-    const objectIds: string[] = [];
-    let hasGeofenceCandidates = false;
-    // Place names the note referred to, echoed back so the client can name the
-    // place in its "remind you at X?" permission prompt. Resolution itself is
-    // async and may still fail — these are what the user *said*, not confirmed
-    // geofences, so the client must treat them as a label only.
-    const candidatePlaceNames: string[] = [];
+    // Deliberately not awaited. setImmediate defers past the response flush so a
+    // slow parse cannot delay the reply the client is waiting on.
+    setImmediate(() => {
+      void processSessionInBackground(session);
+    });
 
-    // Save the whole transcript as a single unparsed object. Used both when the
-    // ML service is down and when a parse attempt fails on a healthy service —
-    // losing a note the user already spoke is the worst outcome this route has.
-    const saveUnparsed = async () => {
-      const object = await createObject(userId, {
-        content: transcript,
-        source: {
-          type: 'voice',
-          recordingId: session.id,
-          location: geoLocation,
-        },
-      });
-      objectIds.push(object.id);
-
-      // Still attempt place extraction via deterministic patterns even without ML.
-      // ML provides richer place extraction, but the store-name patterns are reliable
-      // enough to handle the most common cases when ML is down.
-      const hasTrigger = textHasArrivalTrigger(transcript);
-      if (hasTrigger) {
-        const places = extractPlacesFromText(transcript);
-        if (places.length > 0) {
-          hasGeofenceCandidates = true;
-          candidatePlaceNames.push(...places);
-          console.log(`[Voice] ML-fallback deterministic trigger — places detected: ${places.join(', ')}`);
-          resolveObjectPlaces(userId, object.id, places, geoLocation).catch(err =>
-            console.warn('[Voice] Place resolution failed silently (ML fallback) for object', object.id, ':', err)
-          );
-        } else {
-          console.log('[Voice] ML-fallback: arrival trigger matched but no extractable store name — skipping place resolution');
-        }
-      }
-    };
-
-    try {
-      if (transcript.trim()) {
-        const mlAvailable = await checkMLServiceHealth();
-        console.log('[Voice] ML service available:', mlAvailable);
-
-        // A parse can fail against a perfectly healthy service — most often by
-        // timing out, because generation time scales with how many objects the
-        // note contains, so long notes are precisely the ones that exhaust the
-        // budget. The health check still says "up", so this used to rethrow and
-        // the note was lost outright. Degrade to an unparsed save instead.
-        let parseResult: ParseTranscriptResponse | null = null;
-        if (mlAvailable) {
-          try {
-            parseResult = await parseTranscript({
-              transcript,
-              userId,
-              sessionId: session.id,
-              location: geoLocation,
-              timestamp: new Date(),
-            });
-            console.log('[Voice] ML parsed', parseResult.atomicObjects.length, 'objects');
-          } catch (parseError) {
-            console.error(
-              '[Voice] ML parse failed — falling back to unparsed save:',
-              parseError instanceof Error ? parseError.message : parseError
-            );
-          }
-        }
-
-        if (parseResult) {
-          for (const parsedObject of parseResult.atomicObjects) {
-            // Type entities using the parser's people list (person vs other)
-            const entityObjects = typeEntities(parsedObject.entities, parsedObject.people);
-
-            // Deterministic fallback: the parser only flags geofence_candidate for
-            // arrival phrasing, so a dictated errand ("I need chicken and soda from
-            // Costco") comes back false and its place was never resolved. These rules
-            // rescue that case; they only ever ADD candidates, never remove one.
-            const textContent = parsedObject.cleanedText || parsedObject.rawText || '';
-            const parserFlag = parsedObject.locationHints?.geofenceCandidate;
-            const parsedPlaces = parsedObject.locationHints?.places ?? [];
-            const effectiveGeofenceCandidate = shouldResolvePlaces(
-              textContent,
-              parsedPlaces,
-              parserFlag
-            );
-
-            if (effectiveGeofenceCandidate && !parserFlag) {
-              console.log(`[Voice] Deterministic place trigger detected in: "${textContent.slice(0, 80)}"`);
-            }
-
-            const object = await createObject(userId, {
-              content: textContent,
-              category: [],
-              source: {
-                type: 'voice',
-                recordingId: session.id,
-                location: geoLocation,
-              },
-              metadata: {
-                entities: entityObjects,
-                tags: parsedObject.tags,
-                urgency: parsedObject.temporalHints.urgency || undefined,
-              },
-              // v2 rich fields
-              rawText: parsedObject.rawText,
-              cleanedText: parsedObject.cleanedText,
-              title: parsedObject.title,
-              whyItMatters: parsedObject.whyItMatters,
-              objectType: parsedObject.type,
-              domain: parsedObject.domain,
-              temporalHints: parsedObject.temporalHints,
-              locationHints: parsedObject.locationHints,
-              actionability: parsedObject.actionability,
-              sequenceIndex: parsedObject.sequenceIndex,
-            });
-            objectIds.push(object.id);
-
-            // Fire-and-forget place resolution for objects mentioning places
-            if (effectiveGeofenceCandidate && parsedPlaces.length > 0) {
-              hasGeofenceCandidates = true;
-              candidatePlaceNames.push(...parsedPlaces);
-              resolveObjectPlaces(
-                userId,
-                object.id,
-                parsedPlaces,
-                geoLocation
-              ).catch(err =>
-                console.warn('[Voice] Place resolution failed silently for object', object.id, ':', err)
-              );
-            }
-          }
-        } else {
-          console.log(
-            mlAvailable
-              ? '[Voice] parse failed — creating single fallback object'
-              : '[Voice] ML unavailable — creating single fallback object'
-          );
-          await saveUnparsed();
-        }
-      }
-
-      // Update session as completed — transcript not persisted (already parsed into objects)
-      await session.update({
-        status: 'completed',
-        metadata: {
-          ...session.metadata,
-          objectIds,
-        },
-      });
-      console.log('[Voice] session', session.id, 'completed —', objectIds.length, 'objects');
-
-    } catch (processingError) {
-      // Session exists but processing failed — mark as failed so it appears in UI
-      console.error('[Voice] processing failed for session', session.id, ':', processingError);
-      try {
-        await session.update({
-          status: 'failed',
-          metadata: {
-            ...session.metadata,
-            processingError: processingError instanceof Error ? processingError.message : 'Unknown error',
-          },
-        });
-      } catch (updateError) {
-        console.error('[Voice] could not mark session as failed:', updateError);
-      }
-      throw processingError;
-    }
-
-    // hasGeofenceCandidates signals to the client that place resolution is running
-    // asynchronously server-side and geofences may be created shortly. The client
-    // should re-fetch geofences after a brief delay to pick up new OS registrations.
-    console.log(`[Voice] Responding — objectCount=${objectIds.length}, hasGeofenceCandidates=${hasGeofenceCandidates}`);
-    res.json({
+    // 202: accepted, not yet complete. The old fields are still present and
+    // empty so a client built against the synchronous contract (the March
+    // production build, on a different runtime version) keeps parsing the body
+    // instead of erroring. New clients key off `status`.
+    res.status(202).json({
       sessionId: session.id,
-      objectIds,
-      objectCount: objectIds.length,
-      hasGeofenceCandidates: hasGeofenceCandidates ?? false,
-      placeNames: [...new Set(candidatePlaceNames)],
+      status: 'processing',
+      objectIds: [],
+      objectCount: 0,
+      hasGeofenceCandidates: false,
+      placeNames: [],
     });
   } catch (error) {
     console.error('[Voice] save-transcript error:', error);

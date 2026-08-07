@@ -1,8 +1,7 @@
 import request from 'supertest';
 import express from 'express';
 import voiceRouter from '../../routes/voice';
-import * as mlService from '../../services/mlService';
-import * as objectService from '../../services/objectService';
+import * as processing from '../../services/transcriptProcessingService';
 import { Session } from '../../models/Session';
 
 jest.mock('../../auth/middleware', () => ({
@@ -14,15 +13,10 @@ jest.mock('../../auth/middleware', () => ({
 jest.mock('../../services/transcriptionService', () => ({
   transcribeWithGpt4o: jest.fn(),
 }));
-jest.mock('../../services/mlService');
-jest.mock('../../services/objectService');
-jest.mock('../../services/placeService', () => ({
-  resolveObjectPlaces: jest.fn().mockResolvedValue(undefined),
-}));
+jest.mock('../../services/transcriptProcessingService');
 jest.mock('../../models/Session');
 
-const mockMl = mlService as jest.Mocked<typeof mlService>;
-const mockObjects = objectService as jest.Mocked<typeof objectService>;
+const mockProcessing = processing as jest.Mocked<typeof processing>;
 const MockSession = Session as jest.Mocked<typeof Session>;
 
 function appWithUser(userId: string | null) {
@@ -37,84 +31,90 @@ function post(body: any, userId: string | null = 'u-1') {
   return request(appWithUser(userId)).post('/api/v1/voice/save-transcript').send(body);
 }
 
+/** Let the setImmediate the route schedules actually run. */
+const flushImmediates = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('POST /api/v1/voice/save-transcript', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    MockSession.create.mockResolvedValue({
-      id: 's-1',
-      metadata: {},
-      update: jest.fn().mockResolvedValue(undefined),
-    } as any);
-    let n = 0;
-    mockObjects.createObject.mockImplementation(async () => ({ id: `o-${++n}` }) as any);
+    MockSession.create.mockResolvedValue({ id: 's-1', metadata: {} } as any);
+    mockProcessing.processSessionInBackground.mockResolvedValue(undefined);
   });
 
-  it('creates one object per parsed item when the parse succeeds', async () => {
-    mockMl.checkMLServiceHealth.mockResolvedValue(true);
-    mockMl.parseTranscript.mockResolvedValue({
-      atomicObjects: [
-        { rawText: 'a', cleanedText: 'a', entities: [], people: [], tags: [], temporalHints: {}, locationHints: {} },
-        { rawText: 'b', cleanedText: 'b', entities: [], people: [], tags: [], temporalHints: {}, locationHints: {} },
-      ],
-      processingTime: 1,
-      modelUsed: 'gpt-4o',
-    } as any);
+  it('returns 202 immediately with a processing status', async () => {
+    const res = await post({ transcript: 'ramble for a while' });
 
-    const res = await post({ transcript: 'a. b.' });
-
-    expect(res.status).toBe(200);
-    expect(res.body.objectCount).toBe(2);
-    expect(mockObjects.createObject).toHaveBeenCalledTimes(2);
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({ sessionId: 's-1', status: 'processing' });
   });
 
-  // The regression this guards: the parse used to be trusted to either succeed or
-  // mean the service was down. A parse that threw on a *healthy* service — which
-  // is what a timeout looks like, and long notes are the ones that time out —
-  // propagated out and 500'd, so the user was told "Couldn't save your note" and
-  // nothing at all was written. The note must survive a parse failure.
-  it('falls back to saving the raw transcript when the parse fails', async () => {
-    mockMl.checkMLServiceHealth.mockResolvedValue(true);
-    mockMl.parseTranscript.mockRejectedValue(new Error('timeout of 105000ms exceeded'));
+  // The whole point of the async rework: the transcript is durable before any
+  // LLM work starts, so nothing downstream can lose the user's words.
+  it('persists the transcript on the session before responding', async () => {
+    await post({ transcript: 'buy milk and call mum' });
 
-    const res = await post({ transcript: 'a long note that took too long to parse' });
-
-    expect(res.status).toBe(200);
-    expect(res.body.objectCount).toBe(1);
-    expect(mockObjects.createObject).toHaveBeenCalledTimes(1);
-    expect(mockObjects.createObject).toHaveBeenCalledWith(
-      'u-1',
-      expect.objectContaining({ content: 'a long note that took too long to parse' })
+    expect(MockSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'u-1',
+        transcript: 'buy milk and call mum',
+        status: 'processing',
+      })
     );
   });
 
-  it('falls back to saving the raw transcript when the ML service is down', async () => {
-    mockMl.checkMLServiceHealth.mockResolvedValue(false);
+  it('schedules background processing for the created session', async () => {
+    await post({ transcript: 'sort this out later' });
+    await flushImmediates();
 
-    const res = await post({ transcript: 'service is down' });
-
-    expect(res.status).toBe(200);
-    expect(res.body.objectCount).toBe(1);
-    expect(mockMl.parseTranscript).not.toHaveBeenCalled();
+    expect(mockProcessing.processSessionInBackground).toHaveBeenCalledTimes(1);
+    expect(mockProcessing.processSessionInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 's-1' })
+    );
   });
 
-  // A write failure is genuinely unrecoverable — there is no degraded path left,
-  // so it must still surface rather than reporting a save that didn't happen.
-  it('still 500s when the object write itself fails', async () => {
-    mockMl.checkMLServiceHealth.mockResolvedValue(false);
-    mockObjects.createObject.mockRejectedValue(new Error('postgres is unreachable'));
+  // Old clients (the March production build, on a different runtime version)
+  // read these fields unconditionally. Absent keys would break their parsing.
+  it('keeps the legacy response fields present and empty', async () => {
+    const res = await post({ transcript: 'hello' });
 
-    const res = await post({ transcript: 'cannot write this' });
+    expect(res.body.objectIds).toEqual([]);
+    expect(res.body.objectCount).toBe(0);
+    expect(res.body.hasGeofenceCandidates).toBe(false);
+    expect(res.body.placeNames).toEqual([]);
+  });
+
+  it('does not wait on background processing before responding', async () => {
+    let release: () => void = () => {};
+    mockProcessing.processSessionInBackground.mockImplementation(
+      () => new Promise<void>((resolve) => { release = resolve; })
+    );
+
+    // Resolves despite processing never settling — a hung parse must not hang
+    // the request, which was the original failure mode.
+    const res = await post({ transcript: 'a very long note' });
+    expect(res.status).toBe(202);
+
+    release();
+  });
+
+  it('500s when the transcript cannot be persisted', async () => {
+    MockSession.create.mockRejectedValue(new Error('postgres is unreachable'));
+
+    const res = await post({ transcript: 'cannot store this' });
 
     expect(res.status).toBe(500);
+    expect(mockProcessing.processSessionInBackground).not.toHaveBeenCalled();
   });
 
   it('returns 401 when unauthenticated', async () => {
     const res = await post({ transcript: 'hello' }, null);
     expect(res.status).toBe(401);
+    expect(MockSession.create).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an empty transcript', async () => {
     const res = await post({ transcript: '' });
     expect(res.status).toBe(400);
+    expect(MockSession.create).not.toHaveBeenCalled();
   });
 });

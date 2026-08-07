@@ -678,6 +678,8 @@ class ApiService {
     metadata?: Record<string, any>;
   }): Promise<{
     sessionId: string;
+    /** 'processing' — the transcript is stored; sorting happens in the background. */
+    status?: 'processing' | 'completed';
     objectIds: string[];
     objectCount: number;
     hasGeofenceCandidates?: boolean;
@@ -688,19 +690,12 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(data),
     },
-    // The server LLM-parses the transcript into atomic objects, then writes each
-    // one sequentially. Long notes exceed the default 30s, so the client aborts
-    // and (wrongly) reports "Couldn't save your note" — even though the server
-    // finishes the save.
-    //
-    // 90s was still short: the parse alone is now allowed 105s server-side, and
-    // the sequential per-object writes (Postgres + vector store + category
-    // rules, ~1s each) run after it. This budget must exceed that whole chain or
-    // we resurrect the same false failure. Nothing waits on it — RecordScreen
-    // navigates to Home immediately and the notification fires whenever this
-    // resolves — so a long tail costs the user nothing and a premature abort
-    // costs them a note.
-    180000);
+    // The server now stores the transcript and returns 202 immediately, parsing
+    // in the background and pushing when it finishes. So this is a single write
+    // again and its duration no longer scales with how long the user talked —
+    // which is what made every previous number here wrong. The generous budget
+    // is for a bad connection, not for the server's workload.
+    30000);
   }
 
   // Synthesis methods
