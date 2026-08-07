@@ -7,6 +7,7 @@ import { Router, Request, Response, json } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
 import { parseTranscript, checkMLServiceHealth } from '../services/mlService';
+import type { ParseTranscriptResponse } from '../services/mlService';
 import { createObject } from '../services/objectService';
 import { Session } from '../models/Session';
 import { resolveObjectPlaces } from '../services/placeService';
@@ -128,21 +129,69 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
     // geofences, so the client must treat them as a label only.
     const candidatePlaceNames: string[] = [];
 
+    // Save the whole transcript as a single unparsed object. Used both when the
+    // ML service is down and when a parse attempt fails on a healthy service —
+    // losing a note the user already spoke is the worst outcome this route has.
+    const saveUnparsed = async () => {
+      const object = await createObject(userId, {
+        content: transcript,
+        source: {
+          type: 'voice',
+          recordingId: session.id,
+          location: geoLocation,
+        },
+      });
+      objectIds.push(object.id);
+
+      // Still attempt place extraction via deterministic patterns even without ML.
+      // ML provides richer place extraction, but the store-name patterns are reliable
+      // enough to handle the most common cases when ML is down.
+      const hasTrigger = textHasArrivalTrigger(transcript);
+      if (hasTrigger) {
+        const places = extractPlacesFromText(transcript);
+        if (places.length > 0) {
+          hasGeofenceCandidates = true;
+          candidatePlaceNames.push(...places);
+          console.log(`[Voice] ML-fallback deterministic trigger — places detected: ${places.join(', ')}`);
+          resolveObjectPlaces(userId, object.id, places, geoLocation).catch(err =>
+            console.warn('[Voice] Place resolution failed silently (ML fallback) for object', object.id, ':', err)
+          );
+        } else {
+          console.log('[Voice] ML-fallback: arrival trigger matched but no extractable store name — skipping place resolution');
+        }
+      }
+    };
+
     try {
       if (transcript.trim()) {
         const mlAvailable = await checkMLServiceHealth();
         console.log('[Voice] ML service available:', mlAvailable);
 
+        // A parse can fail against a perfectly healthy service — most often by
+        // timing out, because generation time scales with how many objects the
+        // note contains, so long notes are precisely the ones that exhaust the
+        // budget. The health check still says "up", so this used to rethrow and
+        // the note was lost outright. Degrade to an unparsed save instead.
+        let parseResult: ParseTranscriptResponse | null = null;
         if (mlAvailable) {
-          const parseResult = await parseTranscript({
-            transcript,
-            userId,
-            sessionId: session.id,
-            location: geoLocation,
-            timestamp: new Date(),
-          });
-          console.log('[Voice] ML parsed', parseResult.atomicObjects.length, 'objects');
+          try {
+            parseResult = await parseTranscript({
+              transcript,
+              userId,
+              sessionId: session.id,
+              location: geoLocation,
+              timestamp: new Date(),
+            });
+            console.log('[Voice] ML parsed', parseResult.atomicObjects.length, 'objects');
+          } catch (parseError) {
+            console.error(
+              '[Voice] ML parse failed — falling back to unparsed save:',
+              parseError instanceof Error ? parseError.message : parseError
+            );
+          }
+        }
 
+        if (parseResult) {
           for (const parsedObject of parseResult.atomicObjects) {
             // Type entities using the parser's people list (person vs other)
             const entityObjects = typeEntities(parsedObject.entities, parsedObject.people);
@@ -206,35 +255,12 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
             }
           }
         } else {
-          // Fallback: create single object with full transcript
-          console.log('[Voice] ML unavailable — creating single fallback object');
-          const object = await createObject(userId, {
-            content: transcript,
-            source: {
-              type: 'voice',
-              recordingId: session.id,
-              location: geoLocation,
-            },
-          });
-          objectIds.push(object.id);
-
-          // Still attempt place extraction via deterministic patterns even without ML.
-          // ML provides richer place extraction, but the store-name patterns are reliable
-          // enough to handle the most common cases when ML is down.
-          const hasTrigger = textHasArrivalTrigger(transcript);
-          if (hasTrigger) {
-            const places = extractPlacesFromText(transcript);
-            if (places.length > 0) {
-              hasGeofenceCandidates = true;
-              candidatePlaceNames.push(...places);
-              console.log(`[Voice] ML-fallback deterministic trigger — places detected: ${places.join(', ')}`);
-              resolveObjectPlaces(userId, object.id, places, geoLocation).catch(err =>
-                console.warn('[Voice] Place resolution failed silently (ML fallback) for object', object.id, ':', err)
-              );
-            } else {
-              console.log('[Voice] ML-fallback: arrival trigger matched but no extractable store name — skipping place resolution');
-            }
-          }
+          console.log(
+            mlAvailable
+              ? '[Voice] parse failed — creating single fallback object'
+              : '[Voice] ML unavailable — creating single fallback object'
+          );
+          await saveUnparsed();
         }
       }
 

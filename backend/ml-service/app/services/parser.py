@@ -15,6 +15,13 @@ from ..prompts.transcript_parser import (
 )
 from .transcript_cleaner import get_cleaner
 
+# The parse emits one full object (raw/cleaned text, title, why-it-matters,
+# entities, tags, hints) per idea in the note, so generation time scales with how
+# much the user said — a 90-second note costs several times a 15-second one. At
+# 60s long notes timed out, which the API surfaced as an outright save failure.
+# The API's own budget for this service must stay above this value.
+LLM_TIMEOUT_SECONDS = 90.0
+
 
 class TranscriptParser:
     """Parser for converting transcripts into rich atomic objects"""
@@ -103,7 +110,7 @@ class TranscriptParser:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
 
@@ -145,7 +152,7 @@ class TranscriptParser:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
 
