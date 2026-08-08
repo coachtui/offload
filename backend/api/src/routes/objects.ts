@@ -56,6 +56,10 @@ router.get('/', async (req: Request, res: Response) => {
 
     const categoryId = req.query.categoryId as string | undefined;
 
+    // Set by the "sorted into N notes" push so a tap can open just that
+    // recording's notes rather than the whole list.
+    const sessionId = req.query.sessionId as string | undefined;
+
     const dateFrom = req.query.dateFrom
       ? new Date(req.query.dateFrom as string)
       : undefined;
@@ -75,6 +79,7 @@ router.get('/', async (req: Request, res: Response) => {
       domain,
       objectType,
       categoryId,
+      sessionId,
       dateFrom,
       dateTo,
       search: req.query.search as string,

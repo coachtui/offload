@@ -231,6 +231,9 @@ export class AtomicObjectModel {
       dateFrom?: Date;
       dateTo?: Date;
       categoryId?: string;
+      /** Scope to the notes one recording was sorted into. Objects carry the
+       *  session id as source_recording_id (set in transcriptProcessingService). */
+      sessionId?: string;
     }
   ): Promise<{ objects: AtomicObjectModel[]; total: number }> {
     let queryText = 'SELECT * FROM hub.atomic_objects WHERE user_id = $1 AND deleted_at IS NULL';
@@ -265,6 +268,11 @@ export class AtomicObjectModel {
     if (options?.categoryId) {
       queryText += ` AND category_id = $${paramIndex++}`;
       params.push(options.categoryId);
+    }
+
+    if (options?.sessionId) {
+      queryText += ` AND source_recording_id = $${paramIndex++}`;
+      params.push(options.sessionId);
     }
 
     const countQuery = queryText.replace('SELECT *', 'SELECT COUNT(*) as count');

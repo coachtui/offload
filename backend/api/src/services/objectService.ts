@@ -86,6 +86,8 @@ export interface ListObjectsOptions {
   domain?: string[];
   objectType?: string[];
   categoryId?: string;
+  /** Scope to the notes one recording produced. */
+  sessionId?: string;
   dateFrom?: Date;
   dateTo?: Date;
   search?: string;
@@ -196,9 +198,15 @@ export async function listObjects(
 
       const objectIds = searchResults.map((r) => r.objectId);
       const allObjects = await AtomicObjectModel.findByIds(objectIds);
-      const objects = options.categoryId
+      const categoryFiltered = options.categoryId
         ? allObjects.filter((obj) => obj.categoryId === options.categoryId)
         : allObjects;
+      // semanticSearch has no session predicate, so scope here instead —
+      // otherwise searching while scoped to one recording returns notes from
+      // every other one.
+      const objects = options.sessionId
+        ? categoryFiltered.filter((obj) => obj.source.recordingId === options.sessionId)
+        : categoryFiltered;
 
       return {
         objects: objects.map((obj) => obj.toAtomicObject()),
@@ -217,6 +225,7 @@ export async function listObjects(
     domain: options.domain,
     objectType: options.objectType,
     categoryId: options.categoryId,
+    sessionId: options.sessionId,
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
     limit,
