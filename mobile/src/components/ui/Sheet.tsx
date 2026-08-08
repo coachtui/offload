@@ -94,6 +94,8 @@ export interface ConfirmSheetProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  /** Small print below the actions — version strings and the like. */
+  footnote?: string;
 }
 
 /** Styled replacement for Alert.alert confirmation dialogs. */
@@ -106,6 +108,7 @@ export function ConfirmSheet({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive,
+  footnote,
 }: ConfirmSheetProps) {
   const { colors } = useTheme();
 
@@ -134,6 +137,11 @@ export function ConfirmSheet({
           }
         />
       </View>
+      {footnote ? (
+        <AppText variant="secondary" color="faint" align="center" style={styles.footnote}>
+          {footnote}
+        </AppText>
+      ) : null}
     </AppSheet>
   );
 }
@@ -163,5 +171,6 @@ const styles = StyleSheet.create({
   },
   message: { marginBottom: Spacing.xl },
   actions: { flexDirection: 'row', gap: Spacing.md },
+  footnote: { marginTop: Spacing.lg },
   action: { flex: 1 },
 });

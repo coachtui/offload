@@ -13,6 +13,7 @@ import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { apiService } from '../services/api';
 import { locationService } from '../services/locationService';
+import { wasRecentlyNotified, markNotified } from '../services/arrivalLedger';
 
 export interface ProximityMatch {
   geofenceId: string;
@@ -24,8 +25,6 @@ export interface ProximityMatch {
 
 // GPS jitter buffer added to the geofence radius when deciding "you're here".
 const ARRIVAL_BUFFER_METERS = 75;
-// Don't re-fire a notification for the same geofence within this window.
-const NOTIFY_COOLDOWN_MS = 30 * 60 * 1000;
 
 function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -40,7 +39,6 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
 
 export function useProximityAlerts() {
   const [match, setMatch] = useState<ProximityMatch | null>(null);
-  const lastNotifiedRef = useRef<Record<string, number>>({});
   const checkingRef = useRef(false);
 
   const check = useCallback(async () => {
@@ -92,11 +90,11 @@ export function useProximityAlerts() {
       };
       setMatch(next);
 
-      // Fire a local notification too, with a per-geofence cooldown so re-opening
-      // the app at the same place doesn't spam.
-      const now = Date.now();
-      if (now - (lastNotifiedRef.current[best.id] ?? 0) > NOTIFY_COOLDOWN_MS) {
-        lastNotifiedRef.current[best.id] = now;
+      // Fire a local notification too, gated on the arrival ledger shared with
+      // the background geofence task — the OS often delivers the pending region
+      // event moments after the app opens at a place, and without a shared
+      // record the same arrival pings twice.
+      if (!(await wasRecentlyNotified(best.id))) {
         await Notifications.scheduleNotificationAsync({
           content: {
             title: `📍 You're at ${best.name}`,
@@ -111,6 +109,7 @@ export function useProximityAlerts() {
           },
           trigger: null,
         });
+        await markNotified(best.id);
         console.log(`[Proximity] notified for "${best.name}" (${Math.round(bestDist)}m, ${next.count} note(s))`);
       }
     } catch (e) {

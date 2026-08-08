@@ -19,6 +19,7 @@ import { PermissionBanner } from '../components/PermissionBanner';
 import { ArrivalPermissionSheet } from '../components/ArrivalPermissionSheet';
 import { subscribeArrivalPrompt } from '../services/arrivalPromptBus';
 import { hasSeenArrivalPrompt, canDeliverArrivalReminders } from '../services/permissionService';
+import { getBuildInfo } from '../services/buildInfo';
 import {
   AppSearchBar,
   AppText,
@@ -109,6 +110,10 @@ function greetingForNow(): string {
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
 }
+
+// Fixed for the life of the JS runtime — a new update only takes effect
+// through a reload, which re-evaluates this module anyway.
+const buildInfo = getBuildInfo();
 
 export function HomeScreen({ navigation }: Props) {
   const { logout, user } = useAuth();
@@ -407,6 +412,7 @@ export function HomeScreen({ navigation }: Props) {
         message="Your notes stay safely synced to your account."
         confirmLabel="Log out"
         destructive
+        footnote={buildInfo.label}
       />
 
       <ArrivalPermissionSheet

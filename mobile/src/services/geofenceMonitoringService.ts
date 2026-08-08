@@ -21,6 +21,7 @@ import * as SecureStore from 'expo-secure-store';
 import { File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { refreshAuthToken } from './api';
+import { wasRecentlyNotified, markNotified } from './arrivalLedger';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -76,6 +77,8 @@ export interface GeofenceRegion {
    * a region whose snapshot says notes are waiting still gets a notification.
    */
   openCount?: number;
+  /** First open note's title as of the last sync — notification body content. */
+  openPreview?: string;
 }
 
 export interface GeofenceEvent {
@@ -397,10 +400,23 @@ class GeofenceMonitoringService {
   /**
    * Show local notification for geofence event.
    *
-   * Inferred places (region.placeId set): calls /places/:id/notify for cooldown check
-   * + bundled objects, then routes to PlaceSummaryScreen.
+   * Fire-first: when the sync-time snapshot says notes are waiting here, the
+   * notification is presented immediately from on-device data — no auth, no
+   * network, no server inside the ~10s locked-phone wake window. iOS region
+   * wakes are this product's core moment; every remote dependency at that
+   * moment is a way to miss it, and each one has actually missed it in the
+   * field. The backend is then told about the arrival fire-and-forget, purely
+   * as bookkeeping (its cooldown record, arrival history).
    *
-   * Manual geofences: existing behaviour — fetches geofence objects, routes to Objects screen.
+   * Only a snapshot with NOTHING waiting consults the backend before deciding
+   * — the note may have been created after the last sync, and silence would be
+   * wrong. There the old order (backend authoritative, snapshot as fallback)
+   * still holds, which also preserves the no-noteless-pings guarantee: an
+   * empty snapshot plus an unreachable backend stays silent.
+   *
+   * The shared arrival ledger (one notification per region per window, across
+   * this task AND the foreground proximity check) is consulted before any of
+   * it, so the two paths can never double-ping one arrival.
    */
   private async showGeofenceNotification(event: GeofenceEvent): Promise<void> {
     console.log('[GeofenceMonitoring] showGeofenceNotification called for:', event.type, event.region.name);
@@ -408,6 +424,17 @@ class GeofenceMonitoringService {
     try {
       if (this.isInQuietHours(event.region)) {
         console.log('[GeofenceMonitoring] Skipping notification (quiet hours)');
+        return;
+      }
+
+      if (await wasRecentlyNotified(event.region.identifier)) {
+        console.log('[GeofenceMonitoring] Skipping notification (arrival ledger cooldown)');
+        return;
+      }
+
+      if ((event.region.openCount ?? 0) > 0) {
+        await this.notifyFromSnapshot(event, 'fire-first');
+        this.reportArrival(event);
         return;
       }
 
@@ -419,6 +446,21 @@ class GeofenceMonitoringService {
     } catch (error) {
       console.error('[GeofenceMonitoring] Error showing notification:', error);
     }
+  }
+
+  /**
+   * Tell the backend an arrival happened, ignoring the answer. After a
+   * fire-first notification the server still needs to know — it keeps the
+   * arrival history and its own cooldown record — but nothing about the
+   * user-facing outcome may depend on this call completing.
+   */
+  private reportArrival(event: GeofenceEvent): void {
+    const call = event.region.placeId
+      ? this.fetchPlaceNotify(event.region.placeId, event.type)
+      : this.fetchGeofenceNotify(event.region.identifier, event.type);
+    call.catch((err) =>
+      console.warn('[GeofenceMonitoring] arrival report failed (already notified locally):', err)
+    );
   }
 
   /**
@@ -566,6 +608,7 @@ class GeofenceMonitoringService {
       },
       trigger: null,
     });
+    await markNotified(event.region.identifier);
 
     console.log(`[GeofenceMonitoring] Place notification scheduled: ${title} (id: ${notifId})`);
   }
@@ -646,7 +689,15 @@ class GeofenceMonitoringService {
 
     const name = event.region.name;
     const title = event.type === 'enter' ? `📍 You're at ${name}` : `👋 Left ${name}`;
-    const body = count === 1 ? 'A note is waiting — tap to view' : `${count} notes waiting — tap to view`;
+    const rawPreview = event.region.openPreview?.trim();
+    const preview = rawPreview && rawPreview.length > 58 ? rawPreview.slice(0, 56) + '…' : rawPreview;
+    const body = preview
+      ? count === 1
+        ? preview
+        : `${preview} +${count - 1} more`
+      : count === 1
+        ? 'A note is waiting — tap to view'
+        : `${count} notes waiting — tap to view`;
 
     try {
       await Notifications.scheduleNotificationAsync({
@@ -664,6 +715,7 @@ class GeofenceMonitoringService {
         },
         trigger: null,
       });
+      await markNotified(id);
       console.warn(`[GeofenceMonitoring] ${id}: ${reason} — notified from sync snapshot (${count} open note(s))`);
     } catch (err) {
       console.error('[GeofenceMonitoring] snapshot notification failed:', err);
@@ -691,6 +743,7 @@ class GeofenceMonitoringService {
       },
       trigger: null,
     });
+    await markNotified(geofenceId);
     console.log(`[GeofenceMonitoring] Manual geofence notification scheduled: ${title} (id: ${notifId})`);
   }
 
