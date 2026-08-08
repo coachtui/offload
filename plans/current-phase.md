@@ -4,8 +4,8 @@
 **Phase**: 7 (Cross-Domain Synthesis & AI Insights)
 **Status**: 🔄 Up Next
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
-**Current Date**: 2026-04-04
-**Last Updated**: 2026-04-04
+**Current Date**: 2026-08-08
+**Last Updated**: 2026-08-08
 
 ## Executive Summary
 
@@ -622,12 +622,22 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
 ## Known Issues & Technical Debt
 
 ### High Priority
+0. ⚠️ **Geofence arming gap: brand-new place + immediately-killed app** (2026-08-08)
+   - Registering a region with iOS requires running JS. If the user records a note, kills the app, and drives straight to the *newly created* place, no sync path runs and the region is never armed — no reminder can fire. (Existing, already-registered places are unaffected.)
+   - The "note sorted" push carries the geofence hand-off but does not execute JS when the app is killed; the cold-start tap handler in `App.tsx` also calls only `handleNotificationData`, not `handleSessionProcessed`.
+   - Planned fix: silent `content-available` push (backend payload change + `remote-notification` in `UIBackgroundModes`), plus wiring `handleSessionProcessed` into the cold-start path. See PR #29's description.
+
 1. ⚠️ **TypeScript Strict Mode Disabled**
    - Build command has `|| true` to bypass type errors
    - Need to fix type safety issues
    - Location: `backend/api/package.json`
 
 ### Medium Priority
+2a. ⚠️ **No client-side enforcement of iOS's 20-region geofence cap** (2026-08-08)
+   - `syncRegions()` hands the OS every enabled geofence; past 20, iOS silently rejects the excess (`monitoringDidFailForRegion`). Growth risk, not the current failure — Tui has ~10 regions and confirmed the cap was not the cause of the Aug 8 silent reminders.
+   - 3-geofences-per-place resolution is **intended product behavior** (nearest branches of a named store) — do not "fix" it. When the cap is enforced, prioritize regions with open notes, then nearest.
+   - Related data issue: concurrent place resolution can create byte-identical coordinate duplicates (three pairs observed in prod logs 2026-08-08, "Hawaii State Federal Credit Union"). Wants a dedup pass + unique constraint on (user, rounded lat/lng).
+
 2. ⚠️ **TypeScript Strict Mode Disabled**
    - Build command has `|| true` to bypass type errors
 
@@ -637,6 +647,10 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
    - Current: Semantic search working, keyword search basic
 
 ### Low Priority
+0. ⚠️ **EAS Update channel must match the installed build's profile**
+   - `eas update --branch <name>` only reaches devices whose installed build's `channel` (set per build profile in `eas.json`) points at that same branch
+   - Discovered 2026-08-06: fix was published to `production` but the test device was running a `preview`-profile internal build, so the OTA silently never landed
+   - Before publishing, check which profile/channel the target device is actually on (`eas build:list --limit 5`) rather than assuming `production`
 4. ⚠️ **Audio Storage Disabled on Railway**
    - MinIO not configured in production
    - Audio files not stored long-term
@@ -1011,3 +1025,94 @@ S3_REGION=us-east-1
 **Session Complete**: 2026-01-26 16:30 PST
 **Status**: ✅ S3 configured, tested, and deployed to GitHub
 **Next**: Add S3 credentials to Railway dashboard
+
+---
+
+## Session Update (2026-08-06) - Home Screen Bug Fix, OTA Channel Fix & Brand App Icon
+
+### 🎯 Objectives Completed
+1. ✅ Fixed home screen bug: completed notes stayed visible in "For you right now"
+2. ✅ Diagnosed and fixed an EAS Update channel mismatch that was silently blocking OTA updates
+3. ✅ Replaced the default Expo app icon with the brand mark; shipped a new build
+
+### 🔧 Technical Changes
+
+#### Bug: completed notes not disappearing from home
+**File**: `mobile/src/hooks/useForYou.ts:98`
+
+- Root cause: "Mark Done" sets `state: 'resolved'` ([ObjectsScreen.tsx](mobile/src/screens/ObjectsScreen.tsx)), which is a separate, unlinked state from `'archived'`. The home page's "For you right now" list only filtered out `state === 'archived'`, so resolved notes kept showing up.
+- Fix: filter now excludes both `'archived'` and `'resolved'`.
+- Archiving remains a distinct manual action (used for dormant ideas in `SynthesisScreen.tsx`) — completing a note does not archive it, it just now also hides it from the home feed.
+
+#### OTA updates not reaching the test device
+- Diagnosed: the installed build on the test iPhone is from the `preview` build profile (internal distribution), which checks the `preview` **channel** — not `production`. `eas update --branch production` was correctly publishing, it just never reached that device.
+- Verified via `eas build:list` and `eas channel:view`.
+- Fix: published the update to both `production` and `preview` branches. Logged as a known gotcha (see Known Issues, Low Priority #0) — always confirm the target device's channel with `eas build:list` before assuming `production`.
+
+#### Brand app icon
+- Replaced `mobile/assets/icon.png` and `mobile/assets/adaptive-icon.png` (previously default Expo placeholder icons) with the brand mark, rasterized at 1024×1024 from `frontend/web/app/icon.svg` (teal `#0F6B5F`, same mark used as the live web favicon).
+- Updated `android.adaptiveIcon.backgroundColor` in `app.json` to `#0F6B5F` to match.
+- Icon changes are compiled into the native binary and can't ship via OTA — kicked off a new `eas build --profile preview --platform all` and installed it on device.
+
+### 📦 Commits
+- `4e44445` — fix(mobile): hide resolved notes from home page
+- `1c6afa0` — feat(mobile): use brand mark as app icon
+
+### 🚀 Deployed
+- EAS Update published to `production` and `preview` channels (runtime `1.1.0`)
+- New `preview`-profile build (iOS + Android) built and installed, carrying both the fix and the new icon
+
+---
+
+**Session Complete**: 2026-08-06
+**Status**: ✅ Home screen bug fixed, OTA channel mismatch resolved, brand icon shipped
+**Next**: Continue Phase 7 planning (Cross-Domain Synthesis) or further mobile polish
+
+---
+
+## Session Update (2026-08-08) — App Store Privacy Hardening & Arrival-Reminder Regression Fix
+
+### 🎯 Objectives Completed
+1. ✅ Audited and hardened the iOS permission/privacy implementation for App Store submission (PR #28)
+2. ✅ Diagnosed why arrival reminders went silent (root cause was NOT the region cap) and fixed it (PRs #29/#30)
+3. ✅ Deployed both: Railway backend (`433f3a9`) + EAS OTA update to `preview` (group `0ed302c9`)
+
+### 🔒 PR #28 — Privacy copy & submission config (strings/config/docs only, no logic)
+- The "Always" consent sheet claimed *"Your location is never stored or sent anywhere"* — false on three counts (recordings persist coordinates, place resolution queries Nominatim with a coordinate-derived viewbox, arrivals POST a place id). Rewritten to the true, scoped claim: on-device region monitoring, no continuous tracking, no location history. All `locationService` explanation strings fixed too (they render in `CreateGeofenceScreen`).
+- Plain-language iOS purpose strings; `NSAllowsArbitraryLoads` removed (all prod endpoints are TLS; localhost exception retained).
+- **`UIBackgroundModes: location` must stay**: expo-location's `EXGeofencingTaskConsumer.m:74` sets `allowsBackgroundLocationUpdates = YES` unconditionally, and iOS throws without the declaration. Recorded in `docs/IOS_LOCATION_PRIVACY.md` so nobody "cleans it up".
+- New `docs/APP_STORE_REVIEW_NOTES.md`: paste-ready reviewer notes with a deterministic verification path + pre-submission checklist (demo account placeholders `<<…>>` still need filling; Privacy Nutrition Label must declare Precise Location linked to user; Nominatim belongs in the privacy policy).
+- Assurance copy capped at 3 lines: `AppSheet` is `maxHeight: 85%` with **no ScrollView** — longer copy pushed the consent CTA off-screen on 667pt devices.
+
+### 🐛 PRs #29/#30 — Arrival reminders silent on a locked phone
+**Symptom (Tui, field-tested twice)**: gym reminder fired only when opening the app (foreground proximity check), never in the background — even with Always granted and the region toggles on.
+
+**Root cause** (proven via Railway HTTP logs — region wakes produced **zero** `/notify` and **zero** `/auth/refresh` calls):
+- Auth tokens were keychain-stored with SecureStore's default `WHEN_UNLOCKED` accessibility. iOS wakes the app at a region boundary with the phone locked in a pocket → both token reads fail → `fetchPlaceNotify` returns `null` **before any network request**.
+- Commit `2880a52` (Aug 6, "strictly gate arrival notifications on open notes") removed the generic fallback ping that used to fire in exactly this case. Pre-`2880a52`, users got "📍 You're at X" from the fallback — that's why it "used to work". Post-`2880a52`: total silence.
+- Investigation dead-ends worth remembering: it was **not** the 20-region cap (~10 regions), **not** a permission gap (Always granted), and **not** my initial arming-gap theory for this case (regions re-register whenever RecordScreen mounts, via `useGeofences.fetchGeofences → syncMonitoring`).
+
+**Fix** (keeps `2880a52`'s no-noteless-pings guarantee):
+1. All token writes go through one helper with `keychainAccessible: AFTER_FIRST_UNLOCK`; `ApiService.init()` migrates existing tokens on launch. Primary notify path (note titles, backend cooldown, open-note gating) now works from a locked phone.
+2. `listGeofences` returns `openObjectCount` per geofence (both link paths — manual join table, inferred place links — same "open" definition as the notify payloads; 4 new tests). Both client sync paths snapshot it into `geofence_regions.json`; `syncRegions` persists metadata even when the region set is geometrically unchanged so the snapshot can't go stale.
+3. When `/notify` still can't answer (cold Railway past the 8s budget, no signal), the task notifies from the snapshot — real place name, last-known count — and stays silent when the snapshot shows nothing. All failure branches now log loudly.
+
+### 📦 Merged (note the stacking hiccup)
+- PR #28 → main (`f7a61fe`); PR #29 merged into its stacked base by mistake (base branch wasn't deleted, so no auto-retarget); PR #30 landed the identical commit on main (`433f3a9`). Main verified to contain everything.
+
+### 🚀 Deployed
+- Railway backend: `433f3a9`, SUCCESS at 18:03 UTC
+- EAS Update → `preview` channel (runtime 1.1.0, group `0ed302c9`); `production` channel deliberately NOT updated until the field test passes
+
+### ⏭️ Awaiting: Tui's field test
+Protocol: open app once (~10s, OTA applies + auto-reloads), force-quit, reopen (token migration + region re-sync), then arrive at a place with an open note, phone locked, app closed. Full notification = primary path; "a note is waiting" = snapshot fallback (still success); silence = check the 1h backend cooldown first, then Console.app filtered `GeofenceMonitoring`.
+
+### 📋 Known gaps logged (see Known Issues)
+- **High #0**: arming gap — brand-new place + immediately-killed app never registers its region (fix: silent `content-available` push)
+- **Medium #2a**: no 20-region cap enforcement (growth risk); coordinate-duplicate places from concurrent resolution want a dedup + unique constraint
+
+---
+
+**Session Complete**: 2026-08-08
+**Status**: ✅ Privacy hardening + arrival-reminder fix merged and deployed; field test pending
+**Next**: Read Tui's test result → then the silent-push arming fix, App Store demo-account seeding, or Phase 7
