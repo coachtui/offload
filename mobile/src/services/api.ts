@@ -1,4 +1,26 @@
 import * as SecureStore from 'expo-secure-store';
+
+/**
+ * Auth tokens must be readable while the device is LOCKED.
+ *
+ * The geofence background task authenticates its arrival lookup with these
+ * tokens, and an arrival almost always happens with the phone locked in a
+ * pocket. SecureStore's default accessibility (WHEN_UNLOCKED) made both token
+ * reads fail in that state, so the task gave up before making any request —
+ * the arrival reminder, the product's core promise, silently never fired.
+ * AFTER_FIRST_UNLOCK keeps them readable from first unlock after boot onward.
+ */
+const TOKEN_KEYCHAIN_OPTS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
+
+/** Single write path for auth tokens so the accessibility option can't be forgotten. */
+async function storeAuthTokens(accessToken: string, refreshToken?: string): Promise<void> {
+  await SecureStore.setItemAsync('accessToken', accessToken, TOKEN_KEYCHAIN_OPTS);
+  if (refreshToken) {
+    await SecureStore.setItemAsync('refreshToken', refreshToken, TOKEN_KEYCHAIN_OPTS);
+  }
+}
 import {
   AuthResponse,
   LoginRequest,
@@ -193,10 +215,7 @@ export async function refreshAuthToken(): Promise<string | null> {
     const data = await res.json();
     if (!data?.accessToken) return null;
 
-    await SecureStore.setItemAsync('accessToken', data.accessToken);
-    if (data.refreshToken) {
-      await SecureStore.setItemAsync('refreshToken', data.refreshToken);
-    }
+    await storeAuthTokens(data.accessToken, data.refreshToken);
     console.log('[ApiService] token refreshed');
     return data.accessToken as string;
   } catch (err) {
@@ -213,6 +232,25 @@ class ApiService {
   async init(): Promise<void> {
     this.accessToken = await SecureStore.getItemAsync('accessToken');
     console.log('[ApiService] init — token present:', !!this.accessToken);
+    // Existing installs wrote tokens under the WHEN_UNLOCKED default. Re-save
+    // them with AFTER_FIRST_UNLOCK (setItemAsync deletes + re-adds, carrying the
+    // new attribute) so the background task can authenticate on a locked phone.
+    // Fire-and-forget: launch must not wait on two keychain writes, and init
+    // always runs unlocked so the reads here can't hit the locked-keychain case.
+    void this.migrateTokenAccessibility();
+  }
+
+  private async migrateTokenAccessibility(): Promise<void> {
+    try {
+      const refreshToken = (await SecureStore.getItemAsync('refreshToken')) ?? undefined;
+      if (this.accessToken) {
+        await storeAuthTokens(this.accessToken, refreshToken);
+        console.log('[ApiService] token keychain accessibility migrated (AFTER_FIRST_UNLOCK)');
+      }
+    } catch (err) {
+      // Non-fatal: worst case the tokens keep the old attribute until next login.
+      console.warn('[ApiService] token accessibility migration failed:', err);
+    }
   }
 
   /**
@@ -343,10 +381,7 @@ class ApiService {
     });
 
     this.accessToken = response.accessToken;
-    await SecureStore.setItemAsync('accessToken', response.accessToken);
-    if (response.refreshToken) {
-      await SecureStore.setItemAsync('refreshToken', response.refreshToken);
-    }
+    await storeAuthTokens(response.accessToken, response.refreshToken);
     console.log('[ApiService] login — token stored, length:', response.accessToken.length);
 
     return response;
@@ -359,10 +394,7 @@ class ApiService {
     });
 
     this.accessToken = response.accessToken;
-    await SecureStore.setItemAsync('accessToken', response.accessToken);
-    if (response.refreshToken) {
-      await SecureStore.setItemAsync('refreshToken', response.refreshToken);
-    }
+    await storeAuthTokens(response.accessToken, response.refreshToken);
 
     return response;
   }
