@@ -152,7 +152,10 @@ export function RecordScreen({ navigation }: Props) {
           emitArrivalPromptCandidate(placeNames);
         },
       });
-      navigation.navigate('Home');
+      // popTo, not navigate: React Navigation 7's `navigate` no longer walks back
+      // to an existing screen — it pushes a second Home on top of this modal, which
+      // renders as a dismissable sheet over the recorder instead of returning home.
+      navigation.popTo('Home');
       return;
     } else if (status === 'idle' || status === 'done' || status === 'error') {
       // Start immediately — don't make the tap wait on location (up to 5s).
