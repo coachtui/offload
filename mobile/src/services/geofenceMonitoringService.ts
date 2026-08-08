@@ -1,11 +1,17 @@
 /**
- * Privacy-First Geofence Monitoring Service
+ * Geofence Monitoring Service
  *
- * Uses OS-level geofence monitoring (iOS CoreLocation / Android Geofencing API)
+ * Uses OS-level region monitoring (iOS CoreLocation CLCircularRegion / Android
+ * Geofencing API) rather than a location stream:
  * - Battery efficient (hardware-level monitoring)
- * - Works in background without continuous tracking
- * - Only app receives entry/exit events
- * - No location history stored
+ * - Works in the background without continuous tracking
+ * - The OS hands us a crossing event; it never hands us a location history
+ *
+ * On what leaves the device: a crossing does not upload coordinates, but it does
+ * POST the region's place/geofence id to ask which notes are waiting there — so
+ * the server learns that an arrival happened, and records a cooldown timestamp
+ * against it. Accurate in the user-facing copy is "no continuous tracking, no
+ * uploaded location history", not "nothing is sent".
  */
 
 import * as Location from 'expo-location';

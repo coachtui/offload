@@ -32,9 +32,29 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * These lines are a privacy claim shown at the moment of consent, so each one
+ * has to survive being checked against what the code actually does.
+ *
+ * What "Always" buys, precisely: iOS region monitoring on the places you saved.
+ * The crossing is detected by the OS on-device; Offload is woken only at the
+ * boundary and never receives a location stream. That is the whole of what this
+ * permission enables, and it is what these lines describe.
+ *
+ * What they deliberately do NOT claim is that Offload never handles location at
+ * all — it does, elsewhere and under "When In Use": a recording carries its
+ * coordinates so a place name can resolve nearby, and resolution queries
+ * OpenStreetMap. Those are foreground, user-initiated, and out of scope here.
+ * The previous copy ("your location is never stored or sent anywhere") claimed
+ * otherwise and was false. Scope the claim; don't overstate it.
+ *
+ * Keep these terse. AppSheet caps at 85% of screen height and does NOT scroll,
+ * so verbose assurances push the CTA off-screen on a 667pt device — the consent
+ * button has to stay reachable. Three lines is the working budget.
+ */
 const ASSURANCES = [
-  'Your location is never stored or sent anywhere.',
-  'Your phone checks locally whether you are near a place you saved.',
+  'Checked on your phone. When you arrive, Offload asks which notes are waiting there.',
+  "No continuous tracking, and no history of where you've been.",
   'You can turn this off at any time in Settings.',
 ];
 
