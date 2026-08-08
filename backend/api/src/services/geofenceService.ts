@@ -70,9 +70,50 @@ export async function getGeofenceById(
 /**
  * List geofences for a user
  */
-export async function listGeofences(userId: string): Promise<Geofence[]> {
+export async function listGeofences(
+  userId: string
+): Promise<Array<Geofence & { openObjectCount: number }>> {
   const geofences = await GeofenceModel.findByUserId(userId);
-  return geofences.map((gf) => gf.toGeofence());
+  if (geofences.length === 0) return [];
+
+  // Open-note count per geofence, through both link paths (manual geofences use
+  // the geofence_objects join table; inferred ones link via their backing
+  // place). Same definition of "open" as getPlacesOverview and the notify
+  // payloads — the client snapshots this count at region-sync time to power an
+  // offline arrival notification, so it must never promise a note the notify
+  // endpoint would then refuse to show.
+  const [manual, inferred] = await Promise.all([
+    queryMany<{ id: string; open_count: string }>(
+      `SELECT g.id,
+              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count
+       FROM hub.geofences g
+       LEFT JOIN hub.geofence_objects go ON go.geofence_id = g.id
+       LEFT JOIN hub.atomic_objects ao ON ao.id = go.object_id
+       WHERE g.user_id = $1 AND g.created_by = 'manual'
+       GROUP BY g.id`,
+      [userId]
+    ),
+    queryMany<{ id: string; open_count: string }>(
+      `SELECT g.id,
+              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count
+       FROM hub.geofences g
+       LEFT JOIN hub.object_place_links opl ON opl.place_id = g.place_id
+       LEFT JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+       WHERE g.user_id = $1 AND g.created_by = 'inferred'
+       GROUP BY g.id`,
+      [userId]
+    ),
+  ]);
+
+  const counts = new Map<string, number>();
+  for (const row of [...manual, ...inferred]) {
+    counts.set(row.id, parseInt(row.open_count, 10) || 0);
+  }
+
+  return geofences.map((gf) => {
+    const g = gf.toGeofence();
+    return { ...g, openObjectCount: counts.get(g.id) ?? 0 };
+  });
 }
 
 /**
