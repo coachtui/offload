@@ -25,16 +25,15 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true,
           "NSExceptionDomains": {
             "localhost": {
               "NSExceptionAllowsInsecureHTTPLoads": true
             }
           }
         },
-        "NSLocationWhenInUseUsageDescription": "Used to attach location to notes and create geofences for proactive reminders.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Used for background geofence monitoring so you receive relevant notes when you arrive at a location.",
-        "NSLocationAlwaysUsageDescription": "Used for background geofence monitoring so you receive relevant notes when you arrive at a location."
+        "NSLocationWhenInUseUsageDescription": "Offload uses your location to find the right nearby place when you mention one in a note — so \"milk at Safeway\" means the Safeway near you.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
+        "NSLocationAlwaysUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded."
       }
     },
     "android": {
@@ -65,9 +64,9 @@
         "expo-location",
         {
           "isIosBackgroundLocationEnabled": true,
-          "locationAlwaysAndWhenInUsePermission": "Used for background geofence monitoring so you receive relevant notes when you arrive at a location.",
-          "locationAlwaysPermission": "Used for background geofence monitoring so you receive relevant notes when you arrive at a location.",
-          "locationWhenInUsePermission": "Used to attach location to notes and create geofences."
+          "locationAlwaysAndWhenInUsePermission": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
+          "locationAlwaysPermission": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
+          "locationWhenInUsePermission": "Offload uses your location to find the right nearby place when you mention one in a note — so \"milk at Safeway\" means the Safeway near you."
         }
       ],
       [

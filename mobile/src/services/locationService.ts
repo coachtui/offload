@@ -1,11 +1,30 @@
 /**
- * Privacy-First Location Service
+ * Location Service
  *
  * Principles:
  * - Only request location when explicitly needed
  * - Clear explanations for each permission request
- * - No location storage except user-created geofences
- * - Transparent about when and why location is accessed
+ * - Never stream location: one-shot reads in the foreground, OS region
+ *   monitoring in the background. No watchPositionAsync, no
+ *   startLocationUpdatesAsync, no significant-change monitoring.
+ *
+ * Where location actually goes — the user-facing copy below has to match this,
+ * so keep the two in sync:
+ *
+ *   recording        → coordinates are POSTed with the transcript and persisted
+ *                      on the session and its notes (backend routes/voice.ts).
+ *                      This is what makes "milk at Safeway" resolve nearby.
+ *   place resolution → the server sends an approximate viewbox derived from
+ *                      those coordinates to OpenStreetMap Nominatim, a third
+ *                      party (backend placeResolutionService.ts).
+ *   arrival          → no coordinates leave the device. Offload POSTs a place
+ *                      id to ask which notes are waiting, which does tell the
+ *                      server you arrived, and it stores a cooldown timestamp.
+ *   proximity check  → foreground only, compared on-device against geofences
+ *                      fetched from the server. The reading itself is not sent.
+ *
+ * So: no location history, no background stream — but "location never leaves
+ * the device" would be false, and this file must not say it.
  */
 
 import * as Location from 'expo-location';
@@ -43,17 +62,18 @@ class LocationService {
   getPermissionExplanation(reason: LocationUsageReason['action']): string {
     const explanations = {
       create_geofence:
-        "We need your location once to set up this geofence. " +
-        "Your location won't be tracked - we only save the geofence coordinates you choose.",
+        "Offload reads your location once to centre this place on the map. " +
+        "It isn't tracked afterwards — only the place you save is kept.",
       attach_to_note:
-        "Add your current location to this note. " +
-        "Location is only saved if you choose to save the note.",
+        "Offload saves your coordinates alongside this note, so a place you " +
+        "mention resolves to the one near you. The note carries them until you " +
+        "delete it.",
       view_map:
-        "Show your current location on the map. " +
-        "This is used once and not stored.",
+        "Offload reads your location once to centre the map. " +
+        "The reading isn't saved.",
       check_nearby:
-        "Check which geofences are near you. " +
-        "Your location is not saved or sent to the server.",
+        "Offload compares your location against your saved places on this " +
+        "device. The reading itself isn't sent anywhere.",
     };
     return explanations[reason];
   }
@@ -63,10 +83,12 @@ class LocationService {
    */
   getBackgroundPermissionExplanation(): string {
     return (
-      "To notify you when entering geofences while the app is closed, " +
-      "we need background location access.\n\n" +
-      "Your location is NOT tracked or stored. " +
-      "The system only checks if you enter geofences you created.\n\n" +
+      "To remind you at a place while Offload is closed, iOS needs location " +
+      "set to \"Always\".\n\n" +
+      "The crossing is detected on your phone — iOS wakes Offload only at the " +
+      "boundary of a place you saved. Offload doesn't continuously track your " +
+      "location or upload a history of where you've been. On arrival it asks " +
+      "the server which notes are waiting there.\n\n" +
       "You can disable this anytime in Settings."
     );
   }
@@ -141,8 +163,11 @@ class LocationService {
 
   /**
    * Get current location (one-time)
-   * Only used when user explicitly needs their location
-   * Never stored automatically
+   *
+   * A single read, never a subscription. This service does not persist the
+   * result — but callers may: RecordScreen hands it to the save-transcript call,
+   * which stores it on the note. "Not stored" is a property of this function,
+   * not of the reading it returns.
    */
   async getCurrentLocation(): Promise<Location.LocationObject | null> {
     const permissions = await this.checkPermissions();
@@ -169,7 +194,7 @@ class LocationService {
 
       const location = await Promise.race([fresh, timeout]);
       if (location) {
-        console.log('[Privacy] Location obtained - not stored');
+        console.log('[Location] One-time fix obtained — retention is up to the caller');
         return location;
       }
 
