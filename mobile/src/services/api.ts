@@ -413,6 +413,8 @@ class ApiService {
     domain?: string[];
     objectType?: string[];
     categoryId?: string;
+    /** Scope to the notes one recording produced. */
+    sessionId?: string;
     dateFrom?: string;
     dateTo?: string;
   } = {}): Promise<ObjectsListResponse> {
@@ -426,6 +428,7 @@ class ApiService {
       options.objectType.forEach(t => params.append('objectType', t));
     }
     if (options.categoryId) params.append('categoryId', options.categoryId);
+    if (options.sessionId) params.append('sessionId', options.sessionId);
     if (options.dateFrom) params.append('dateFrom', options.dateFrom);
     if (options.dateTo) params.append('dateTo', options.dateTo);
 

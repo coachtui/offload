@@ -206,6 +206,27 @@ export async function processTranscript(params: {
   };
 }
 
+/**
+ * Where a tap on the completion push should land.
+ *
+ * The note the push is announcing is the whole point of the tap, so send the
+ * client at it rather than at Home. One note opens directly; several open the
+ * list scoped to that recording, because picking one of six arbitrarily is
+ * worse than showing all six. Zero notes has nothing to open.
+ */
+export function completionTarget(
+  sessionId: string,
+  objectIds: string[]
+): { screen: 'Home' | 'Objects'; objectId?: string; sessionId: string } {
+  if (objectIds.length === 1) {
+    return { screen: 'Objects', objectId: objectIds[0], sessionId };
+  }
+  if (objectIds.length > 1) {
+    return { screen: 'Objects', sessionId };
+  }
+  return { screen: 'Home', sessionId };
+}
+
 /** Wording for the completion push. Kept apart so it is trivially testable. */
 export function completionMessage(result: ProcessResult): { title: string; body: string } {
   if (result.degraded) {
@@ -261,8 +282,7 @@ export async function processSessionInBackground(session: Session): Promise<void
       title,
       body,
       data: {
-        screen: 'Home',
-        sessionId: session.id,
+        ...completionTarget(session.id, result.objectIds),
         objectIds: result.objectIds,
         hasGeofenceCandidates: result.hasGeofenceCandidates,
         placeNames: result.placeNames,

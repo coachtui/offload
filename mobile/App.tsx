@@ -56,6 +56,11 @@ function handleNotificationData(data: any, attempt = 0) {
   } else if (data?.screen === 'Objects' && data?.objectId) {
     console.log('[App] Navigating to Objects with objectId:', data.objectId);
     navigationRef.navigate('Objects', { objectId: data.objectId });
+  } else if (data?.screen === 'Objects' && data?.sessionId) {
+    // A recording that sorted into several notes — open the list scoped to it
+    // rather than guessing which of them the tap meant.
+    console.log('[App] Navigating to Objects for session:', data.sessionId);
+    navigationRef.navigate('Objects', { sessionId: data.sessionId });
   } else if (data?.screen === 'Insights') {
     navigationRef.navigate('Insights');
   }

@@ -2,6 +2,7 @@ import {
   processTranscript,
   processSessionInBackground,
   completionMessage,
+  completionTarget,
 } from '../../services/transcriptProcessingService';
 import * as mlService from '../../services/mlService';
 import * as objectService from '../../services/objectService';
@@ -216,5 +217,27 @@ describe('completionMessage', () => {
     const msg = completionMessage({ ...base, objectIds: ['a'], degraded: true });
     expect(msg.title).toContain('saved');
     expect(msg.body).toContain('safe');
+  });
+});
+
+describe('completionTarget', () => {
+  it('opens the note itself when the recording made exactly one', () => {
+    expect(completionTarget('s1', ['a'])).toEqual({
+      screen: 'Objects',
+      objectId: 'a',
+      sessionId: 's1',
+    });
+  });
+
+  // Picking one of several arbitrarily is worse than showing all of them.
+  it('opens the list scoped to the recording when it made several', () => {
+    expect(completionTarget('s1', ['a', 'b', 'c'])).toEqual({
+      screen: 'Objects',
+      sessionId: 's1',
+    });
+  });
+
+  it('falls back to Home when there is no note to open', () => {
+    expect(completionTarget('s1', [])).toEqual({ screen: 'Home', sessionId: 's1' });
   });
 });

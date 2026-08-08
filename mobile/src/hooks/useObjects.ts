@@ -15,6 +15,8 @@ interface ObjectFilters {
   domain?: string[];
   objectType?: string[];
   categoryId?: string;
+  /** Scope to the notes one recording produced. */
+  sessionId?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -72,6 +74,7 @@ export function useObjects(): UseObjectsReturn {
         domain: filters.domain,
         objectType: filters.objectType,
         categoryId: filters.categoryId,
+        sessionId: filters.sessionId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });
@@ -107,6 +110,7 @@ export function useObjects(): UseObjectsReturn {
         domain: filters.domain,
         objectType: filters.objectType,
         categoryId: filters.categoryId,
+        sessionId: filters.sessionId,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
       });

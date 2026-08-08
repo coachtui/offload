@@ -191,6 +191,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const route = useRoute<RouteProp<RootStackParamList, 'Objects'>>();
   const geofenceId = route.params?.geofenceId;
   const initialObjectId = route.params?.objectId;
+  const routeSessionId = route.params?.sessionId;
 
   const {
     objects, isLoading, isRefreshing, error, hasMore,
@@ -210,6 +211,9 @@ export function ObjectsScreen({ navigation }: Props) {
   const [editContent, setEditContent] = useState('');
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [updatingState, setUpdatingState] = useState(false);
+  // Held apart from `filters` because several handlers replace the filter object
+  // wholesale; the scope has to outlive a domain or category change.
+  const [sessionScope, setSessionScope] = useState<string | undefined>(undefined);
 
   // Filter state
   const [selectedDomains, setSelectedDomains] = useState<string[]>([]);
@@ -291,6 +295,14 @@ export function ObjectsScreen({ navigation }: Props) {
     fetchObjectDetail(initialObjectId);
   }, [initialObjectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Arriving from the "sorted into N notes" push: show only that recording's
+  // notes until the user leaves the scope.
+  useEffect(() => {
+    if (!routeSessionId) return;
+    setSessionScope(routeSessionId);
+    setFilters({ sessionId: routeSessionId });
+  }, [routeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!geofenceId) return;
     apiService.getGeofenceObjects(geofenceId)
@@ -311,8 +323,9 @@ export function ObjectsScreen({ navigation }: Props) {
     setFilters({
       domain: domains.length ? domains : undefined,
       objectType: types.length ? types : undefined,
+      sessionId: sessionScope,
     });
-  }, [setFilters]);
+  }, [setFilters, sessionScope]);
 
   const handleSearch = useCallback(() => {
     if (searchText.trim()) {
@@ -342,8 +355,19 @@ export function ObjectsScreen({ navigation }: Props) {
     setSelectedDomains([]);
     setSelectedTypes([]);
     clearResults();
+    // "Clear all" includes the session scope — it is the escape hatch back to
+    // every note, so leaving one filter silently applied would belie the label.
+    setSessionScope(undefined);
     setFilters({});
   }, [setFilters, clearResults]);
+
+  const handleExitSessionScope = useCallback(() => {
+    setSessionScope(undefined);
+    setFilters({
+      domain: selectedDomains.length ? selectedDomains : undefined,
+      objectType: selectedTypes.length ? selectedTypes : undefined,
+    });
+  }, [setFilters, selectedDomains, selectedTypes]);
 
   // Single filter row: All + top categories + a "+N / Filters" chip opening the
   // full filter sheet. Scales to any category count without stacking rows.
@@ -546,6 +570,30 @@ export function ObjectsScreen({ navigation }: Props) {
       </View>
     );
   }, [geofenceId, geofenceObjects, handleObjectPress, styles]);
+
+  // Hidden in search mode: search runs unscoped, so leaving this up would
+  // describe a list that is not what is on screen. Clearing the search restores
+  // the scope, and the banner with it.
+  const renderSessionScope = useCallback(() => {
+    if (!sessionScope || isSearchMode) return null;
+    const count = objects.length;
+    return (
+      <View style={styles.sessionBanner}>
+        <View style={styles.sessionDot} />
+        <Text style={styles.sessionBannerTitle} numberOfLines={1}>
+          From one recording{count > 0 ? ` · ${count} note${count !== 1 ? 's' : ''}` : ''}
+        </Text>
+        <TouchableOpacity
+          onPress={handleExitSessionScope}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Show all notes"
+        >
+          <Text style={styles.sessionBannerAction}>Show all</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [sessionScope, isSearchMode, objects.length, handleExitSessionScope, styles]);
 
   const renderDashboardCard = useCallback(() => {
     if (!dashboard) return null;
@@ -1131,6 +1179,7 @@ export function ObjectsScreen({ navigation }: Props) {
       </View>
 
       {renderCategoryChips()}
+      {renderSessionScope()}
       {renderGeofenceContext()}
       {renderDashboardCard()}
       {renderStaleBanner()}
@@ -1530,6 +1579,24 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   geofenceBannerTitle: { color: c.accent, fontSize: 13, fontFamily: Fonts.semibold },
   geofenceCard: { backgroundColor: c.bgSurface, borderColor: c.accentBorder },
   geofenceCardLabel: { color: c.accent, fontSize: 10, fontFamily: Fonts.bold, marginBottom: 4, textTransform: 'uppercase' },
+
+  sessionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: c.bgSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.accentBorder,
+    borderRadius: Radius.lg,
+    ...Elevation.level1,
+  },
+  sessionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: c.accent },
+  sessionBannerTitle: { flex: 1, color: c.accent, fontSize: 13, fontFamily: Fonts.semibold },
+  sessionBannerAction: { color: c.textSecondary, fontSize: 13, fontFamily: Fonts.medium },
 
   staleBanner: {
     marginHorizontal: Spacing.lg,
