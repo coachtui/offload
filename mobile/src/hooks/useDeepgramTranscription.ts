@@ -3,6 +3,7 @@ import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
 import { notifySaveResult } from '../services/saveNotification';
+import { syncGeofencesWithOS } from '../services/geofenceSync';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
 
@@ -523,6 +524,21 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         // arrives as a push when the parse finishes; that push also carries the
         // geofence hand-off, which used to happen here off the save response.
         await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim() });
+
+        // Arm the arrival snapshot without depending on the "note sorted" push,
+        // which cannot execute JS once the app is backgrounded — record a note
+        // mentioning a place, pocket the phone, and the phone would otherwise
+        // arrive knowing nothing about it. Server-side place resolution takes
+        // ~20s, hence two staggered attempts; if the app is backgrounded before
+        // they fire, RN defers the timers to the next foreground, which is
+        // still the earliest possible moment to sync.
+        if (result.hasGeofenceCandidates) {
+          for (const delayMs of [12_000, 35_000]) {
+            setTimeout(() => {
+              syncGeofencesWithOS('post-save').catch(() => {});
+            }, delayMs);
+          }
+        }
 
         // Only reachable against a server still running the old synchronous
         // contract — a deploy lag, or a rollback. Keep honouring it so the

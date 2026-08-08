@@ -72,7 +72,7 @@ export async function getGeofenceById(
  */
 export async function listGeofences(
   userId: string
-): Promise<Array<Geofence & { openObjectCount: number }>> {
+): Promise<Array<Geofence & { openObjectCount: number; openPreview: string | null }>> {
   const geofences = await GeofenceModel.findByUserId(userId);
   if (geofences.length === 0) return [];
 
@@ -81,11 +81,15 @@ export async function listGeofences(
   // place). Same definition of "open" as getPlacesOverview and the notify
   // payloads — the client snapshots this count at region-sync time to power an
   // offline arrival notification, so it must never promise a note the notify
-  // endpoint would then refuse to show.
+  // endpoint would then refuse to show. The newest open note's title rides
+  // along as a preview so that offline notification can show real content
+  // instead of just a count.
   const [manual, inferred] = await Promise.all([
-    queryMany<{ id: string; open_count: string }>(
+    queryMany<{ id: string; open_count: string; preview: string | null }>(
       `SELECT g.id,
-              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count
+              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL) AS open_count,
+              (array_agg(COALESCE(NULLIF(ao.title, ''), NULLIF(ao.cleaned_text, ''), ao.content) ORDER BY ao.created_at DESC)
+                 FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL))[1] AS preview
        FROM hub.geofences g
        LEFT JOIN hub.geofence_objects go ON go.geofence_id = g.id
        LEFT JOIN hub.atomic_objects ao ON ao.id = go.object_id
@@ -93,9 +97,11 @@ export async function listGeofences(
        GROUP BY g.id`,
       [userId]
     ),
-    queryMany<{ id: string; open_count: string }>(
+    queryMany<{ id: string; open_count: string; preview: string | null }>(
       `SELECT g.id,
-              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count
+              COUNT(ao.id) FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true) AS open_count,
+              (array_agg(COALESCE(NULLIF(ao.title, ''), NULLIF(ao.cleaned_text, ''), ao.content) ORDER BY ao.created_at DESC)
+                 FILTER (WHERE ao.state IN ('open','active') AND ao.deleted_at IS NULL AND opl.active = true))[1] AS preview
        FROM hub.geofences g
        LEFT JOIN hub.object_place_links opl ON opl.place_id = g.place_id
        LEFT JOIN hub.atomic_objects ao ON ao.id = opl.object_id
@@ -106,13 +112,15 @@ export async function listGeofences(
   ]);
 
   const counts = new Map<string, number>();
+  const previews = new Map<string, string | null>();
   for (const row of [...manual, ...inferred]) {
     counts.set(row.id, parseInt(row.open_count, 10) || 0);
+    previews.set(row.id, row.preview ?? null);
   }
 
   return geofences.map((gf) => {
     const g = gf.toGeofence();
-    return { ...g, openObjectCount: counts.get(g.id) ?? 0 };
+    return { ...g, openObjectCount: counts.get(g.id) ?? 0, openPreview: previews.get(g.id) ?? null };
   });
 }
 

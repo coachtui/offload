@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -30,6 +31,23 @@ async function checkForUpdate() {
   } catch (err) {
     console.warn('[Updates] Check failed:', err);
   }
+}
+
+// Refresh the arrival snapshot whenever the app comes to the foreground, at
+// most once per this window. The snapshot is what a locked-phone arrival fires
+// from, so every foreground session is a chance to correct it in both
+// directions — a note added from another device, or one resolved since the
+// last sync (stale-high snapshots are what produce pings about finished notes).
+const APP_ACTIVE_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
+let lastAppActiveSyncAt = 0;
+
+function syncOnAppActive(): void {
+  const now = Date.now();
+  if (now - lastAppActiveSyncAt < APP_ACTIVE_SYNC_MIN_INTERVAL_MS) return;
+  lastAppActiveSyncAt = now;
+  syncGeofencesWithOS('app-active').catch((err) =>
+    console.warn('[App] app-active geofence sync failed:', err)
+  );
 }
 
 function handleNotificationData(data: any, attempt = 0) {
@@ -109,6 +127,11 @@ export default function App() {
   useEffect(() => {
     if (!__DEV__) checkForUpdate();
 
+    syncOnAppActive();
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncOnAppActive();
+    });
+
     // Handle notification taps while app is running or backgrounded
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
@@ -136,6 +159,7 @@ export default function App() {
     });
 
     return () => {
+      appStateSubscription.remove();
       subscription.remove();
       receivedSubscription.remove();
     };

@@ -41,8 +41,10 @@ export async function syncGeofencesWithOS(reason: string): Promise<number> {
         quietHoursEnd: g.quietHoursEnd,
         placeId: g.placeId,
         // Snapshotted into geofence_regions.json so a background wake that
-        // cannot reach the backend still knows whether notes are waiting here.
+        // cannot reach the backend still knows whether notes are waiting here —
+        // and can say what the newest one is about.
         openCount: g.openObjectCount ?? 0,
+        openPreview: g.openPreview ?? undefined,
       }));
 
     console.log(`[geofenceSync] (${reason}) syncing ${regions.length} region(s)`);
