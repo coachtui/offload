@@ -70,6 +70,12 @@ export interface GeofenceRegion {
   quietHoursStart?: string; // HH:MM — if both set, notifications suppressed in that window
   quietHoursEnd?: string;   // HH:MM
   placeId?: string;         // Set for inferred places — routes to PlaceSummaryScreen
+  /**
+   * Open notes linked to this region as of the last sync. Powers the offline
+   * arrival fallback: when a background wake can't reach the notify endpoint,
+   * a region whose snapshot says notes are waiting still gets a notification.
+   */
+  openCount?: number;
 }
 
 export interface GeofenceEvent {
@@ -283,7 +289,11 @@ class GeofenceMonitoringService {
       for (const r of regions) {
         this.activeRegions.set(r.identifier, r);
       }
-      console.log('[GeofenceMonitoring] syncRegions: region set unchanged — skipping startGeofencingAsync');
+      // Still persist: metadata the background task reads from disk (openCount,
+      // quiet hours) changes even when the geometry doesn't, and the offline
+      // arrival fallback is only as fresh as this file.
+      persistRegions(Array.from(this.activeRegions.values()));
+      console.log('[GeofenceMonitoring] syncRegions: region set unchanged — skipping startGeofencingAsync (metadata persisted)');
       return;
     }
 
@@ -421,12 +431,9 @@ class GeofenceMonitoringService {
     try {
       const data = await this.fetchPlaceNotify(placeId, event.type);
 
-      // Backend unreachable / auth failed. We can't confirm whether there's an
-      // open note, so stay silent: arrival notifications are strictly gated on
-      // having a note to show, and a generic "you're here" ping on every entry
-      // is worse than a missed one. The loud log is the failure signal.
+      // Backend unreachable / auth failed — fall back to the sync-time snapshot.
       if (data === null) {
-        console.warn(`[GeofenceMonitoring] Place ${placeId} notify unavailable — suppressing (cannot confirm open notes)`);
+        await this.notifyFromSnapshot(event, 'notify unavailable');
         return;
       }
 
@@ -455,9 +462,10 @@ class GeofenceMonitoringService {
 
       await this.schedulePlaceNotification(event, placeId, placeName, title, body);
     } catch (error) {
-      // Unexpected failure — same rule as the data === null branch: no note
-      // confirmed means no notification.
-      console.warn('[GeofenceMonitoring] showPlaceNotification failed — suppressing:', error);
+      // Unexpected failure (including a locked-keychain token read throwing
+      // before any request was made) — same fallback as the data === null path.
+      console.warn('[GeofenceMonitoring] showPlaceNotification failed:', error);
+      await this.notifyFromSnapshot(event, 'notify threw');
     }
   }
 
@@ -572,11 +580,9 @@ class GeofenceMonitoringService {
     try {
       const data = await this.fetchGeofenceNotify(geofenceId, event.type);
 
-      // Backend unreachable / auth failed. Stay silent: arrival notifications
-      // are strictly gated on having a note to show, and without the backend we
-      // can't confirm one exists. The loud log is the failure signal.
+      // Backend unreachable / auth failed — fall back to the sync-time snapshot.
       if (data === null) {
-        console.warn(`[GeofenceMonitoring] Geofence ${geofenceId} notify unavailable — suppressing (cannot confirm open notes)`);
+        await this.notifyFromSnapshot(event, 'notify unavailable');
         return;
       }
 
@@ -606,9 +612,61 @@ class GeofenceMonitoringService {
 
       await this.scheduleManualGeofenceNotification(event, geofenceId, geofenceName, title, body);
     } catch (error) {
-      // Same rule as the data === null branch: no note confirmed means no
-      // notification.
-      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed — suppressing:', error);
+      // Same fallback as the data === null branch.
+      console.warn('[GeofenceMonitoring] showManualGeofenceNotification failed:', error);
+      await this.notifyFromSnapshot(event, 'notify threw');
+    }
+  }
+
+  /**
+   * Offline arrival fallback.
+   *
+   * Reached when the notify endpoint could not answer: token reads fail on a
+   * locked device, the backend is cold and exceeds the 8s budget, or there's no
+   * signal. iOS gives a region wake ~10 seconds, so on a real arrival this path
+   * is common, not exceptional.
+   *
+   * The rule: notify from the last synced open-note count instead of staying
+   * silent. A missed reminder is this product's worst failure — the note was
+   * captured precisely so it could resurface here — while a stale snapshot at
+   * worst notifies about a note completed since the last sync, which costs one
+   * tap. Regions whose snapshot shows nothing stay silent, so this does not
+   * reintroduce the noteless pings that 2880a52 removed. The backend cooldown
+   * isn't burned (that call failed); iOS's own crossing hysteresis is the
+   * re-fire guard, as it was for the pre-2880a52 fallback.
+   */
+  private async notifyFromSnapshot(event: GeofenceEvent, reason: string): Promise<void> {
+    const count = event.region.openCount ?? 0;
+    const id = event.region.identifier;
+
+    if (count === 0) {
+      console.warn(`[GeofenceMonitoring] ${id}: ${reason}, snapshot has no open notes — staying silent`);
+      return;
+    }
+
+    const name = event.region.name;
+    const title = event.type === 'enter' ? `📍 You're at ${name}` : `👋 Left ${name}`;
+    const body = count === 1 ? 'A note is waiting — tap to view' : `${count} notes waiting — tap to view`;
+
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          data: {
+            placeId: event.region.placeId,
+            geofenceId: id,
+            placeName: name,
+            eventType: event.type,
+            screen: 'PlaceSummary',
+          },
+          sound: true,
+        },
+        trigger: null,
+      });
+      console.warn(`[GeofenceMonitoring] ${id}: ${reason} — notified from sync snapshot (${count} open note(s))`);
+    } catch (err) {
+      console.error('[GeofenceMonitoring] snapshot notification failed:', err);
     }
   }
 

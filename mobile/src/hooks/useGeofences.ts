@@ -27,6 +27,8 @@ export interface Geofence {
   quietHoursEnd?: string; // HH:MM format
   placeId?: string;         // Set for inferred places
   createdBy?: 'manual' | 'inferred';
+  /** Open notes linked to this geofence — server-computed, snapshot for the offline arrival fallback. */
+  openObjectCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -329,6 +331,9 @@ export function useGeofences(): UseGeofencesResult {
         quietHoursStart: g.quietHoursStart,
         quietHoursEnd: g.quietHoursEnd,
         placeId: g.placeId,
+        // Keep the offline-fallback snapshot fresh on this sync path too —
+        // omitting it here would zero the count geofenceSync.ts just persisted.
+        openCount: g.openObjectCount ?? 0,
       }));
 
     console.log(`[useGeofences] Syncing ${enabledRegions.length} enabled region(s) with OS:`, enabledRegions.map(r => r.identifier));
