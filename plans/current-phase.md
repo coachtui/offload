@@ -4,8 +4,8 @@
 **Phase**: 7 (Cross-Domain Synthesis & AI Insights)
 **Status**: 🔄 Up Next
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
-**Current Date**: 2026-08-08
-**Last Updated**: 2026-08-08
+**Current Date**: 2026-08-09
+**Last Updated**: 2026-08-09
 
 ## Executive Summary
 
@@ -633,10 +633,17 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
    - Location: `backend/api/package.json`
 
 ### Medium Priority
-2a. ⚠️ **No client-side enforcement of iOS's 20-region geofence cap** (2026-08-08)
-   - `syncRegions()` hands the OS every enabled geofence; past 20, iOS silently rejects the excess (`monitoringDidFailForRegion`). Growth risk, not the current failure — Tui has ~10 regions and confirmed the cap was not the cause of the Aug 8 silent reminders.
-   - 3-geofences-per-place resolution is **intended product behavior** (nearest branches of a named store) — do not "fix" it. When the cap is enforced, prioritize regions with open notes, then nearest.
+2a. ⚠️ **No client-side enforcement of iOS's 20-region geofence cap** (2026-08-08, risk reduced 2026-08-09)
+   - `syncRegions()` hands the OS every enabled geofence; past 20, iOS silently rejects the excess (`monitoringDidFailForRegion`). Growth risk, not a current failure.
+   - **Risk sharply reduced by reap-on-resolve (2026-08-09)**: dead inferred geofences now free their slot when the last open note closes, so the set no longer grows monotonically. Enforcement (prioritize open-note regions, then nearest) still unimplemented. iOS's cap is 20 in both the legacy CLRegion API and the modern CLMonitor API; Android's is 100 — iOS is the binding constraint.
+   - 3-geofences-per-place resolution is **intended product behavior** (nearest branches of a named store) — do not "fix" it. As of Aug 9, notes also *link* to every same-name branch (PR #33), which is what makes the fan-out actually deliver.
    - Related data issue: concurrent place resolution can create byte-identical coordinate duplicates (three pairs observed in prod logs 2026-08-08, "Hawaii State Federal Credit Union"). Wants a dedup pass + unique constraint on (user, rounded lat/lng).
+
+2b. ⚠️ **No user-facing way to delete a geofence** (2026-08-09)
+   - `deleteGeofence` exists in `api.ts` and `useGeofences` but no screen calls it. Less urgent now that the reaper frees inferred slots automatically, but manual geofences still can't be removed in-app.
+
+2c. ⚠️ **Quiet-hours/radius customized on an INFERRED geofence are lost if it's reaped** (2026-08-09, accepted trade-off)
+   - Re-arm recreates with defaults (150m, no quiet hours). If it ever matters: persist quiet hours on the place row, or skip reaping customized geofences. Manual geofences unaffected.
 
 2. ⚠️ **TypeScript Strict Mode Disabled**
    - Build command has `|| true` to bypass type errors
@@ -1116,3 +1123,54 @@ Protocol: open app once (~10s, OTA applies + auto-reloads), force-quit, reopen (
 **Session Complete**: 2026-08-08
 **Status**: ✅ Privacy hardening + arrival-reminder fix merged and deployed; field test pending
 **Next**: Read Tui's test result → then the silent-push arming fix, App Store demo-account seeding, or Phase 7
+
+---
+
+## Session Update (2026-08-09) — Geofence Budget Self-Cleaning (Reap/Re-arm) & the Chain-Branch Linking Bug
+
+### 🎯 Objectives Completed
+1. ✅ Mapped the real geofence/notification limits (answered "are we capped at 20 places?")
+2. ✅ Built reap-on-resolve: inferred geofences are deleted when their last open note closes, freeing the budget (PR #32)
+3. ✅ Ran a high-effort multi-agent review over the diff; fixed 9 of 10 verified findings before merge
+4. ✅ Diagnosed a failed field test live from Railway logs → found and fixed a pre-existing chain-linking bug (PR #33)
+5. ✅ **Field test PASSED**: arrival notifications at 2 different Foodland branches + the manual Home geofence, no phantom pings
+
+### 📐 The limits, as actually verified
+- iOS caps an app at **20 monitored regions** — same limit in legacy CLRegion and modern CLMonitor APIs; Android allows 100. iOS is the binding constraint, but its *behavioral* quirks (spurious ENTER on re-registration, no ENTER when already inside, ~10s locked wake window) matter more day-to-day than the count.
+- Our own caps: `MAX_INFERRED_GEOFENCES = 15` (inferred only; manual uncapped), 3-branch fan-out per chain name, 0.45 confidence gate, 150m radius, 1h server cooldown + 30min device arrival ledger.
+- **The bug this session existed to fix**: geofences outlived their notes. `countInferredGeofences` counted rows forever, so 15 ÷ 3 branches ≈ **5 place-notes permanently exhausted the budget**, after which geofence creation silently stopped (`GEOFENCE_LIMIT_REACHED`, invisible to the user).
+
+### 🔧 PR #32 — Reap on resolve, re-arm on return
+- **Reap** (`GeofenceModel.deleteEmptyInferred`): one DELETE removing inferred geofences with no open note via either link path (`object_place_links`, `geofence_objects`). "Open" matches `listGeofences`' open_count exactly — snoozed/dismissed notes keep their region. `created_by = 'manual'` is untouchable. Runs awaited on resolve/archive, delete, bulk delete, decision review, place done/unlink.
+- **Re-arm**: places that lost their region get it back — when a new note lands (dedupe branches), on note reopen, and via `rearmStrandedInferredGeofences` after every reap (self-heals the READ COMMITTED reap-vs-link race without cross-query locking; also backfills places the cap had blocked once slots free).
+- **Pure-shrink sync rule** (`syncRegions`): when regions are only *removed*, update metadata + persisted file but skip `startGeofencingAsync` — iOS answers re-registration with a spurious ENTER for every currently-inside region (phantom "you've arrived" from the couch). A dead OS region is provably silent: missing persisted metadata → backend notify 404 → snapshot openCount 0 → nothing. OS set converges on the next add/change.
+- **`noteLifecycle.ts`** centralizes note mutations + region re-sync on mobile — screens must not call `apiService.updateObjectState/deleteObject/reviewDecision/bulkDeleteObjects` directly (the decision-review and bulk-delete paths were missed exactly that way pre-centralization).
+- Review outcome: 19-agent workflow review, 10 verified findings → 9 fixed, 1 no-change-needed (awaited reap latency: bounded indexed queries, and responding before the reap commits would let the client re-register a dying region). Reap SQL predicates pinned by `geofenceDeleteEmptyInferred.test.ts` since service tests mock the model.
+
+### 🐛 PR #33 — The failed field test and the real bug (pre-existing, not the reap)
+**Symptom**: Foodland note, drove there, total silence — background AND foreground — though the place row existed.
+**Diagnosis from Railway logs**: the note deduped by name onto place `9acd376d` (geofence `bad841d1`) — the *newest* same-name place — while Tui spent the whole visit inside geofence `1e717741` (place `c43d18a1`, **0 linked objects**). Every path was *correctly* silent: the region he was inside held no notes. Root cause: `matchPlaceName` returns a single best match (right for manual geofences, its original job); the inferred dedupe reused it, so only the FIRST note about a chain got the multi-branch fan-out — every later note linked to one arbitrary branch.
+**Fix**: dedupe now links the note to **every** name-matching place (each re-armed), and if no matched branch is within 10km of where the note was recorded, falls through to the geocoder so the local branch gets covered (step-3 proximity dedupe prevents duplicates). Backend-only; no OTA needed.
+
+### ✅ Field test result (same day, after delete + re-record)
+- Deleting the old note → **first production reap** (log: `GEOFENCE_REAPED … bad841d1`)
+- Re-record → note linked to all 3 Foodland branch places, **re-arm rebuilt all 3 regions** (they'd been reaped); device synced the new set 7s later
+- Drive → **fired at 2 different Foodland branches**; arriving home → **manual geofence with waiting note fired normally** (manual path confirmed unaffected)
+- No phantom pings after closing notes (pure-shrink rule holding)
+
+### 🚀 Deployed
+- Railway backend: PR #32 (`b52dd6b`) + PR #33 (`0795106`), both SUCCESS
+- EAS Update → `preview` (runtime 1.1.0, group `484d5e56`) — carries pure-shrink sync + `noteLifecycle`; PR #33 needed no OTA
+- Production channel still not updated (consistent with the Aug 8 hold)
+
+### 📋 Known Issues updated
+- Medium #2a (20-region cap): risk sharply reduced — budget is now self-cleaning; enforcement still unimplemented
+- New Medium #2b: `deleteGeofence` exists but no screen calls it
+- New Medium #2c (accepted): inferred-geofence quiet-hours/radius customizations are lost on reap
+- Possible future nicety: per-note cross-branch cooldown (a chain note currently pings at each branch passed on one errand — Tui likes it for now)
+
+---
+
+**Session Complete**: 2026-08-09
+**Status**: ✅ Reap/re-arm/multi-link merged, deployed, and field-validated end-to-end
+**Next**: silent-push arming fix (High #0), region-cap enforcement + coordinate dedup, App Store demo-account seeding, or Phase 7
