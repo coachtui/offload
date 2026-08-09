@@ -380,7 +380,10 @@ WEAVIATE_API_KEY=<configured>
 **Phase 6 Polish (completed 2026-04-04)**:
 - ✅ Edit Geofence screen (`EditGeofenceScreen.tsx`) — edit name, type, radius, notifications
 - ✅ Quiet hours UI on both Create and Edit screens — preset time chips, wires to backend
-- ✅ "Delete All Location Data" now deletes from server (was TODO/broken)
+- ⚠️ "Delete All Location Data" — **this claim is wrong** (found 2026-08-09). No such
+  feature exists anywhere in `mobile/src` or `backend/api/src`; whatever was built here
+  did not survive. Account-wide deletion is now covered by Settings → Delete account,
+  and per-place deletion by EditGeofenceScreen.
 
 **Documentation**:
 - ✅ [PHASE_6_QUICKSTART.md](PHASE_6_QUICKSTART.md) - Setup guide
@@ -639,8 +642,9 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
    - 3-geofences-per-place resolution is **intended product behavior** (nearest branches of a named store) — do not "fix" it. As of Aug 9, notes also *link* to every same-name branch (PR #33), which is what makes the fan-out actually deliver.
    - Related data issue: concurrent place resolution can create byte-identical coordinate duplicates (three pairs observed in prod logs 2026-08-08, "Hawaii State Federal Credit Union"). Wants a dedup pass + unique constraint on (user, rounded lat/lng).
 
-2b. ⚠️ **No user-facing way to delete a geofence** (2026-08-09)
-   - `deleteGeofence` exists in `api.ts` and `useGeofences` but no screen calls it. Less urgent now that the reaper frees inferred slots automatically, but manual geofences still can't be removed in-app.
+2b. ✅ **No user-facing way to delete a geofence** — RESOLVED 2026-08-09
+   - `deleteGeofence` existed in `api.ts` and `useGeofences` but no screen called it. Now wired into `EditGeofenceScreen` ("Delete this place", behind a ConfirmSheet), reachable via Places → place → Edit reminder settings.
+   - On success it navigates to `Places` rather than `goBack()` — going back would land on the place's summary screen, which would then be rendering a geofence that no longer exists.
 
 2c. ⚠️ **Quiet-hours/radius customized on an INFERRED geofence are lost if it's reaped** (2026-08-09, accepted trade-off)
    - Re-arm recreates with defaults (150m, no quiet hours). If it ever matters: persist quiet hours on the place row, or skip reaping customized geofences. Manual geofences unaffected.
@@ -1179,3 +1183,86 @@ After the field test passed, the silent-push arming fix for High #0 was implemen
 **Session Complete**: 2026-08-09
 **Status**: ✅ Reap/re-arm/multi-link merged, deployed, and field-validated end-to-end; silent-push arming implemented (dormant until next build)
 **Next**: next EAS build activates silent-push arming (fold into App Store prep) → region-cap enforcement + coordinate dedup, demo-account seeding, or Phase 7
+
+---
+
+## Session Update (2026-08-09, later) — App Store Submission Blockers
+
+### 🎯 Why this session happened
+Audited the app against Apple's actual requirements rather than our own
+self-assessment, prompted by the question of whether the marketing site should
+show an App Store badge or collect a waitlist. It found a **guaranteed
+rejection** we had not logged anywhere.
+
+### 🚫 The blocker: no in-app account deletion (Guideline 5.1.1(v))
+Apple has required since June 2022 that any app supporting account creation let
+the user delete that account **from inside the app**. Offload had:
+- no Settings or Profile screen at all,
+- no users route and no delete endpoint (`auth.ts` was register/login/refresh/me),
+- a privacy policy directing users to *email support* — the exact pattern Apple
+  names and rejects.
+
+### ✅ What was built
+- **`services/accountService.ts` + `DELETE /api/v1/auth/account`.** Password is
+  re-confirmed (no undo). Postgres is the source of truth and every user-scoped
+  table cascades from `hub.users`, so the row delete is what makes the account
+  gone; it runs *first* so the 204 is honest. Weaviate embeddings and S3 audio
+  are purged afterwards, **best-effort** — a downed Weaviate must not trap a user
+  in an account they asked to leave. Orphans are logged as `ORPHANED_EMBEDDINGS` /
+  `ORPHANED_AUDIO` with ids, recoverable from Railway logs.
+- **Wrong password returns 403, not 401.** A 401 would have entered the client's
+  silent-refresh path, retried, then force-signed-out the user for mistyping
+  their own password. Also added `ApiError` (status + server `error` code) to
+  `mobile/services/api.ts` so callers branch on codes, not display copy.
+- **`SettingsScreen`** (avatar → Settings; it previously opened logout directly)
+  and **`DeleteAccountScreen`**. Deletion is a full screen, not a sheet:
+  `AppSheet` is capped at 85% height with no ScrollView, so password field +
+  keyboard + consequences copy would push the CTA off-screen — the same trap the
+  Always-location consent sheet hit in the Aug 8 session.
+- **`AuthContext.deleteAccount`** runs the identical teardown as sign-out
+  (geofence regions, onboarding flags, tokens) — but only *after* the server
+  confirms, so a failure leaves the session intact to retry.
+- **Privacy policy**: OpenStreetMap Nominatim disclosed (what's sent: place name
+  + a coordinate-derived viewbox, no account identifier), on-device arrival
+  checking stated, retention section rewritten around in-app deletion.
+- **Geofence deletion wired up** (closes Known Issue 2b).
+
+### ⚠️ `hub.user_categories` has no migration
+It is the only table referenced in code (`UserCategory.ts`) that no migration
+creates — so whatever exists in a given environment was made by hand and its FK
+may not cascade, which would make `DELETE FROM hub.users` fail and no account
+ever be deletable. `clearUserCategories()` deletes those rows first and tolerates
+`42P01` (table absent). **Worth resolving properly**: either write the migration
+or confirm the table is dead and drop the model.
+
+### 🧪 Tests
+13 new in `accountService.test.ts` (gating, ordering, best-effort purge,
+`user_categories` guard). 351 backend tests green. Mobile typecheck clean —
+the 3 remaining `tsc` errors are pre-existing on main (`api.ts` HeadersInit,
+`locationService` re-export, `websocket` deviceId).
+
+### ⏭️ Still blocking submission — needs Tui, not code
+1. **Demo account** — `APP_STORE_REVIEW_NOTES.md` still has every `<<…>>`
+   placeholder unfilled and its checklist unchecked. Without a seeded place +
+   open note, a reviewer cannot verify the feature and the Always-location
+   request gets rejected under 5.1.1.
+2. **App Store screenshots** — none exist in the repo.
+3. **`eas.json` `submit.production` is empty** — needs Apple ID / ASC app id / team.
+4. **EAS production build** — also what finally activates the dormant
+   silent-push arming from PR #34.
+5. **Verify audio persistence in prod** — this doc contradicts itself (S3
+   "operational" vs "audio storage disabled on Railway"). A reviewer recording a
+   note and getting nothing back is a 2.1 rejection.
+
+### 📌 Recommendation on record
+TestFlight before public launch, not straight to the App Store. The decisive
+reason: the silent-push arming path has **never executed on a real device** —
+the App Store build would be the first one where it runs, in an app whose whole
+value is a notification firing from a pocket. Field testing to date is n=1 (Tui,
+one device, Oʻahu). Store reviews are permanent; TestFlight feedback is private.
+
+---
+
+**Session Complete**: 2026-08-09 (later)
+**Status**: ✅ 5.1.1(v) account deletion shipped end-to-end; Nominatim disclosed; geofence deletion wired
+**Next**: demo-account seeding + screenshots → EAS production build → TestFlight
