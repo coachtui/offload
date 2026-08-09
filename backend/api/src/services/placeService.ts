@@ -10,6 +10,7 @@ import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { resolvePlaceNameMulti, haversineKm } from './placeResolutionService';
 import { matchPlaceName } from './placeNameMatch';
+import { sendSilentToUser } from './pushService';
 import type { AtomicObject } from '@shared/types';
 
 // Maximum number of inferred geofences per user (leaves room for manual ones within OS 20-limit)
@@ -66,24 +67,37 @@ export async function resolveObjectPlaces(
 ): Promise<void> {
   logLifecycle('REMINDER_CANDIDATE_DETECTED', { objectId, placeNames, hasUserLocation: !!userLocation });
   console.log(`[placeService] resolveObjectPlaces: ${placeNames.length} place(s) for object ${objectId}${userLocation ? ` (user at ${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})` : ' (no user location)'}`);
+  let geofencesChanged = false;
   for (const rawName of placeNames) {
     try {
-      await resolveAndLinkPlace(userId, objectId, rawName, userLocation);
+      const changed = await resolveAndLinkPlace(userId, objectId, rawName, userLocation);
+      geofencesChanged = geofencesChanged || changed;
     } catch (err) {
       console.warn(`[placeService] Failed to resolve place "${rawName}" for object ${objectId}:`, err);
     }
   }
   console.log(`[placeService] resolveObjectPlaces: complete for object ${objectId} — client must re-sync geofences`);
+
+  // New regions exist server-side but iOS knows nothing until device JS runs a
+  // sync. Foreground covers itself (post-save syncs at +12s/+35s), but a user
+  // who records and immediately quits has no running JS — this silent push is
+  // the wake-up that closes that gap. Best-effort by design: iOS throttles
+  // content-available pushes, older builds lack the background mode, and the
+  // post-save/app-active syncs remain the primary arming paths either way.
+  if (geofencesChanged) {
+    await sendSilentToUser(userId, { type: 'geofence-sync', objectId });
+  }
 }
 
+/** Returns true when the user's geofence set changed (a region was created). */
 async function resolveAndLinkPlace(
   userId: string,
   objectId: string,
   rawName: string,
   userLocation?: { latitude: number; longitude: number }
-): Promise<void> {
+): Promise<boolean> {
   const normalizedQuery = rawName.trim();
-  if (!normalizedQuery) return;
+  if (!normalizedQuery) return false;
 
   console.log(`[placeService] Resolving place "${normalizedQuery}" for object ${objectId}`);
 
@@ -105,7 +119,7 @@ async function resolveAndLinkPlace(
     console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
     logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
-    return; // labeled place is authoritative — do not geocode or create an inferred place
+    return false; // labeled place is authoritative — do not geocode or create an inferred place
   }
 
   // ─── 1b. Match existing inferred places by name — ALL of them ──────────────
@@ -124,13 +138,14 @@ async function resolveAndLinkPlace(
   const matchedPlaces = userPlaces.filter(
     p => matchPlaceName(normalizedQuery, [p], x => x.normalizedName) !== null
   );
+  let geofencesChanged = false;
   if (matchedPlaces.length > 0) {
     for (const existing of matchedPlaces) {
       const match = matchPlaceName(normalizedQuery, [existing], x => x.normalizedName)!;
       console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${match.reason}`);
       logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
       await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
-      await rearmInferredGeofence(userId, existing);
+      geofencesChanged = (await rearmInferredGeofence(userId, existing)) || geofencesChanged;
     }
 
     // If every known branch is far from where the note was recorded, the local
@@ -142,7 +157,7 @@ async function resolveAndLinkPlace(
     const someBranchNearby = !userLocation || matchedPlaces.some(
       p => haversineKm(userLocation.latitude, userLocation.longitude, p.lat, p.lng) <= NEARBY_BRANCH_KM
     );
-    if (someBranchNearby) return;
+    if (someBranchNearby) return geofencesChanged;
     console.log(`[placeService] No matched "${normalizedQuery}" place within ${NEARBY_BRANCH_KM}km of user — geocoding for a local branch`);
   }
 
@@ -156,7 +171,7 @@ async function resolveAndLinkPlace(
   if (resolvedList.length === 0) {
     console.log(`[placeService] Could not resolve "${normalizedQuery}" — skipping`);
     logLifecycle('PLACE_UNRESOLVABLE', { objectId, query: normalizedQuery, reason: 'nominatim_no_results' });
-    return;
+    return geofencesChanged;
   }
 
   for (const resolved of resolvedList) {
@@ -171,7 +186,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Deduped to nearby place: ${sameNameNearby.id} (${sameNameNearby.normalizedName})`);
       logLifecycle('PLACE_DEDUPED', { objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
       await PlaceModel.linkObject(sameNameNearby.id, objectId, 'mentioned_in_note');
-      await rearmInferredGeofence(userId, sameNameNearby);
+      geofencesChanged = (await rearmInferredGeofence(userId, sameNameNearby)) || geofencesChanged;
       continue;
     }
 
@@ -208,7 +223,7 @@ async function resolveAndLinkPlace(
 
     // ─── 6. Optionally register inferred geofence ────────────────────────────
     if (userConfirmed) {
-      await maybeCreateInferredGeofence(userId, place);
+      geofencesChanged = (await maybeCreateInferredGeofence(userId, place)) || geofencesChanged;
     } else {
       logLifecycle('GEOFENCE_SKIPPED_LOW_CONFIDENCE', {
         objectId,
@@ -220,6 +235,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Confidence ${resolved.confidence} < ${GEOFENCE_CONFIDENCE_THRESHOLD} — skipping geofence for "${resolved.normalizedName}"`);
     }
   }
+  return geofencesChanged;
 }
 
 /**
@@ -244,23 +260,24 @@ async function resolveAndLinkPlace(
 async function rearmInferredGeofence(
   userId: string,
   place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null; confidence?: number }
-): Promise<void> {
+): Promise<boolean> {
   try {
     const existingRegions = await GeofenceModel.findByPlaceId(userId, place.id);
-    if (existingRegions.length > 0) return;
+    if (existingRegions.length > 0) return false;
 
     // Same bar as first-time creation — a place we were never confident enough
     // to monitor doesn't become monitorable just by being mentioned again.
     if (typeof place.confidence === 'number' && place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD) {
       console.log(`[placeService] Place ${place.id} "${place.normalizedName}" below confidence threshold (${place.confidence}) — not re-arming`);
-      return;
+      return false;
     }
 
     logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName });
     console.log(`[placeService] Re-arming geofence for existing place ${place.id} "${place.normalizedName}"`);
-    await maybeCreateInferredGeofence(userId, place);
+    return await maybeCreateInferredGeofence(userId, place);
   } catch (err) {
     console.warn(`[placeService] Failed to re-arm geofence for place ${place.id}:`, err);
+    return false;
   }
 }
 

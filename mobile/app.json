@@ -23,6 +23,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.talailima.offload",
       "infoPlist": {
+        "UIBackgroundModes": ["location", "remote-notification"],
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
