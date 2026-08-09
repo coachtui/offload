@@ -10,6 +10,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { ThemeProvider, fontMap } from './src/theme';
 import { syncGeofencesWithOS } from './src/services/geofenceSync';
+import { registerBackgroundNotificationSync } from './src/services/backgroundNotificationSync';
 import { emitArrivalPromptCandidate } from './src/services/arrivalPromptBus';
 import { ToastProvider } from './src/components/ui';
 
@@ -127,6 +128,10 @@ export default function App() {
   useEffect(() => {
     if (!__DEV__) checkForUpdate();
 
+    // Arms new geofences from a silent push when the app is killed. Guarded —
+    // a no-op on builds without the remote-notification background mode.
+    registerBackgroundNotificationSync();
+
     syncOnAppActive();
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') syncOnAppActive();
@@ -150,11 +155,16 @@ export default function App() {
       }
     });
 
-    // Handle cold-start via notification tap
+    // Handle cold-start via notification tap. handleSessionProcessed must run
+    // here too: tapping a "note sorted" push from a killed app is one of the
+    // few chances a brand-new place's geofence gets to register, and this path
+    // used to skip it (only navigating). The processedSessions guard makes the
+    // duplicate call harmless when the warm-start listener already handled it.
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (!response) return;
       const data = response.notification.request.content.data as any;
       console.log('[App] Cold start with notification:', data);
+      handleSessionProcessed(data);
       handleNotificationData(data);
     });
 

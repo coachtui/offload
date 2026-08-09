@@ -17,6 +17,7 @@ import {
 import { PlaceModel } from '../../models/Place';
 import { GeofenceModel } from '../../models/Geofence';
 import { resolvePlaceNameMulti } from '../../services/placeResolutionService';
+import { sendSilentToUser } from '../../services/pushService';
 
 jest.mock('../../models/Place');
 jest.mock('../../models/Geofence');
@@ -27,10 +28,12 @@ jest.mock('../../services/placeResolutionService', () => ({
   ...jest.requireActual('../../services/placeResolutionService'),
   resolvePlaceNameMulti: jest.fn(),
 }));
+jest.mock('../../services/pushService');
 
 const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
 const mockResolve = resolvePlaceNameMulti as jest.MockedFunction<typeof resolvePlaceNameMulti>;
+const mockSilentPush = sendSilentToUser as jest.MockedFunction<typeof sendSilentToUser>;
 
 const USER_ID = 'u-1';
 
@@ -240,6 +243,26 @@ describe('re-arming a place that lost its geofence', () => {
     await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco'], { latitude: 21.3, longitude: -157.8 });
 
     expect(mockResolve).not.toHaveBeenCalled();
+  });
+
+  it('sends a silent geofence-sync push when the run created a region', async () => {
+    // The push is what arms a brand-new region on a killed app — post-save
+    // syncs only run while the app is alive.
+    mockPlace.findByUserId.mockResolvedValue([reapedPlace]);
+    mockGeo.findByPlaceId.mockResolvedValue([]); // reaped — re-arm will create
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco']);
+
+    expect(mockSilentPush).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ type: 'geofence-sync' }));
+  });
+
+  it('sends no silent push when the geofence set did not change', async () => {
+    mockPlace.findByUserId.mockResolvedValue([reapedPlace]);
+    mockGeo.findByPlaceId.mockResolvedValue([{ id: 'gf-existing' } as any]); // region already armed
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco']);
+
+    expect(mockSilentPush).not.toHaveBeenCalled();
   });
 
   it('re-arms a place matched by proximity, not just by name', async () => {
