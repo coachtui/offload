@@ -11,6 +11,11 @@ import {
   InvalidCredentialsError,
   LoginLockoutError,
 } from '../services/userService';
+import {
+  deleteAccount,
+  AccountNotFoundError,
+  InvalidPasswordError,
+} from '../services/accountService';
 import { authenticate } from '../auth/middleware';
 import { RateLimiter } from '../utils/rateLimiter';
 import { z } from 'zod';
@@ -175,6 +180,62 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to get user',
+    });
+  }
+});
+
+/**
+ * DELETE /api/v1/auth/account
+ * Permanently delete the authenticated user's account and all of their data.
+ *
+ * Required by App Store Guideline 5.1.1(v). The password is re-confirmed so a
+ * borrowed/unlocked phone can't wipe an account, and because there is no undo.
+ */
+router.delete('/account', ipRateLimit, authenticate, async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        error: 'UNAUTHORIZED',
+        message: 'Not authenticated',
+      });
+      return;
+    }
+
+    const { password } = req.body ?? {};
+    if (!password || typeof password !== 'string') {
+      res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Password is required to delete your account',
+      });
+      return;
+    }
+
+    await deleteAccount(req.user.id, password);
+    res.status(204).send();
+  } catch (error) {
+    if (error instanceof InvalidPasswordError) {
+      // 403, not 401: the caller's session is perfectly valid — they failed a
+      // step-up check. A 401 here would send the client into its silent-refresh
+      // path and then sign the user out for mistyping their own password.
+      res.status(403).json({
+        error: 'INVALID_PASSWORD',
+        message: 'That password is incorrect.',
+      });
+      return;
+    }
+
+    if (error instanceof AccountNotFoundError) {
+      res.status(404).json({
+        error: 'NOT_FOUND',
+        message: 'Account not found',
+      });
+      return;
+    }
+
+    console.error('[Auth] DELETE /account failed:', error);
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: 'Could not delete your account. Please try again.',
     });
   }
 });

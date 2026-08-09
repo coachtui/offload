@@ -20,6 +20,8 @@ import EditGeofenceScreen from '../screens/EditGeofenceScreen';
 import PlaceSummaryScreen from '../screens/PlaceSummaryScreen';
 import PlacesScreen from '../screens/PlacesScreen';
 import CategoriesScreen from '../screens/CategoriesScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ProximityBanner } from '../components/ProximityBanner';
@@ -107,6 +109,12 @@ function MainStack({ needsPermissionOnboarding }: { needsPermissionOnboarding: b
         options={{ headerShown: false }}
       />
       <Stack.Screen name="Categories" component={CategoriesScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DeleteAccount"
+        component={DeleteAccountScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }

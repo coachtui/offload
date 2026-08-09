@@ -23,6 +23,8 @@ export type RootStackParamList = {
   Insights: undefined;
   PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
   Categories: undefined;
+  Settings: undefined;
+  DeleteAccount: undefined;
 };
 
 declare global {
