@@ -73,6 +73,8 @@ describe('deleteAccount', () => {
     mockUserModel.findById.mockResolvedValue(buildUser());
     mockQueries.query.mockResolvedValue({ rows: [], rowCount: 0 } as any);
     mockQueries.queryMany.mockResolvedValue([]);
+    // Default to storage being reachable; the skip path is exercised explicitly.
+    mockStorage.testStorageConnection.mockResolvedValue(true);
     mockStorage.deleteSessionAudio.mockResolvedValue(undefined);
     mockWeaviateClient([{ matches: 0, successful: 0 }]);
   });
@@ -216,6 +218,27 @@ describe('deleteAccount', () => {
       const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
       expect(logged).toContain('ORPHANED_AUDIO');
       expect(logged).toContain('s-1');
+    });
+
+    it('skips the audio purge entirely when storage is unreachable', async () => {
+      // No audio is stored today (the upload path has no caller), so a dead S3
+      // must not emit one ORPHANED_AUDIO error per session and bury real ones.
+      const errorSpy = jest.spyOn(console, 'error');
+      mockQueries.queryMany.mockResolvedValue([{ id: 's-1' }, { id: 's-2' }]);
+      mockStorage.testStorageConnection.mockResolvedValue(false);
+
+      await deleteAccount(USER_ID, PASSWORD);
+
+      expect(mockStorage.deleteSessionAudio).not.toHaveBeenCalled();
+      expect(deleteUserRow).toHaveBeenCalledTimes(1);
+      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).not.toContain('ORPHANED_AUDIO');
+    });
+
+    it('does not probe storage at all when the user had no sessions', async () => {
+      mockQueries.queryMany.mockResolvedValue([]);
+      await deleteAccount(USER_ID, PASSWORD);
+      expect(mockStorage.testStorageConnection).not.toHaveBeenCalled();
     });
 
     it('gives up on a Weaviate pass that matches rows but deletes none', async () => {

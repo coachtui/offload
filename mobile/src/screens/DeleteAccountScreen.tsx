@@ -36,10 +36,13 @@ import { ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'DeleteAccount'>;
 
+// Deliberately does not promise to erase recordings: audio is transcribed and
+// discarded, never stored, so there is nothing to delete. Claiming otherwise
+// would contradict the privacy policy and imply we had been keeping them.
 const CONSEQUENCES = [
   'Every note you have offloaded, and their transcripts',
   'Your saved places and arrival reminders',
-  'Your categories, insights, and recorded audio',
+  'Your categories, insights, and search history',
 ];
 
 export default function DeleteAccountScreen({ navigation }: { navigation: Nav }) {

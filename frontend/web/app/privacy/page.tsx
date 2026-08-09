@@ -56,11 +56,16 @@ export default function PrivacyPage() {
 
             <p className="font-medium text-ink mt-4">Voice recordings and transcripts</p>
             <p>
-              When you use the voice capture feature, audio is streamed to Deepgram (our
-              transcription provider) for transcription and is also stored securely in our cloud
-              storage (Amazon S3), associated with your account, for as long as your account
-              remains active. The resulting transcript text is stored and associated with your
-              account as well.
+              <span className="text-ink">We do not keep your recordings.</span> When you offload a
+              note, the audio is sent to our transcription providers, turned into text, and
+              discarded. It is never written to our storage and there is no way to play a recording
+              back later — only the text survives.
+            </p>
+            <p>
+              Two providers see that audio, both solely to transcribe it: Deepgram, which produces
+              the live word-by-word preview as you speak, and OpenAI, which produces the final,
+              more accurate transcript. The resulting transcript text is stored and associated with
+              your account.
             </p>
 
             <p className="font-medium text-ink mt-4">Notes and structured content</p>
@@ -127,9 +132,9 @@ export default function PrivacyPage() {
             </p>
             <Ul
               items={[
-                'Deepgram — real-time voice transcription (audio is streamed directly; not stored by us)',
-                'Anthropic and/or OpenAI — AI processing of transcript text to extract structured notes',
-                'Amazon Web Services (S3) — secure cloud storage for your data',
+                'Deepgram — receives your audio to produce the live transcription preview; not stored by us',
+                'OpenAI — receives your audio to produce the final transcript, and processes transcript text to extract structured notes',
+                'Anthropic — processes transcript text to extract structured notes',
                 'Weaviate — vector database used for semantic search of your notes',
                 'OpenStreetMap (Nominatim) — geocoding place names mentioned in your notes to real-world locations',
                 'Railway — backend infrastructure hosting',

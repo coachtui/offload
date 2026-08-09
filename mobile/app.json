@@ -20,7 +20,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
+      "_comment_supportsTablet": "false on purpose. The UI has no iPad handling at all — no size-class or useWindowDimensions branching, and three maxWidth rules in the whole app — so a 13-inch iPad gets phone layout stretched full-bleed. Declaring iPad support obliges us to supply iPad screenshots and invites review on a device the app was never designed for (Guideline 4.0). iPhone apps still run on iPad in compatibility mode. Flip this only alongside real iPad layout work.",
+      "supportsTablet": false,
       "bundleIdentifier": "com.talailima.offload",
       "infoPlist": {
         "UIBackgroundModes": ["location", "remote-notification"],
