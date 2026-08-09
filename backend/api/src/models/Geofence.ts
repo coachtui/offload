@@ -150,6 +150,70 @@ export class GeofenceModel {
   }
 
   /**
+   * Geofences backed by a given place. Inferred geofences carry the place_id of
+   * the place that spawned them; used to tell "this place already has a region"
+   * from "this place lost its region to the reaper and needs re-arming".
+   * User-scoped like every other finder — place IDs are UUIDs, but a caller bug
+   * should never be able to read another user's rows.
+   */
+  static async findByPlaceId(userId: string, placeId: string): Promise<GeofenceModel[]> {
+    const rows = await queryMany<GeofenceRow>(
+      `SELECT * FROM hub.geofences
+       WHERE user_id = $1 AND place_id = $2
+       ORDER BY created_at DESC`,
+      [userId, placeId]
+    );
+    return rows.map((row) => new GeofenceModel(row));
+  }
+
+  /**
+   * Delete every INFERRED geofence of this user that has no open note left,
+   * returning what was removed.
+   *
+   * Auto-created geofences used to outlive their reason for existing: resolving
+   * the note that spawned one left the row in place, silent but still counted
+   * by countInferredGeofences and still spending one of iOS's 20 region slots.
+   * Since each spoken place name fans out to up to 3 branches, a handful of
+   * notes exhausted MAX_INFERRED_GEOFENCES permanently and the app quietly
+   * stopped auto-creating reminders. Reaping the empty ones gives the budget
+   * back.
+   *
+   * "Open" here matches listGeofences' open_count exactly — including notes
+   * that are snoozed or dismissed-this-visit, which are coming back and must
+   * not lose their region. Both link paths are checked so a geofence is only
+   * ever removed when nothing can surface through either.
+   *
+   * MANUAL geofences are never touched: the user built those deliberately and
+   * an empty one is a standing reminder location, not garbage.
+   */
+  static async deleteEmptyInferred(userId: string): Promise<Array<{ id: string; name: string }>> {
+    return queryMany<{ id: string; name: string }>(
+      `DELETE FROM hub.geofences g
+       WHERE g.user_id = $1
+         AND g.created_by = 'inferred'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM hub.object_place_links opl
+           JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+           WHERE opl.place_id = g.place_id
+             AND opl.active = true
+             AND ao.deleted_at IS NULL
+             AND ao.state IN ('open','active')
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM hub.geofence_objects go
+           JOIN hub.atomic_objects ao ON ao.id = go.object_id
+           WHERE go.geofence_id = g.id
+             AND ao.deleted_at IS NULL
+             AND ao.state IN ('open','active')
+         )
+       RETURNING g.id, g.name`,
+      [userId]
+    );
+  }
+
+  /**
    * Find geofences containing a location
    */
   static async findByLocation(

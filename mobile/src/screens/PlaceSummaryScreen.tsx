@@ -20,6 +20,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService } from '../services/api';
+import { updateNoteState, deleteNote } from '../services/noteLifecycle';
 import { AtomicObject } from '../types';
 import { ConfirmSheet, useToast, Spacing, Radius } from '../components/ui';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
@@ -82,7 +83,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     setActionLoading(objectId);
     try {
       // Done = resolve the underlying object globally (gone from every place it's linked to)
-      await apiService.updateObjectState(objectId, 'resolved');
+      await updateNoteState(objectId, 'resolved');
       setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
       toast.show({ message: "Couldn't mark as done", description: 'Please try again.', tone: 'error' });
@@ -100,7 +101,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     if (!objectId) return;
     setActionLoading(objectId);
     try {
-      await apiService.deleteObject(objectId);
+      await deleteNote(objectId);
       setObjects(prev => prev.filter(o => o.id !== objectId));
     } catch (err: any) {
       toast.show({ message: "Couldn't delete", description: 'Please try again.', tone: 'error' });

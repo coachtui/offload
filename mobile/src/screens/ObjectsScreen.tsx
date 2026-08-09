@@ -25,6 +25,7 @@ import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService } from '../services/api';
+import { updateNoteState } from '../services/noteLifecycle';
 import {
   AppScreen,
   AppHeader,
@@ -507,7 +508,7 @@ export function ObjectsScreen({ navigation }: Props) {
   const handleStatusChange = useCallback(async (objectId: string, newState: NoteStatus) => {
     setUpdatingState(true);
     try {
-      await apiService.updateObjectState(objectId, newState);
+      await updateNoteState(objectId, newState);
       await fetchObjectDetail(objectId);
       if (newState === 'resolved') {
         setStaleObjects((prev) => prev.filter((o) => o.id !== objectId));

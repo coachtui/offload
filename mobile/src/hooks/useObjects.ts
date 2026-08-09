@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
+import { deleteNote, deleteNotes } from '../services/noteLifecycle';
 import { AtomicObject } from '../types';
 
 interface ObjectsState {
@@ -193,7 +194,7 @@ export function useObjects(): UseObjectsReturn {
 
   const deleteObject = useCallback(async (objectId: string): Promise<boolean> => {
     try {
-      await apiService.deleteObject(objectId);
+      await deleteNote(objectId);
       setState((prev) => ({
         ...prev,
         objects: prev.objects.filter((obj) => obj.id !== objectId),
@@ -213,7 +214,7 @@ export function useObjects(): UseObjectsReturn {
   const bulkDeleteObjects = useCallback(async (ids: string[]): Promise<boolean> => {
     if (ids.length === 0) return true;
     try {
-      await apiService.bulkDeleteObjects(ids);
+      await deleteNotes(ids);
       const idSet = new Set(ids);
       setState((prev) => ({
         ...prev,

@@ -219,6 +219,36 @@ export class PlaceModel {
     return rows.map(rowToPlace);
   }
 
+  /**
+   * Places that have at least one open note but no geofence — candidates for
+   * re-arming. A place ends up here when the reaper removed its region, when a
+   * note was reopened after the reap already ran, or when the inferred-geofence
+   * cap blocked creation at resolve time and slots have since freed up. The
+   * confidence gate is applied by the caller (the threshold lives in
+   * placeService with the rest of the geofence policy).
+   */
+  static async findStrandedWithOpenNotes(userId: string): Promise<Place[]> {
+    const rows = await queryMany<PlaceRow>(
+      `SELECT p.* FROM hub.places p
+       WHERE p.user_id = $1
+         AND EXISTS (
+           SELECT 1
+           FROM hub.object_place_links opl
+           JOIN hub.atomic_objects ao ON ao.id = opl.object_id
+           WHERE opl.place_id = p.id
+             AND opl.active = true
+             AND ao.deleted_at IS NULL
+             AND ao.state IN ('open','active')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM hub.geofences g WHERE g.place_id = p.id
+         )
+       ORDER BY p.created_at DESC`,
+      [userId]
+    );
+    return rows.map(rowToPlace);
+  }
+
   // ─── Object ↔ Place linking ───────────────────────────────────────────────
 
   /**
