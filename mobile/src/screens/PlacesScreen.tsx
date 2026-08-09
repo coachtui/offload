@@ -58,7 +58,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     } catch (e) {
       console.warn('[PlacesScreen] toggle failed', e);
       setItems(prev); // rollback
-      toast.show({ message: 'Could not update reminder', description: 'Please try again.', tone: 'error' });
+      toast.show({ message: 'Could not update place', description: 'Please try again.', tone: 'error' });
     } finally {
       inFlight.current.delete(key);
     }

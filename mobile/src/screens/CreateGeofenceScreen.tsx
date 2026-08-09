@@ -218,7 +218,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       });
 
       if (!geofence) {
-        toast.show({ message: "Couldn't save reminder", description: 'Please try again.', tone: 'error' });
+        toast.show({ message: "Couldn't save place", description: 'Please try again.', tone: 'error' });
         return;
       }
 
@@ -235,7 +235,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       }
 
       toast.show({
-        message: 'Reminder saved',
+        message: 'Place saved',
         description: `"${geofence.name}" has been saved${linkedObjectIds.length > 0 ? ` with ${linkedObjectIds.length} linked note${linkedObjectIds.length !== 1 ? 's' : ''}` : ''}.`,
         tone: 'success',
       });
@@ -243,7 +243,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     } catch (error: any) {
       console.error('[CreateGeofence] Error creating:', error);
       toast.show({
-        message: "Couldn't save reminder",
+        message: "Couldn't save place",
         description: error.message || 'Failed to create geofence',
         tone: 'error',
       });
@@ -308,7 +308,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>New Reminder</Text>
+          <Text style={styles.headerTitle}>New Place</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.cancelText}>Cancel</Text>
@@ -545,7 +545,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.createButtonText}>Save Reminder</Text>
+            <Text style={styles.createButtonText}>Save Place</Text>
           )}
         </TouchableOpacity>
       </ScrollView>

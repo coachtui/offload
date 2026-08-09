@@ -140,7 +140,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Edit Reminder</Text>
+          <Text style={styles.headerTitle}>Edit Place</Text>
         </View>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
           {saving ? (

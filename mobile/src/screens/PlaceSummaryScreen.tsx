@@ -131,10 +131,10 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
           location: g.location,
         });
       } else {
-        toast.show({ message: "Couldn't open reminder settings", description: 'Please try again.', tone: 'error' });
+        toast.show({ message: "Couldn't open place settings", description: 'Please try again.', tone: 'error' });
       }
     } catch {
-      toast.show({ message: "Couldn't open reminder settings", description: 'Please try again.', tone: 'error' });
+      toast.show({ message: "Couldn't open place settings", description: 'Please try again.', tone: 'error' });
     } finally {
       setEditLoading(false);
     }
@@ -223,7 +223,7 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
           ) : (
             <>
               <Ionicons name="settings-outline" size={16} color={colors.accent} />
-              <Text style={styles.editReminderText}>Edit reminder settings</Text>
+              <Text style={styles.editReminderText}>Edit place</Text>
             </>
           )}
         </TouchableOpacity>

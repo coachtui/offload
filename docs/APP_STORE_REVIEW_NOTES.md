@@ -71,9 +71,12 @@ account above:
    and notifications at the onboarding screen.
 2. Tap **Places** on the home screen and confirm **`Griffith Observatory`** is
    listed with arrival reminders enabled.
-3. Set the simulated location to **`34.1184, -118.3004`**
-   (Simulator: *Features → Location → Custom Location…*; device: run a GPX route
-   from Xcode → *Debug → Simulate Location*).
+3. Move the **device's** location to **`34.1184, -118.3004`**. This is set
+   outside the app — Offload has no field for typing coordinates, and nothing
+   needs to be created inside it.
+   - Simulator: the macOS menu bar → *Features → Location → Custom Location…*,
+     then enter the latitude and longitude (verified present in Xcode 26).
+   - Physical device: Xcode → *Debug → Simulate Location*, or run a GPX route.
 4. Background the app (swipe up / press Home), wait ~5 seconds, then reopen it.
    On becoming active Offload runs a foreground proximity check against the
    simulated position.
@@ -121,7 +124,7 @@ discarded; it is never written to our storage and cannot be played back. Only
 the transcript persists.
 
 Individual saved places can also be removed without deleting the account:
-**Places** → tap a place → **Edit reminder settings** → **Delete this place**.
+**Places** → tap a place → **Edit place** → **Delete this place**.
 
 ---
 
@@ -131,7 +134,7 @@ Individual saved places can also be removed without deleting the account:
       `5d14b5f6-f621-4b73-b411-f6068e376d92`. Still needs a sign-in check on a
       clean install.
 - [x] Seed the place + at least one **open** (not completed) note attached to it.
-      Geofence `006de90b-1aa7-4f0a-b645-fe2b7a918be9`, note
+      Geofence `88921d87-c15e-4745-83ea-bdc165abf5ef`, note
       `69aaf904-e7c9-4da0-b742-a31eb1b46f15`. A completed note will suppress the
       notification and the reviewer will see nothing.
 - [x] Confirm the seeded geofence has `enabled: true` and `notifyOnEnter: true` —
