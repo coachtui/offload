@@ -118,6 +118,14 @@ export async function processAudioChunk(
   // Update activity time
   activeSession.lastActivityTime = new Date();
 
+  // PRIVACY: this is the only path that would ever put user audio in our
+  // storage, and it currently has no caller — the app transcribes via
+  // POST /voice/transcribe-audio and never streams chunks to this socket
+  // (mobile's WebSocketService.sendAudioChunk is dead code). The privacy policy
+  // therefore states plainly that we do not keep recordings. If this path is
+  // revived, that statement stops being true and the policy, the Privacy
+  // Nutrition Label, and accountService's audio purge all have to change with it.
+  //
   // Store chunk in MinIO (optional - fail gracefully if storage unavailable)
   try {
     await uploadAudioChunk(sessionId, activeSession.chunkIndex, audioData);

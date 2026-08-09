@@ -112,8 +112,13 @@ Location, linked to the user, used for App Functionality).
 
 Tap the avatar in the top-right of the home screen → **Settings** → **Delete
 account**. The user re-enters their password, confirms, and the account and all
-of its data — notes, transcripts, audio, saved places, reminders — are deleted
-immediately. No email or support request is involved.
+of its data — notes, transcripts, saved places, reminders, categories and
+insights — are deleted immediately. No email or support request is involved.
+
+**Voice recordings are not part of that list because we never store them.**
+Audio is streamed to the transcription providers, turned into text, and
+discarded; it is never written to our storage and cannot be played back. Only
+the transcript persists.
 
 Individual saved places can also be removed without deleting the account:
 **Places** → tap a place → **Edit reminder settings** → **Delete this place**.
@@ -138,6 +143,13 @@ Individual saved places can also be removed without deleting the account:
 - [ ] Confirm the Privacy Nutrition Label declares Precise Location linked to the
       user. Declaring otherwise contradicts the recording behavior (see
       `docs/IOS_LOCATION_PRIVACY.md` §2).
+- [ ] Confirm the Nutrition Label does **not** declare Audio Data collection.
+      Audio is transcribed and discarded, never stored — the upload path in
+      `voiceSessionService.ts` has no caller (mobile's `sendAudioChunk` is dead
+      code) and the app transcribes via `POST /voice/transcribe-audio`. Declare
+      the *transcript* (User Content), not the recording. If audio storage is
+      ever revived, this label, the privacy policy, and the Delete-account
+      consequences list all have to change together.
 - [ ] Confirm the account is not rate-limited or reset between review rounds.
 - [~] Walk **Settings → Delete account**. The two screens are confirmed rendering
       correctly on device (2026-08-09, iPhone 17 Pro Max, Release build — see

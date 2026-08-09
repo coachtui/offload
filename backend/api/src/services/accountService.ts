@@ -9,7 +9,7 @@
 import { User } from '../models/User';
 import { query, queryMany } from '../db/queries';
 import { getWeaviateClient } from '../db/weaviate';
-import { deleteSessionAudio } from './storageService';
+import { deleteSessionAudio, testStorageConnection } from './storageService';
 
 export class AccountNotFoundError extends Error {
   constructor() {
@@ -139,15 +139,31 @@ export async function deleteAccount(userId: string, password: string): Promise<v
     );
   }
 
-  for (const sessionId of sessionIds) {
-    try {
-      await deleteSessionAudio(sessionId);
-    } catch (error) {
-      console.error(
-        `[accountService] ORPHANED_AUDIO user=${userId} session=${sessionId} — ` +
-          `account row is deleted but S3 purge failed:`,
-        error
-      );
+  // Probed once rather than per session. No audio is stored today — the upload
+  // path in voiceSessionService has no caller — so without this check every
+  // deletion would log one ORPHANED_AUDIO error per session for data that was
+  // never written, burying the real thing this alarm exists to catch. The purge
+  // itself stays, so it starts working the moment audio storage does.
+  const storageAvailable = sessionIds.length > 0 ? await testStorageConnection() : false;
+
+  if (!storageAvailable && sessionIds.length > 0) {
+    console.log(
+      `[accountService] audio purge skipped for user=${userId}: storage unreachable ` +
+        `or not configured (${sessionIds.length} sessions). No audio is stored server-side.`
+    );
+  }
+
+  if (storageAvailable) {
+    for (const sessionId of sessionIds) {
+      try {
+        await deleteSessionAudio(sessionId);
+      } catch (error) {
+        console.error(
+          `[accountService] ORPHANED_AUDIO user=${userId} session=${sessionId} — ` +
+            `account row is deleted but S3 purge failed:`,
+          error
+        );
+      }
     }
   }
 
