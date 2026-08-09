@@ -14,6 +14,7 @@ import {
   bulkDeleteObjects,
   bulkMoveObjects,
 } from '../services/objectService';
+import { reapEmptyInferredGeofences, rearmStrandedInferredGeofences } from '../services/placeService';
 import { authenticate } from '../auth/middleware';
 import { z } from 'zod';
 
@@ -261,6 +262,8 @@ router.post('/bulk', async (req: Request, res: Response) => {
 
     if (action === 'delete') {
       const result = await bulkDeleteObjects(req.user.id, ids);
+      // Same cleanup as single delete — a bulk delete can empty many places at once.
+      await reapEmptyInferredGeofences(req.user.id, 'objects-bulk-deleted');
       return res.json(result);
     }
 
@@ -338,6 +341,10 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     await deleteObject(req.user.id, req.params.id);
+    // A deleted note stops counting as open, which can leave its auto-created
+    // geofence with nothing to say. Awaited so the client's next geofence sync
+    // can't race ahead of the cleanup and re-register a region we just dropped.
+    await reapEmptyInferredGeofences(req.user.id, 'object-deleted');
     res.status(204).send();
   } catch (error) {
     if (error instanceof Error) {
@@ -422,6 +429,19 @@ router.post('/:id/state', async (req: Request, res: Response) => {
       [state, evolvedFromId ?? null, req.params.id, req.user.id]
     );
 
+    // Resolving or archiving is the main way a note stops being open — and the
+    // path the app's "Done" button takes. Reap here so the geofence that only
+    // existed to surface this note gives its slot back. Reopening is the
+    // mirror image: an archived note coming back to life needs the region the
+    // reap took, or arriving at its place would stay silent forever.
+    // Both awaited so the client's follow-up geofence sync can't race ahead of
+    // the change; both never throw.
+    if (state === 'resolved' || state === 'archived') {
+      await reapEmptyInferredGeofences(req.user.id, `object-${state}`);
+    } else {
+      await rearmStrandedInferredGeofences(req.user.id, 'object-reopened');
+    }
+
     return res.json({ id: req.params.id, state, stateUpdatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('[objects] state transition error:', error);
@@ -483,6 +503,9 @@ router.post('/:id/review', async (req: Request, res: Response) => {
        WHERE id = $3 AND user_id = $4`,
       [actualOutcome, accuracyScore ?? null, req.params.id, req.user.id]
     );
+
+    // Recording an outcome resolves the object — same cleanup as /state.
+    await reapEmptyInferredGeofences(req.user.id, 'decision-reviewed');
 
     return res.json({
       id: req.params.id,

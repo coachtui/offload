@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { apiService, WeeklySynthesis, SynthesisRef, DormantIdea } from '../services/api';
+import { updateNoteState, reviewDecision } from '../services/noteLifecycle';
 import { AtomicObject } from '../types';
 import { Spacing, SkeletonCard, useToast } from '../components/ui';
 import { Fonts, Type, Radius, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
@@ -122,7 +123,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
 
   const handleArchiveIdea = useCallback(async (id: string) => {
     try {
-      await apiService.updateObjectState(id, 'archived');
+      await updateNoteState(id, 'archived');
       setDismissedIds((prev) => new Set([...prev, id]));
     } catch { /* silent */ }
   }, []);
@@ -131,7 +132,7 @@ export default function SynthesisScreen({ navigation }: SynthesisScreenProps) {
     const outcome = decisionReviewText[id];
     if (!outcome?.trim()) return;
     try {
-      await apiService.reviewDecision(id, outcome.trim());
+      await reviewDecision(id, outcome.trim());
       setSubmittedDecisions((prev) => new Set([...prev, id]));
     } catch { /* silent */ }
   }, [decisionReviewText]);

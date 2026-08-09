@@ -40,6 +40,8 @@ export type ReminderLifecycleEvent =
   | 'PLACE_DEDUPED'
   | 'PLACE_UNRESOLVABLE'
   | 'GEOFENCE_CREATED'
+  | 'GEOFENCE_REARMED'
+  | 'GEOFENCE_REAPED'
   | 'GEOFENCE_SKIPPED_LOW_CONFIDENCE'
   | 'GEOFENCE_LIMIT_REACHED';
 
@@ -116,6 +118,7 @@ async function resolveAndLinkPlace(
     console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${placeMatch.reason}`);
     logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${placeMatch.reason}` });
     await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
+    await rearmInferredGeofence(userId, existing);
     return;
   }
 
@@ -144,6 +147,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Deduped to nearby place: ${sameNameNearby.id} (${sameNameNearby.normalizedName})`);
       logLifecycle('PLACE_DEDUPED', { objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
       await PlaceModel.linkObject(sameNameNearby.id, objectId, 'mentioned_in_note');
+      await rearmInferredGeofence(userId, sameNameNearby);
       continue;
     }
 
@@ -194,10 +198,133 @@ async function resolveAndLinkPlace(
   }
 }
 
+/**
+ * Give a pre-existing place its geofence back when a new note lands on it.
+ *
+ * Places outlive their geofences in two ways: the reaper removes the region
+ * once the last note closes, and a place that geocoded below the confidence
+ * threshold never got one. Both leave a place that dedupe paths happily link
+ * new notes to — and those notes would never ping, because nothing downstream
+ * of the dedupe branches creates a region. Re-arming here is what makes the
+ * reap safe to run at all.
+ *
+ * A place the user has since promoted to a manual geofence is left alone by
+ * maybeCreateInferredGeofence's manual-shadow check, and a place still holding
+ * a region short-circuits below, so this is a no-op in the common case.
+ *
+ * Never throws: re-arming is opportunistic housekeeping riding on the dedupe
+ * branches of the multi-candidate geocode loop, and a failure here must not
+ * abort the remaining candidates (the note's link is already written by the
+ * time this runs — the loop finishing is what gets the OTHER branches linked).
+ */
+async function rearmInferredGeofence(
+  userId: string,
+  place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null; confidence?: number }
+): Promise<void> {
+  try {
+    const existingRegions = await GeofenceModel.findByPlaceId(userId, place.id);
+    if (existingRegions.length > 0) return;
+
+    // Same bar as first-time creation — a place we were never confident enough
+    // to monitor doesn't become monitorable just by being mentioned again.
+    if (typeof place.confidence === 'number' && place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD) {
+      console.log(`[placeService] Place ${place.id} "${place.normalizedName}" below confidence threshold (${place.confidence}) — not re-arming`);
+      return;
+    }
+
+    logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName });
+    console.log(`[placeService] Re-arming geofence for existing place ${place.id} "${place.normalizedName}"`);
+    await maybeCreateInferredGeofence(userId, place);
+  } catch (err) {
+    console.warn(`[placeService] Failed to re-arm geofence for place ${place.id}:`, err);
+  }
+}
+
+/**
+ * Sweep for places that have open notes but no geofence, and give each one a
+ * region back (subject to the usual confidence / manual-shadow / cap gates).
+ *
+ * This is the safety net that makes deleting geofences tolerable in a system
+ * with no transactions across the reap and re-arm paths. Three ways a place
+ * ends up stranded:
+ *   1. A note was reopened (archived → open) after its geofence was reaped.
+ *   2. The reap's statement snapshot raced a concurrent note-link commit and
+ *      deleted a geofence that had just gained an open note.
+ *   3. The inferred cap was full when the note was created; slots have since
+ *      freed and the place can finally be monitored.
+ * All three converge here: called after every reap and on every note reopen,
+ * the sweep re-arms with a fresh snapshot, so any stale-read casualty heals on
+ * the very next lifecycle event instead of persisting silently.
+ *
+ * Never throws. Returns the number of geofences created.
+ */
+export async function rearmStrandedInferredGeofences(userId: string, reason: string): Promise<number> {
+  try {
+    const stranded = await PlaceModel.findStrandedWithOpenNotes(userId);
+    let rearmed = 0;
+    for (const place of stranded) {
+      if (place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD && !place.userConfirmed) continue;
+      if (await maybeCreateInferredGeofence(userId, place)) {
+        rearmed++;
+        logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName, reason });
+      }
+    }
+    if (rearmed > 0) {
+      console.log(`[placeService] Re-armed ${rearmed} stranded place(s) after ${reason} — client must re-sync geofences`);
+    }
+    return rearmed;
+  } catch (err) {
+    console.warn(`[placeService] Stranded-geofence sweep failed after ${reason}:`, err);
+    return 0;
+  }
+}
+
+/**
+ * Remove inferred geofences whose last open note just went away, freeing both
+ * the MAX_INFERRED_GEOFENCES budget and the iOS region slot. Never throws —
+ * every caller is a user action whose success must not hinge on housekeeping.
+ *
+ * Deliberately a whole-user sweep rather than a lookup scoped to the object
+ * that closed: one note can be linked to several places, closing it can empty
+ * more than one, and the sweep also clears the backlog of already-dead
+ * geofences a user accumulated before this existed. It is a single indexed
+ * DELETE, and it is idempotent.
+ *
+ * Returns the number reaped so callers can decide whether to tell the client to
+ * re-sync its regions.
+ */
+export async function reapEmptyInferredGeofences(userId: string, reason: string): Promise<number> {
+  try {
+    const reaped = await GeofenceModel.deleteEmptyInferred(userId);
+    if (reaped.length === 0) return 0;
+
+    logLifecycle('GEOFENCE_REAPED', {
+      reason,
+      count: reaped.length,
+      geofences: reaped.map(g => ({ id: g.id, name: g.name })),
+    });
+    console.log(`[placeService] Reaped ${reaped.length} empty inferred geofence(s) after ${reason}: ${reaped.map(g => g.name).join(', ')} — client must re-sync geofences`);
+
+    // Heal any casualty of the reap racing a concurrent note-link commit: the
+    // DELETE's statement snapshot can miss a link written moments earlier by
+    // the fire-and-forget place-resolution pipeline, deleting a region a brand
+    // new note was counting on. This sweep re-reads with a fresh snapshot and
+    // re-arms anything the DELETE shouldn't have taken — turning a permanent
+    // silent miss into a self-correcting blip. It also backfills places that
+    // were blocked by the inferred cap now that slots just freed up.
+    await rearmStrandedInferredGeofences(userId, `${reason}-post-reap`);
+
+    return reaped.length;
+  } catch (err) {
+    console.warn(`[placeService] Failed to reap inferred geofences after ${reason}:`, err);
+    return 0;
+  }
+}
+
 async function maybeCreateInferredGeofence(
   userId: string,
   place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null }
-): Promise<void> {
+): Promise<boolean> {
   // Never shadow a user's MANUALLY-labeled place with an inferred duplicate.
   // We deliberately do NOT block on existing *inferred* same-name geofences:
   // a chain like "McDonald's" has many branches, and we create a geofence for
@@ -208,7 +335,7 @@ async function maybeCreateInferredGeofence(
   const manualMatch = matchPlaceName(place.normalizedName, manualGeofences, g => g.name);
   if (manualMatch) {
     console.log(`[placeService] Manual geofence "${manualMatch.candidate.name}" exists (${manualMatch.reason}) — skipping inferred duplicate for "${place.normalizedName}"`);
-    return;
+    return false;
   }
 
   const currentCount = await PlaceModel.countInferredGeofences(userId);
@@ -220,7 +347,7 @@ async function maybeCreateInferredGeofence(
       max: MAX_INFERRED_GEOFENCES,
     });
     console.log(`[placeService] Inferred geofence limit reached (${currentCount}/${MAX_INFERRED_GEOFENCES}) — place stored but not monitored: ${place.normalizedName}`);
-    return;
+    return false;
   }
 
   try {
@@ -248,8 +375,10 @@ async function maybeCreateInferredGeofence(
       radius: place.radiusMeters,
     });
     console.log(`[placeService] Created inferred geofence ${geofence.id} for place "${place.normalizedName}" — client must re-sync`);
+    return true;
   } catch (err) {
     console.warn(`[placeService] Failed to create inferred geofence for "${place.normalizedName}":`, err);
+    return false;
   }
 }
 
@@ -331,6 +460,7 @@ export async function markPlaceObjectDone(
 ): Promise<void> {
   await verifyPlaceOwnership(userId, placeId);
   await PlaceModel.setLinkInactive(placeId, objectId);
+  await reapEmptyInferredGeofences(userId, 'place-object-done');
 }
 
 export async function dismissPlaceObject(
@@ -359,6 +489,7 @@ export async function unlinkPlaceObject(
 ): Promise<void> {
   await verifyPlaceOwnership(userId, placeId);
   await PlaceModel.removeLink(placeId, objectId);
+  await reapEmptyInferredGeofences(userId, 'place-object-unlinked');
 }
 
 // ─── Place promotion ──────────────────────────────────────────────────────────

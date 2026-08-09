@@ -300,6 +300,37 @@ class GeofenceMonitoringService {
       return;
     }
 
+    // Pure shrink (regions only REMOVED, every survivor's config identical):
+    // update our map and the persisted file but do NOT re-register with the OS.
+    // startGeofencingAsync makes iOS fire a spurious ENTER for every region the
+    // device is currently inside, so re-registering just to drop a region turns
+    // "marked a note done on the couch" into a phantom "you've arrived" ping.
+    // Leaving the removed region monitored by the OS is safe: its persisted
+    // metadata is gone, so a fire routes through the bare-region fallback →
+    // backend notify (404 for a reaped geofence) → snapshot fallback with
+    // openCount 0 → silence. The OS set converges to ours on the next call
+    // that adds or changes a region (updateActiveRegions always sends the full
+    // set); until then the dead region costs a slot but can never ping.
+    if (regions.length > 0 && regions.length < this.activeRegions.size &&
+        regions.every(r => {
+          const existing = this.activeRegions.get(r.identifier);
+          return !!existing &&
+            existing.latitude === r.latitude &&
+            existing.longitude === r.longitude &&
+            existing.radius === r.radius &&
+            existing.notifyOnEnter === r.notifyOnEnter &&
+            existing.notifyOnExit === r.notifyOnExit;
+        })) {
+      const removed = Array.from(this.activeRegions.keys()).filter(id => !regions.some(r => r.identifier === id));
+      this.activeRegions.clear();
+      for (const r of regions) {
+        this.activeRegions.set(r.identifier, r);
+      }
+      persistRegions(Array.from(this.activeRegions.values()));
+      console.log(`[GeofenceMonitoring] syncRegions: pure shrink — dropped [${removed.join(', ')}] from metadata, skipping startGeofencingAsync (OS set converges on next add/change)`);
+      return;
+    }
+
     // Replace the full in-memory set.
     this.activeRegions.clear();
     for (const r of regions) {
