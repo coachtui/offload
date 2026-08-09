@@ -14,6 +14,7 @@ import {
   initializeWeaviateSchema,
 } from './db/weaviate';
 import { initializeStorage, testStorageConnection } from './services/storageService';
+import { runMigrationsOrExit } from './db/migrate';
 
 // Load environment variables
 dotenv.config();
@@ -168,52 +169,68 @@ async function gracefulShutdown() {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Start server
-server.listen(PORT, async () => {
-  console.log(`🚀 The Hub API server running on port ${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+/**
+ * Bring the schema up to date BEFORE binding the port.
+ *
+ * Everything else in the startup path is best-effort and runs inside the
+ * listen callback. Migrations are not: serving a request against a schema the
+ * code does not match is exactly what broke every signup for three days in
+ * August 2026. runMigrationsOrExit exits non-zero on failure, so a bad
+ * migration leaves the previous deployment serving rather than promoting a
+ * broken one.
+ */
+async function start(): Promise<void> {
+  await runMigrationsOrExit();
 
-  // Test database connection
-  await testConnection();
+  // Start server
+  server.listen(PORT, async () => {
+    console.log(`🚀 The Hub API server running on port ${PORT}`);
+    console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
 
-  // Test Weaviate connection and initialize schema
-  const weaviateConnected = await testWeaviateConnection();
-  if (weaviateConnected) {
-    try {
-      await initializeWeaviateSchema();
-    } catch (error) {
-      console.error('⚠️  Failed to initialize Weaviate schema:', error);
+    // Test database connection
+    await testConnection();
+
+    // Test Weaviate connection and initialize schema
+    const weaviateConnected = await testWeaviateConnection();
+    if (weaviateConnected) {
+      try {
+        await initializeWeaviateSchema();
+      } catch (error) {
+        console.error('⚠️  Failed to initialize Weaviate schema:', error);
+      }
+    } else {
+      console.warn('⚠️  Weaviate not available - semantic search will be disabled');
     }
-  } else {
-    console.warn('⚠️  Weaviate not available - semantic search will be disabled');
-  }
 
-  // Initialize MinIO storage
-  const storageConnected = await testStorageConnection();
-  if (storageConnected) {
-    try {
-      await initializeStorage();
-    } catch (error) {
-      console.error('⚠️  Failed to initialize MinIO storage:', error);
+    // Initialize MinIO storage
+    const storageConnected = await testStorageConnection();
+    if (storageConnected) {
+      try {
+        await initializeStorage();
+      } catch (error) {
+        console.error('⚠️  Failed to initialize MinIO storage:', error);
+      }
+    } else {
+      console.warn('⚠️  MinIO not available - audio storage will be disabled');
     }
-  } else {
-    console.warn('⚠️  MinIO not available - audio storage will be disabled');
-  }
 
-  // Check Deepgram API key
-  if (process.env.DEEPGRAM_API_KEY) {
-    console.log('✅ Deepgram API configured');
-  } else {
-    console.warn('⚠️  DEEPGRAM_API_KEY not set - voice transcription will not work');
-  }
+    // Check Deepgram API key
+    if (process.env.DEEPGRAM_API_KEY) {
+      console.log('✅ Deepgram API configured');
+    } else {
+      console.warn('⚠️  DEEPGRAM_API_KEY not set - voice transcription will not work');
+    }
 
-  // Start background jobs
-  startEmbeddingRetryJob();
-  startRetentionJob();
-  startImportanceScoreJob();
-  startMonthlyLongTermSynthesisJob();
-  startWeeklySynthesisJob();
-  startTimeReminderJob();
-  startLifecycleJob();
-  startTranscriptRecoveryJob();
-});
+    // Start background jobs
+    startEmbeddingRetryJob();
+    startRetentionJob();
+    startImportanceScoreJob();
+    startMonthlyLongTermSynthesisJob();
+    startWeeklySynthesisJob();
+    startTimeReminderJob();
+    startLifecycleJob();
+    startTranscriptRecoveryJob();
+  });
+}
+
+void start();

@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc --noEmitOnError false || true",
+    "build": "tsc --noEmitOnError false || true; npm run copy:migrations",
+    "copy:migrations": "mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "start": "node dist/index.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
