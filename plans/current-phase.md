@@ -622,10 +622,10 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
 ## Known Issues & Technical Debt
 
 ### High Priority
-0. ⚠️ **Geofence arming gap: brand-new place + immediately-killed app** (2026-08-08)
-   - Registering a region with iOS requires running JS. If the user records a note, kills the app, and drives straight to the *newly created* place, no sync path runs and the region is never armed — no reminder can fire. (Existing, already-registered places are unaffected.)
-   - The "note sorted" push carries the geofence hand-off but does not execute JS when the app is killed; the cold-start tap handler in `App.tsx` also calls only `handleNotificationData`, not `handleSessionProcessed`.
-   - Planned fix: silent `content-available` push (backend payload change + `remote-notification` in `UIBackgroundModes`), plus wiring `handleSessionProcessed` into the cold-start path. See PR #29's description.
+0. 🔧 **Geofence arming gap: brand-new place + immediately-killed app** (2026-08-08; **fix implemented 2026-08-09, PR #34 — dormant until next EAS build**)
+   - Registering a region with iOS requires running JS. If the user records a note, kills the app within ~35s (before the post-save syncs), and drives straight to the *newly created* place without reopening, the region is never armed. (Existing, already-registered places are unaffected — iOS monitors them independently of app life; practical exposure is small, which is why this was downgraded from its original High framing.)
+   - **Implemented**: backend sends a content-available silent push only when `resolveObjectPlaces` actually created a region; a guarded background `TaskManager` task runs `syncGeofencesWithOS('silent-push')` on wake; the cold-start tap handler now runs `handleSessionProcessed` too (live via OTA `b17e6a43` immediately); `UIBackgroundModes` declared explicitly as `["location", "remote-notification"]`.
+   - **Remaining step**: the `remote-notification` entitlement is a native capability — the silent-push half activates on the **next EAS build** (App Store prep will force one anyway). No dedicated build needed; everything is inert-but-harmless until then.
 
 1. ⚠️ **TypeScript Strict Mode Disabled**
    - Build command has `|| true` to bypass type errors
@@ -1171,6 +1171,11 @@ Protocol: open app once (~10s, OTA applies + auto-reloads), force-quit, reopen (
 
 ---
 
+### 🔕 Addendum (same day) — Silent-push arming implemented (PR #34)
+After the field test passed, the silent-push arming fix for High #0 was implemented with a strict do-not-disrupt constraint: zero arrival-path changes, push invisible on all builds, triggered sync idempotent. Backend gates the push on "a region was actually created"; mobile adds a guarded background notification task + the missing `handleSessionProcessed` call in the cold-start tap path (that part is live now via OTA `b17e6a43`). The silent-push half is **dormant until the next EAS build** carries the `remote-notification` background mode — fold into App Store prep, no dedicated build needed. 338 tests green.
+
+---
+
 **Session Complete**: 2026-08-09
-**Status**: ✅ Reap/re-arm/multi-link merged, deployed, and field-validated end-to-end
-**Next**: silent-push arming fix (High #0), region-cap enforcement + coordinate dedup, App Store demo-account seeding, or Phase 7
+**Status**: ✅ Reap/re-arm/multi-link merged, deployed, and field-validated end-to-end; silent-push arming implemented (dormant until next build)
+**Next**: next EAS build activates silent-push arming (fold into App Store prep) → region-cap enforcement + coordinate dedup, demo-account seeding, or Phase 7
