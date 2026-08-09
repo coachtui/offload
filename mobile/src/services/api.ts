@@ -192,6 +192,22 @@ export class AuthError extends Error {
 }
 
 /**
+ * Thrown for any other non-OK response, carrying the status and the server's
+ * machine-readable `error` code so callers can branch on the specific failure
+ * instead of matching against display copy.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/**
  * Exchange the stored refresh token for a fresh access token.
  * Standalone (not a class method) so the geofence background task can reuse it
  * without the ApiService singleton. Returns the new access token, or null if
@@ -354,15 +370,17 @@ class ApiService {
       // Accept either { message } or { error } as the human-readable string.
       // Fall back to the raw text if the body isn't JSON, then to a generic label.
       let errorMessage = `HTTP ${response.status}`;
+      let errorCode: string | undefined;
       try {
         const body = await response.json();
         errorMessage = body.message || body.error || errorMessage;
+        if (typeof body.error === 'string') errorCode = body.error;
       } catch {
         const text = await response.text().catch(() => '');
         if (text) errorMessage = text.slice(0, 200);
       }
       console.error(`[ApiService] ${response.status} on ${endpoint}:`, errorMessage);
-      throw new Error(errorMessage);
+      throw new ApiError(errorMessage, response.status, errorCode);
     }
 
     // DELETE routes reply 204 No Content — an empty body isn't JSON, and
@@ -405,6 +423,20 @@ class ApiService {
 
   async logout(): Promise<void> {
     await this.clearToken();
+  }
+
+  /**
+   * Permanently delete the signed-in account and all of its data.
+   *
+   * Throws an ApiError with code 'INVALID_PASSWORD' (403) if the password is
+   * wrong — the session stays valid in that case, so the caller should show the
+   * error rather than sign the user out.
+   */
+  async deleteAccount(password: string): Promise<void> {
+    await this.request<void>('/api/v1/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
   }
 
   async clearToken(): Promise<void> {

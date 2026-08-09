@@ -20,7 +20,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useGeofences } from '../hooks/useGeofences';
-import { AppInput, useToast, Spacing, Radius } from '../components/ui';
+import { AppInput, ConfirmSheet, useToast, Spacing, Radius } from '../components/ui';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type EditRoute = RouteProp<RootStackParamList, 'EditGeofence'>;
@@ -58,9 +58,11 @@ export default function EditGeofenceScreen({ navigation }: Props) {
   const [quietHoursStart, setQuietHoursStart] = useState(initialQHStart || '22:00');
   const [quietHoursEnd, setQuietHoursEnd] = useState(initialQHEnd || '08:00');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const toast = useToast();
-  const { updateGeofence } = useGeofences();
+  const { updateGeofence, deleteGeofence } = useGeofences();
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -93,6 +95,36 @@ export default function EditGeofenceScreen({ navigation }: Props) {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      // The hook stops OS monitoring for this region before the API call, so a
+      // deleted place can't keep firing from a stale registration.
+      const deleted = await deleteGeofence(geofenceId);
+      if (deleted) {
+        toast.show({ message: `${geofenceName} deleted`, tone: 'success' });
+        // Not goBack(): that lands on the place's summary screen, which is now
+        // showing a geofence that no longer exists. Places is the honest
+        // destination — it pops back to it if it's already in the stack.
+        navigation.navigate('Places');
+      } else {
+        toast.show({
+          message: "Couldn't delete this place",
+          description: 'Please try again.',
+          tone: 'error',
+        });
+      }
+    } catch (err: any) {
+      toast.show({
+        message: "Couldn't delete this place",
+        description: err.message || 'Please try again.',
+        tone: 'error',
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -250,7 +282,35 @@ export default function EditGeofenceScreen({ navigation }: Props) {
             <Text style={styles.saveButtonText}>Save Changes</Text>
           )}
         </TouchableOpacity>
+
+        {/* Delete — the only way to stop Offload watching a place you created. */}
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => setConfirmDelete(true)}
+          disabled={saving || deleting}
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${geofenceName}`}
+        >
+          {deleting ? (
+            <ActivityIndicator size="small" color={colors.error} />
+          ) : (
+            <>
+              <Ionicons name="trash-outline" size={16} color={colors.error} />
+              <Text style={styles.deleteButtonText}>Delete this place</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </ScrollView>
+
+      <ConfirmSheet
+        visible={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title={`Delete ${geofenceName}?`}
+        message="Offload will stop watching this place and stop reminding you when you arrive. Notes attached to it are kept."
+        confirmLabel="Delete"
+        destructive
+      />
     </SafeAreaView>
   );
 }
@@ -383,7 +443,6 @@ const createStyles = (c: ThemeColors) =>
       borderRadius: Radius.md,
       alignItems: 'center',
       marginTop: 12,
-      marginBottom: 32,
     },
     saveButtonDisabled: {
       backgroundColor: c.borderStrong,
@@ -392,5 +451,19 @@ const createStyles = (c: ThemeColors) =>
       color: '#FFFFFF',
       fontSize: 16,
       fontFamily: Fonts.semibold,
+    },
+    deleteButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      padding: Spacing.lg,
+      marginTop: Spacing.sm,
+      marginBottom: 32,
+    },
+    deleteButtonText: {
+      color: c.error,
+      fontSize: 15,
+      fontFamily: Fonts.medium,
     },
   });

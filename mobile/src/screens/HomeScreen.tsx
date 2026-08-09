@@ -19,14 +19,12 @@ import { PermissionBanner } from '../components/PermissionBanner';
 import { ArrivalPermissionSheet } from '../components/ArrivalPermissionSheet';
 import { subscribeArrivalPrompt } from '../services/arrivalPromptBus';
 import { hasSeenArrivalPrompt, canDeliverArrivalReminders } from '../services/permissionService';
-import { getBuildInfo } from '../services/buildInfo';
 import {
   AppSearchBar,
   AppText,
   AppPressable,
   AppBadge,
   AppButton,
-  ConfirmSheet,
   SkeletonCard,
   Spacing,
   Radius,
@@ -111,18 +109,13 @@ function greetingForNow(): string {
   return 'Good evening';
 }
 
-// Fixed for the life of the JS runtime — a new update only takes effect
-// through a reload, which re-evaluates this module anyway.
-const buildInfo = getBuildInfo();
-
 export function HomeScreen({ navigation }: Props) {
-  const { logout, user } = useAuth();
+  const { user } = useAuth();
   const { colors, scheme } = useTheme();
   const styles = useThemedStyles(createStyles);
   const firstName = user?.name ? user.name.trim().split(' ')[0] : '';
   const initial = (firstName || user?.email || '?').charAt(0).toUpperCase();
   const [searchQuery, setSearchQuery] = useState('');
-  const [logoutVisible, setLogoutVisible] = useState(false);
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
   const { items: forYouItems } = useForYou();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,10 +210,10 @@ export function HomeScreen({ navigation }: Props) {
           </AppText>
         </View>
         <AppPressable
-          onPress={() => setLogoutVisible(true)}
+          onPress={() => navigation.navigate('Settings')}
           style={styles.avatar}
           accessibilityRole="button"
-          accessibilityLabel="Account"
+          accessibilityLabel="Account and settings"
         >
           <AppText variant="secondary" color="inverse" style={{ fontFamily: Fonts.bold }}>
             {initial}
@@ -404,16 +397,6 @@ export function HomeScreen({ navigation }: Props) {
         </>
       )}
 
-      <ConfirmSheet
-        visible={logoutVisible}
-        onClose={() => setLogoutVisible(false)}
-        onConfirm={logout}
-        title="Log out of Offload?"
-        message="Your notes stay safely synced to your account."
-        confirmLabel="Log out"
-        destructive
-        footnote={buildInfo.label}
-      />
 
       <ArrivalPermissionSheet
         visible={arrivalPrompt !== null}

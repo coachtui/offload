@@ -38,7 +38,9 @@ export function getBuildInfo(): BuildInfo {
     return { label: `v${version} · development bundle`, isEmbedded: true };
   }
 
-  const channel = Updates.channel ?? 'no channel';
+  // `??` is not enough: a build with no channel configured reports an empty
+  // string, not null, which rendered as "v1.1.0 · · embedded bundle".
+  const channel = Updates.channel || 'no channel';
 
   if (Updates.isEmbeddedLaunch) {
     return {

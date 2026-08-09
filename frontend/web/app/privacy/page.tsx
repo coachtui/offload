@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           <h1 className="text-4xl font-bold text-ink tracking-tight mb-3">
             Privacy Policy
           </h1>
-          <p className="text-sm text-ink-faint">Last updated: August 6, 2026</p>
+          <p className="text-sm text-ink-faint">Last updated: August 9, 2026</p>
         </div>
 
         <div className="divide-y divide-line space-y-10">
@@ -78,6 +78,19 @@ export default function PrivacyPage() {
               logged. Approximate location coordinates may be stored when a note is captured with
               GPS context enabled.
             </p>
+            <p>
+              Checking whether you have arrived somewhere happens on your device, using the
+              operating system&apos;s own region monitoring. Your coordinates are not uploaded when
+              you cross into a saved place, and we do not build or store a history of your
+              movements.
+            </p>
+            <p>
+              When a note mentions a place by name, we look that name up with OpenStreetMap&apos;s
+              Nominatim geocoding service to find the matching real-world location. That request
+              contains the place name and a bounding box derived from where the note was recorded,
+              so the result is the branch near you rather than an arbitrary one. It does not include
+              your name, email, or account identifier.
+            </p>
 
             <p className="font-medium text-ink mt-4">Usage data</p>
             <p>
@@ -118,6 +131,7 @@ export default function PrivacyPage() {
                 'Anthropic and/or OpenAI — AI processing of transcript text to extract structured notes',
                 'Amazon Web Services (S3) — secure cloud storage for your data',
                 'Weaviate — vector database used for semantic search of your notes',
+                'OpenStreetMap (Nominatim) — geocoding place names mentioned in your notes to real-world locations',
                 'Railway — backend infrastructure hosting',
               ]}
             />
@@ -128,12 +142,18 @@ export default function PrivacyPage() {
 
           <Section title="Data Retention">
             <p>
-              We retain your account data and notes for as long as your account is active. If you
-              delete your account, we will delete your associated data within 30 days, except where
-              retention is required by law.
+              We retain your account data and notes for as long as your account is active.
             </p>
             <p>
-              You can request deletion of your account and data at any time by emailing{' '}
+              You can delete your account at any time from inside the app, under{' '}
+              <span className="text-ink">Settings → Delete account</span>. Deletion is immediate and
+              permanent: your notes, transcripts, recorded audio, saved places, and reminders are
+              erased, and there is no way for us to restore them afterwards. Residual copies may
+              persist in routine encrypted backups for up to 30 days before they cycle out, and we
+              may retain records where retention is required by law.
+            </p>
+            <p>
+              If you cannot reach the app, you can also request deletion by emailing{' '}
               <a
                 href="mailto:support@useoffload.app"
                 className="text-ink underline hover:no-underline"
@@ -150,7 +170,7 @@ export default function PrivacyPage() {
               items={[
                 'Access the personal data we hold about you',
                 'Request correction of inaccurate data',
-                'Request deletion of your account and associated data',
+                'Delete your account and associated data, directly in the app',
                 'Export your notes and content',
                 'Withdraw consent for location-based features at any time via device settings',
               ]}

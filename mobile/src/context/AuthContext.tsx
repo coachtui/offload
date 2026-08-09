@@ -15,6 +15,7 @@ interface AuthContextType extends AuthState {
   login: (credentials: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   handleAuthError: (error: unknown) => void;
 }
 
@@ -148,6 +149,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }
 
+  /**
+   * Delete the account on the server, then tear the device down exactly as a
+   * sign-out would.
+   *
+   * The server call goes first: if it fails (wrong password, no network) the
+   * session must survive untouched so the user can retry. Once it succeeds the
+   * teardown is unconditional — the account no longer exists, so leaving this
+   * phone's regions registered or its onboarding flags set would strand state
+   * belonging to nobody.
+   */
+  async function deleteAccount(password: string) {
+    await apiService.deleteAccount(password);
+
+    await geofenceMonitoringService
+      .teardownForSignOut()
+      .catch(e => console.warn('[AuthContext] geofence teardown after delete failed:', e));
+    await resetPermissionOnboarding().catch(e =>
+      console.warn('[AuthContext] permission reset after delete failed:', e)
+    );
+    await apiService.clearToken();
+    setState({ user: null, isAuthenticated: false, isLoading: false });
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -155,6 +179,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         login,
         register,
         logout,
+        deleteAccount,
         handleAuthError,
       }}
     >

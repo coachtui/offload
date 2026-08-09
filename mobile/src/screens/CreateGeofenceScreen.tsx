@@ -657,7 +657,11 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
         onConfirm={handleBgPermConfirm}
         title="Background Location Access"
         message={locationService.getBackgroundPermissionExplanation()}
-        confirmLabel="Enable Notifications"
+        // The sheet explains Always-location and the button calls
+        // requestBackgroundPermission() — labelling it "Enable Notifications"
+        // named the wrong permission on the one screen that justifies the most
+        // scrutinised entitlement the app asks for.
+        confirmLabel="Allow Always"
         cancelLabel="No Thanks"
       />
     </SafeAreaView>
