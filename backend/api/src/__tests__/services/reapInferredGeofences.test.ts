@@ -21,7 +21,12 @@ import { resolvePlaceNameMulti } from '../../services/placeResolutionService';
 jest.mock('../../models/Place');
 jest.mock('../../models/Geofence');
 jest.mock('../../models/AtomicObject');
-jest.mock('../../services/placeResolutionService');
+// Mock only the geocoder — haversineKm must stay real so the near/far branch
+// fall-through logic under test actually measures distance.
+jest.mock('../../services/placeResolutionService', () => ({
+  ...jest.requireActual('../../services/placeResolutionService'),
+  resolvePlaceNameMulti: jest.fn(),
+}));
 
 const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
@@ -196,6 +201,45 @@ describe('re-arming a place that lost its geofence', () => {
     await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco']);
 
     expect(mockGeo.create).not.toHaveBeenCalled();
+  });
+
+  it('links a chain note to EVERY same-name branch place, not just the newest', async () => {
+    // Two Foodland branch places from an earlier note's geocode fan-out. The
+    // old single-match dedupe linked only branches[0]; a user standing at
+    // branch 2 then got silence from every notification path.
+    const branch1 = { ...reapedPlace, id: 'pl-1', normalizedName: 'Foodland' };
+    const branch2 = { ...reapedPlace, id: 'pl-2', normalizedName: 'Foodland' };
+    mockPlace.findByUserId.mockResolvedValue([branch1, branch2]);
+    mockGeo.findByPlaceId.mockResolvedValue([{ id: 'gf-existing' } as any]);
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Foodland']);
+
+    expect(mockPlace.linkObject).toHaveBeenCalledWith('pl-1', 'obj-2', 'mentioned_in_note');
+    expect(mockPlace.linkObject).toHaveBeenCalledWith('pl-2', 'obj-2', 'mentioned_in_note');
+    expect(mockResolve).not.toHaveBeenCalled(); // no location → no far-branch fallthrough
+  });
+
+  it('geocodes for a local branch when every matched place is far from the user', async () => {
+    // Known branch is ~28km away; user records the note across town.
+    const farBranch = { ...reapedPlace, lat: 21.55, lng: -158.05 };
+    mockPlace.findByUserId.mockResolvedValue([farBranch]);
+    mockGeo.findByPlaceId.mockResolvedValue([{ id: 'gf-existing' } as any]);
+    mockResolve.mockResolvedValue([]);
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco'], { latitude: 21.3, longitude: -157.8 });
+
+    expect(mockPlace.linkObject).toHaveBeenCalledWith('pl-1', 'obj-2', 'mentioned_in_note');
+    expect(mockResolve).toHaveBeenCalled(); // fell through to find the local branch
+  });
+
+  it('does not geocode when a matched place is already near the user', async () => {
+    const nearBranch = { ...reapedPlace, lat: 21.301, lng: -157.801 };
+    mockPlace.findByUserId.mockResolvedValue([nearBranch]);
+    mockGeo.findByPlaceId.mockResolvedValue([{ id: 'gf-existing' } as any]);
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco'], { latitude: 21.3, longitude: -157.8 });
+
+    expect(mockResolve).not.toHaveBeenCalled();
   });
 
   it('re-arms a place matched by proximity, not just by name', async () => {
