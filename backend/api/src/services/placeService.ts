@@ -8,7 +8,7 @@
 import { PlaceModel } from '../models/Place';
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
-import { resolvePlaceNameMulti } from './placeResolutionService';
+import { resolvePlaceNameMulti, haversineKm } from './placeResolutionService';
 import { matchPlaceName } from './placeNameMatch';
 import type { AtomicObject } from '@shared/types';
 
@@ -108,18 +108,42 @@ async function resolveAndLinkPlace(
     return; // labeled place is authoritative — do not geocode or create an inferred place
   }
 
-  // ─── 1b. Match an existing inferred place by name ──────────────────────────
-  // Same matcher, so "costco gasoline station" dedupes onto the existing
-  // "Costco Gasoline" place instead of geocoding a near-duplicate.
+  // ─── 1b. Match existing inferred places by name — ALL of them ──────────────
+  // Same matcher as the manual step, so "costco gasoline station" dedupes onto
+  // the existing "Costco Gasoline" place instead of geocoding a near-duplicate.
+  //
+  // Every matching place gets the note, not just the best match. The geocode
+  // fan-out deliberately creates a place per nearby branch of a chain so the
+  // note fires at whichever branch the user shows up at; linking only one
+  // match here silently reduced a chain note to a single arbitrary branch
+  // (newest-first order), which is how a Foodland note ended up attached to
+  // one branch's region while the user stood inside the other branch's — with
+  // both the OS path and the proximity check correctly silent, because the
+  // region they were inside held no notes.
   const userPlaces = await PlaceModel.findByUserId(userId);
-  const placeMatch = matchPlaceName(normalizedQuery, userPlaces, p => p.normalizedName);
-  if (placeMatch) {
-    const existing = placeMatch.candidate;
-    console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${placeMatch.reason}`);
-    logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${placeMatch.reason}` });
-    await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
-    await rearmInferredGeofence(userId, existing);
-    return;
+  const matchedPlaces = userPlaces.filter(
+    p => matchPlaceName(normalizedQuery, [p], x => x.normalizedName) !== null
+  );
+  if (matchedPlaces.length > 0) {
+    for (const existing of matchedPlaces) {
+      const match = matchPlaceName(normalizedQuery, [existing], x => x.normalizedName)!;
+      console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${match.reason}`);
+      logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
+      await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
+      await rearmInferredGeofence(userId, existing);
+    }
+
+    // If every known branch is far from where the note was recorded, the local
+    // branch has no place record yet — fall through to the geocoder so it gets
+    // one (step 3's proximity dedupe keeps this from duplicating anything).
+    // Without a user location there is no way to judge "far", so keep the old
+    // behavior and stop here.
+    const NEARBY_BRANCH_KM = 10;
+    const someBranchNearby = !userLocation || matchedPlaces.some(
+      p => haversineKm(userLocation.latitude, userLocation.longitude, p.lat, p.lng) <= NEARBY_BRANCH_KM
+    );
+    if (someBranchNearby) return;
+    console.log(`[placeService] No matched "${normalizedQuery}" place within ${NEARBY_BRANCH_KM}km of user — geocoding for a local branch`);
   }
 
   // ─── 2. Geocode via OSM Nominatim (up to 3 candidates) ───────────────────
