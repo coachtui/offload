@@ -32,6 +32,8 @@ export type RootStackParamList = {
   PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
   Categories: undefined;
   Settings: undefined;
+  /** Settings → Location & permissions. Distinct from `Permissions`, the one-shot onboarding ladder. */
+  PermissionSettings: undefined;
   DeleteAccount: undefined;
 };
 

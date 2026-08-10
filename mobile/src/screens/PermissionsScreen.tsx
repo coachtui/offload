@@ -6,6 +6,11 @@
  * it before the user has recorded anything spends it on someone with no reason
  * to say yes. That ask lives in ArrivalPermissionSheet, where a real place is
  * on screen to justify it.
+ *
+ * Onboarding only — do NOT navigate here from inside the app. This screen
+ * replaces itself with Home as soon as everything is granted, so as a
+ * destination it just flashes and bounces back out. The reviewable, revisitable
+ * view of permission state is PermissionSettingsScreen.
  */
 
 import React, { useState, useEffect } from 'react';

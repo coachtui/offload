@@ -59,7 +59,7 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
           <ListRow
             title="Location & permissions"
             subtitle="What Offload can access on this phone"
-            onPress={() => navigation.navigate('Permissions')}
+            onPress={() => navigation.navigate('PermissionSettings')}
             showChevron
           />
           <ListRow
