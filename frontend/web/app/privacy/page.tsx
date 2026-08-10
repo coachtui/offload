@@ -23,7 +23,7 @@ export default function PrivacyPage() {
           <h1 className="text-4xl font-bold text-ink tracking-tight mb-3">
             Privacy Policy
           </h1>
-          <p className="text-sm text-ink-faint">Last updated: August 9, 2026</p>
+          <p className="text-sm text-ink-faint">Last updated: August 10, 2026</p>
         </div>
 
         <div className="divide-y divide-line space-y-10">
@@ -137,6 +137,7 @@ export default function PrivacyPage() {
                 'Anthropic — processes transcript text to extract structured notes',
                 'Weaviate — vector database used for semantic search of your notes',
                 'OpenStreetMap (Nominatim) — geocoding place names mentioned in your notes to real-world locations',
+                'Expo — delivers push notifications; receives your device’s push token and the content of reminder notifications in transit',
                 'Railway — backend infrastructure hosting',
               ]}
             />
@@ -152,7 +153,7 @@ export default function PrivacyPage() {
             <p>
               You can delete your account at any time from inside the app, under{' '}
               <span className="text-ink">Settings → Delete account</span>. Deletion is immediate and
-              permanent: your notes, transcripts, recorded audio, saved places, and reminders are
+              permanent: your notes, transcripts, saved places, and reminders are
               erased, and there is no way for us to restore them afterwards. Residual copies may
               persist in routine encrypted backups for up to 30 days before they cycle out, and we
               may retain records where retention is required by law.

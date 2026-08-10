@@ -161,8 +161,13 @@ Individual saved places can also be removed without deleting the account:
       deletion on a throwaway account before submitting — 5.1.1(v) is checked on
       essentially every review of an app that creates accounts, and a deletion
       path that errors is worse than none.
-- [ ] Confirm the privacy policy's third-party list still matches reality —
-      Nominatim was missing from it until 2026-08-09.
+- [x] Confirm the privacy policy's third-party list still matches reality —
+      Nominatim was missing from it until 2026-08-09. Re-audited 2026-08-10
+      against actual outbound calls in backend + mobile: Deepgram, OpenAI,
+      Anthropic, Weaviate, Nominatim, Railway all confirmed real; **Expo was
+      missing** (pushService.ts sends push tokens + notification content — note
+      text previews — through exp.host) and was added to the list the same day.
+      S3 audio storage deliberately not listed: upload path has no live caller.
 
 ### Choosing the seeded coordinates
 
