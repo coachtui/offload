@@ -42,6 +42,7 @@ export interface PermissionSnapshot {
   // permission that was never asked for sends them to a page where the control
   // does not exist. When these are true the fix is an in-app request, not a
   // deep link.
+  canAskMicrophoneAgain: boolean;
   canAskLocationAgain: boolean;
   canAskLocationAlwaysAgain: boolean;
   canAskNotificationsAgain: boolean;
@@ -52,6 +53,7 @@ export const EMPTY_SNAPSHOT: PermissionSnapshot = {
   locationWhenInUse: false,
   locationAlways: false,
   notifications: false,
+  canAskMicrophoneAgain: true,
   canAskLocationAgain: true,
   canAskLocationAlwaysAgain: true,
   canAskNotificationsAgain: true,
@@ -77,15 +79,20 @@ export async function getPermissionSnapshot(): Promise<PermissionSnapshot> {
     Notifications.getPermissionsAsync(),
   ]);
 
+  const micValue = mic.status === 'fulfilled' ? mic.value : null;
   const fgValue = fg.status === 'fulfilled' ? fg.value : null;
   const bgValue = bg.status === 'fulfilled' ? bg.value : null;
   const notifValue = notif.status === 'fulfilled' ? notif.value : null;
 
   return {
-    microphone: mic.status === 'fulfilled' ? !!mic.value.granted : false,
+    microphone: !!micValue?.granted,
     locationWhenInUse: fgValue?.granted ?? false,
     locationAlways: bgValue?.granted ?? false,
     notifications: notifValue?.status === 'granted',
+    // The audio module leaves canAskAgain undefined on some platforms; assume
+    // askable, since a wasted no-op request is cheaper than sending someone to a
+    // Settings page that has no microphone row yet.
+    canAskMicrophoneAgain: micValue?.canAskAgain ?? true,
     canAskLocationAgain: fgValue?.canAskAgain ?? true,
     // Escalating to Always requires foreground first, so the Always dialog is
     // only reachable while BOTH are still askable.

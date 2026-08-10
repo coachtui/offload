@@ -21,6 +21,7 @@ import PlaceSummaryScreen from '../screens/PlaceSummaryScreen';
 import PlacesScreen from '../screens/PlacesScreen';
 import CategoriesScreen from '../screens/CategoriesScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import PermissionSettingsScreen from '../screens/PermissionSettingsScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
@@ -110,6 +111,11 @@ function MainStack({ needsPermissionOnboarding }: { needsPermissionOnboarding: b
       />
       <Stack.Screen name="Categories" component={CategoriesScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="PermissionSettings"
+        component={PermissionSettingsScreen}
+        options={{ headerShown: false }}
+      />
       <Stack.Screen
         name="DeleteAccount"
         component={DeleteAccountScreen}
