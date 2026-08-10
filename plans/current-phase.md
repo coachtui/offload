@@ -1360,3 +1360,40 @@ happens **outside the app** (Simulator menu path verified in Xcode 26).
 **Session Complete**: 2026-08-09 (evening)
 **Status**: ✅ All submission blockers deployed & proven; migrations automated; Places/Notes matches the product design
 **Next**: EAS production build (activates silent-push arming + supportsTablet:false + Place renames) → retake screenshots → walk reviewer script → App Store Connect
+
+---
+
+## Session Update (2026-08-10) — Production Build 2 Shipped to App Store Connect
+
+### 🎯 Completed
+1. ✅ **EAS production iOS build** from `fbf14a6` — version **1.1.0 (build 2)**, build id `d2f99aa8`
+2. ✅ **Binary verified from the .ipa itself** (downloaded + unpacked, not assumed):
+   - `UIBackgroundModes: ["location","remote-notification","fetch"]` → **silent-push arming (PR #34) is ACTIVE for the first time**
+   - `UIDeviceFamily: [1]` → iPhone-only; `supportsTablet: false` applied, no iPad screenshots owed
+   - `aps-environment: production`, signed by team `A8GK6WW4U8` (App Store distribution cert, valid to Jan 2027)
+   - Hermes bundle contains `Edit Place` / `Save Place` → the Places/Notes redesign is in the binary
+3. ✅ **Submitted to App Store Connect** (Tui ran `eas submit` interactively): submission
+   `f317c4d8`, status **finished**. **ASC App ID `6799952861`** — first app record for
+   `com.talailima.offload`.
+4. ✅ `eas.json` `submit.production` filled (ascAppId + appleTeamId) — future submissions are
+   one non-interactive command. This closes the last config item on the submission blocker list.
+5. ✅ Bundle-ID decision made and recorded: **keeping `com.talailima.offload`** (not user-facing;
+   permanent after first publish; changing bought nothing visible). Marketing identity lives in
+   the listing name + useoffload.app URLs, not the bundle ID.
+
+### ⚠️ Operational consequences of build 2 existing
+- **OTA channel flip**: App Store users will be on the `production` channel. JS fixes for them
+  ship via `eas update --branch production` — the preview channel no longer reaches them
+  (the Aug 6 gotcha, now in reverse).
+- The production .ipa is device-signed and cannot run on the simulator; the simulator install
+  from Aug 9 evening is the same JS (built from the same commit's content) and is faithful for
+  screenshots.
+
+### ⏭️ Next (Apple side, ~10–30 min processing, then Tui)
+1. Build 2 appears in **TestFlight → internal testing** → install on real iPhone
+2. **Field-test silent-push arming on device** — the last PR #34 code that has never run outside
+   the simulator (record note → kill app within ~35s → drive to the new place)
+3. Walk the reviewer script once on a clean install (`docs/APP_STORE_REVIEW_NOTES.md`)
+4. App Store Connect listing: screenshots (retake from simulator — old ones say "Save Reminder"),
+   description, privacy Nutrition Label (Precise Location linked; transcript as User Content,
+   **no Audio Data**), review notes paste + demo account
