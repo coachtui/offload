@@ -2,16 +2,17 @@
 
 ## Phase Overview
 **Phase**: Launch — TestFlight → App Store submission
-**Status**: 🚀 Build 2 (v1.1.0) submitted to App Store Connect (ASC app `6799952861`), Apple processing → TestFlight internal
+**Status**: 🚀 Build **4** (v1.1.0) building + auto-submitting to App Store Connect (ASC app `6799952861`) — carries the Settings → Location & permissions fix (PR #39) in the binary. Build 2 is in ASC but its embedded bundle predates that fix; use build 4 for the reviewer script and screenshots. Nothing submitted for App Store review yet.
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
 **Current Date**: 2026-08-10
 **Last Updated**: 2026-08-10
 
-**Remaining before submitting for review** (detail in the 2026-08-10 session log at the bottom):
+**Remaining before submitting for review** (detail in the 2026-08-10 session logs at the bottom):
 field-test silent-push arming on device via TestFlight → walk the reviewer script on a clean
-install → retake screenshots (old ones say "Save Reminder") → ASC listing + Nutrition Label
-(Precise Location linked; transcript as User Content, NO Audio Data) → paste review notes.
+install **of build 4** → retake screenshots (old ones say "Save Reminder") → ASC listing +
+Nutrition Label (Precise Location linked; transcript as User Content, NO Audio Data) → paste
+review notes. Do not publish a `production` OTA once build 4 is in review.
 
 ## Executive Summary
 
@@ -1403,3 +1404,94 @@ happens **outside the app** (Simulator menu path verified in Xcode 26).
 4. App Store Connect listing: screenshots (retake from simulator — old ones say "Save Reminder"),
    description, privacy Nutrition Label (Precise Location linked; transcript as User Content,
    **no Audio Data**), review notes paste + demo account
+
+---
+
+## Session Update (2026-08-10, afternoon) — Settings → Location & Permissions Bounced to Home (PR #39)
+
+### 🐛 The bug
+Tapping **Settings → Location & permissions** showed the right screen for a single frame,
+then backed out to Home. Reported from the device, reproducible every time.
+
+### 🔍 Root cause — an onboarding screen used as a settings destination
+`SettingsScreen` navigated to the `Permissions` route, which is the **onboarding ladder**.
+That screen's mount effect (`PermissionsScreen.tsx:76-92`) reads the permission snapshot and,
+when microphone + when-in-use location + notifications are all already granted, calls
+`finish()` → `navigation.replace('Home')`. For any existing user that is the normal case, so
+the screen rendered once and replaced itself with Home.
+
+Nothing was broken: the ladder behaved exactly as designed, on a route where that design is
+wrong. The pass-through exists so a returning user doesn't get a screen whose buttons open no
+dialogs — correct for onboarding, fatal for a settings page.
+
+### ✅ The fix — Settings gets its own screen
+New `mobile/src/screens/PermissionSettingsScreen.tsx` on route `PermissionSettings`. The two
+are genuinely different products: the ladder is a one-shot flow that asks and gets out of the
+way; a settings page must be revisitable and reflect current state.
+- Live state per permission via `usePermissionStatus`, which re-reads on every foreground —
+  that is what makes the round-trip out to iOS Settings and back update the screen.
+- Per-row action: **in-app request** while the OS will still show a dialog, deep link to
+  Settings only once it won't. iOS omits a permission row from an app's Settings page until the
+  app has asked for it once, so linking there prematurely lands on a page with no control.
+- Surfaces **"Always" location**, which the ladder skips on purpose but which is the permission
+  that silently disables arrival reminders. Shown as one three-state row (Off / While using /
+  Always) because that is how iOS presents it.
+- State label always renders (via `ListRow`'s `meta`) and is never swapped out for the action —
+  otherwise "While using" and "Off" look identical, and the half-granted case is the one worth
+  telling apart.
+- `permissionService`: added `canAskMicrophoneAgain` to the snapshot so the mic row can make the
+  same request-vs-Settings call as the others.
+- `PermissionsScreen` header comment now marks it **onboarding-only**, so this doesn't get
+  re-wired later.
+
+### 🧪 Verified
+- `tsc --noEmit` clean; the 3 remaining errors are pre-existing in `api.ts` /
+  `locationService.ts` / `websocket.ts`, all untouched.
+- Release build driven on the iPhone 17 Pro Max simulator by hand: Settings → **Location &
+  permissions** opens, is **still there 7 s later** (the old bug bounced within a frame), Back
+  returns to **Settings** not Home. Rows read On / Always / On under a green "Arrival reminders
+  are on" summary.
+
+### 🚀 Shipped
+- **PR #39 merged** to `main` with `--rebase` → `511fb9d` (history stays linear; the pre-merge
+  SHA `719cede` that the OTA bundles are stamped with is not on the branch — same content).
+- **EAS Update published to BOTH channels**, runtime `1.1.0`, iOS + Android:
+  - `preview` → group `ded4ec99-51c5-4ed3-81c3-04091d8e2682`
+  - `production` → group `47750ceb-7498-4af5-9f2d-dd69a91d1fb3`
+  - Previous production group, for rollback: `057ba424-a7b2-4ef3-80ac-4c7e34843b35`
+    ("fix: hide resolved notes from home page")
+- **iOS production build in flight**: id `970b05bd`, commit `ca5bb54`, version 1.1.0 —
+  **build number 4**, not 3 (`appVersionSource: "remote"` incremented past 3). `--auto-submit`,
+  which uploads to ASC/TestFlight and does **not** start App Store review.
+
+### ⚠️ Why a new build and not just the OTA
+`app.json` sets no `fallbackToCacheTimeout`, so the default applies: the app boots its
+**embedded** bundle and applies a freshly downloaded update on the *next* launch. Build 2's
+embedded bundle is `fbf14a6`, which predates this fix — so **a clean install of build 2 still
+bounces on first launch**, and is only correct from the second launch on.
+
+Consequences for the pre-review checklist above:
+- Items 3 and 4 (reviewer script on a clean install, retake screenshots) should be done on
+  **build 4**, not build 2 — otherwise they exercise the buggy bundle. Build 4 needs no
+  launch-twice dance.
+- Apple reviews the **binary**. Build 4 embeds the fix, so a reviewer's first launch is correct
+  without depending on an OTA fetch — which matters here because the screen sits under
+  Settings → Privacy, exactly where a reviewer of a location-heavy app will go.
+- Build 4's runtime stays `1.1.0` (policy `appVersion`, version unchanged), so it also
+  subscribes to the `production` channel. **Do not publish a production OTA between now and
+  review** unless the reviewer is meant to get it on their second launch — it would override the
+  approved binary's behaviour.
+
+### 📌 Lesson on record
+Never navigate to an onboarding screen from inside the app. Screens that self-dismiss when their
+work is already done cannot double as destinations. If a permission/onboarding surface is worth
+revisiting, it needs a second screen — the two have opposite contracts.
+
+### 🔧 Tooling gotcha (relevant to the screenshot work still owed)
+When driving the simulator with `cliclick`, clicks that silently do nothing are usually **an
+invisible macOS modal**, not a bad coordinate: a system permission dialog (triggered here by
+running `screencapture`) sits on top of the Simulator and swallows every click, and it is
+**invisible to `xcrun simctl io screenshot`**, which captures only the device framebuffer.
+Dismiss with `cliclick kp:esc`; avoid `screencapture` entirely. Also, the Simulator window is
+not just the device screen — it includes a title bar and bezel, so do not map ratio-wise across
+the window bounds; derive the transform from one measured landmark.
