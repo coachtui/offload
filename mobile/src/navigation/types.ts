@@ -4,7 +4,15 @@ export type RootStackParamList = {
   Permissions: undefined;
   Home: undefined;
   Record: undefined;
-  Objects: { geofenceId?: string; objectId?: string; sessionId?: string } | undefined;
+  Objects: {
+    geofenceId?: string;
+    objectId?: string;
+    sessionId?: string;
+    // Scope the notes list to one place (from PlacesScreen or a deep link).
+    // geofenceId scopes to a manual/armed place; placeId to an inferred one.
+    placeId?: string;
+    placeName?: string;
+  } | undefined;
   Places: undefined;
   CreateGeofence: undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };

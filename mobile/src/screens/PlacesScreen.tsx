@@ -58,7 +58,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     } catch (e) {
       console.warn('[PlacesScreen] toggle failed', e);
       setItems(prev); // rollback
-      toast.show({ message: 'Could not update reminder', description: 'Please try again.', tone: 'error' });
+      toast.show({ message: 'Could not update place', description: 'Please try again.', tone: 'error' });
     } finally {
       inFlight.current.delete(key);
     }
@@ -68,11 +68,35 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
     }
   };
 
-  const openPlace = (item: PlaceOverviewItem) => {
-    navigation.navigate('PlaceSummary',
-      item.kind === 'geofence'
-        ? { geofenceId: item.id, placeName: item.name }
-        : { placeId: item.id, placeName: item.name });
+  // Places is a home for places — tapping one manages it (name, radius,
+  // notifications, delete). The notes that mention a place live on the Notes
+  // page, filterable by that place. PlaceSummary (the notes-waiting view) is
+  // reserved for the arrival flow: notification taps and the proximity banner.
+  const openPlace = async (item: PlaceOverviewItem) => {
+    if (item.kind === 'geofence') {
+      try {
+        const { geofences } = await apiService.getGeofences();
+        const g = geofences.find((x) => x.id === item.id);
+        if (!g) throw new Error('not found');
+        navigation.navigate('EditGeofence', {
+          geofenceId: g.id,
+          geofenceName: g.name,
+          type: g.type,
+          radius: g.radius,
+          notifyOnEnter: g.notifyOnEnter,
+          notifyOnExit: g.notifyOnExit,
+          quietHoursStart: g.quietHoursStart,
+          quietHoursEnd: g.quietHoursEnd,
+          location: g.location,
+        });
+      } catch {
+        toast.show({ message: "Couldn't open place", description: 'Please try again.', tone: 'error' });
+      }
+    } else {
+      // Inferred place with no armed geofence: nothing to edit until it's
+      // promoted (the bell) — show its notes where notes live instead.
+      navigation.navigate('Objects', { placeId: item.id, placeName: item.name });
+    }
   };
 
   const header = (

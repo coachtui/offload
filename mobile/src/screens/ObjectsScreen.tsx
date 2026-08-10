@@ -24,7 +24,7 @@ import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
 import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
-import { apiService } from '../services/api';
+import { apiService, PlaceOverviewItem } from '../services/api';
 import { updateNoteState } from '../services/noteLifecycle';
 import {
   AppScreen,
@@ -253,6 +253,8 @@ export function ObjectsScreen({ navigation }: Props) {
     const ok = await bulkDeleteObjects(ids);
     if (ok) {
       exitSelection();
+      // Same resync as the detail modal: the scoped list lives outside the hook.
+      setPlaceObjects((prev) => prev.filter((o) => !ids.includes(o.id)));
       toast.show({
         message: `Deleted ${ids.length} note${ids.length === 1 ? '' : 's'}`,
         tone: 'success',
@@ -262,8 +264,29 @@ export function ObjectsScreen({ navigation }: Props) {
     }
   }, [selectedIds, bulkDeleteObjects, exitSelection, toast]);
 
+  // Place scope — notes live HERE, on the Notes page; Places only manages the
+  // places themselves. Filtering by place therefore happens on this screen,
+  // same shape as sessionScope: a scope held apart from `filters`, with a
+  // banner and an explicit exit. The linked-notes endpoints return full note
+  // objects, so an active scope swaps the list's data source instead of going
+  // through the server-paged query (which knows nothing about places).
+  interface PlaceScope {
+    kind: 'geofence' | 'place';
+    id: string;
+    name: string;
+  }
+  const [placeScope, setPlaceScope] = useState<PlaceScope | null>(null);
+  const [placeObjects, setPlaceObjects] = useState<AtomicObject[]>([]);
+  const [placeLoading, setPlaceLoading] = useState(false);
+  // Places offered in the filter sheet (fetched when the sheet opens).
+  const [placeOptions, setPlaceOptions] = useState<PlaceOverviewItem[]>([]);
+  const [pendingPlace, setPendingPlace] = useState<PlaceScope | null>(null);
+
   const isSearchMode = searchText.trim().length > 0;
-  const hasActiveFilters = selectedDomains.length > 0 || selectedTypes.length > 0;
+  const hasActiveFilters = selectedDomains.length > 0 || selectedTypes.length > 0 || !!placeScope;
+  // What the main list shows: the place's linked notes when scoped, else the
+  // server-paged list.
+  const visibleObjects = placeScope ? placeObjects : objects;
 
   // Context data
   const [staleObjects, setStaleObjects] = useState<AtomicObject[]>([]);
@@ -272,7 +295,6 @@ export function ObjectsScreen({ navigation }: Props) {
   const [staleExpanded, setStaleExpanded] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
-  const [geofenceObjects, setGeofenceObjects] = useState<AtomicObject[]>([]);
 
   useFocusEffect(
     useCallback(() => { refreshCategories(); }, [refreshCategories])
@@ -304,12 +326,38 @@ export function ObjectsScreen({ navigation }: Props) {
     setFilters({ sessionId: routeSessionId });
   }, [routeSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const fetchPlaceObjects = useCallback(async (scope: PlaceScope) => {
+    setPlaceLoading(true);
+    try {
+      const { objects: items } =
+        scope.kind === 'geofence'
+          ? await apiService.getGeofenceObjects(scope.id)
+          : await apiService.getPlaceObjects(scope.id);
+      setPlaceObjects(items);
+    } catch (e) {
+      console.warn('[ObjectsScreen] place scope fetch failed', e);
+      setPlaceObjects([]);
+    } finally {
+      setPlaceLoading(false);
+    }
+  }, []);
+
+  // Arriving from PlacesScreen (or a deep link) already scoped to one place.
   useEffect(() => {
-    if (!geofenceId) return;
-    apiService.getGeofenceObjects(geofenceId)
-      .then(({ objects: items }) => setGeofenceObjects(items))
-      .catch(() => {});
-  }, [geofenceId]);
+    const scope: PlaceScope | null = geofenceId
+      ? { kind: 'geofence', id: geofenceId, name: route.params?.placeName ?? 'this place' }
+      : route.params?.placeId
+        ? { kind: 'place', id: route.params.placeId, name: route.params?.placeName ?? 'this place' }
+        : null;
+    if (!scope) return;
+    setPlaceScope(scope);
+    void fetchPlaceObjects(scope);
+  }, [geofenceId, route.params?.placeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleExitPlaceScope = useCallback(() => {
+    setPlaceScope(null);
+    setPlaceObjects([]);
+  }, []);
 
   // ─── Filter logic ─────────────────────────────────────────────────────────
 
@@ -337,28 +385,46 @@ export function ObjectsScreen({ navigation }: Props) {
   const handleOpenFilterSheet = useCallback(() => {
     setPendingDomains(selectedDomains);
     setPendingTypes(selectedTypes);
+    setPendingPlace(placeScope);
     setFilterSheetVisible(true);
-  }, [selectedDomains, selectedTypes]);
+    // Refresh the place list each open — places are created/inferred/reaped out
+    // of band, and the list is small enough that refetching beats going stale.
+    apiService
+      .getPlacesOverview()
+      .then(({ places }) => setPlaceOptions(places))
+      .catch(() => {});
+  }, [selectedDomains, selectedTypes, placeScope]);
 
   const handleApplyFilters = useCallback(() => {
     setSelectedDomains(pendingDomains);
     setSelectedTypes(pendingTypes);
     setFilterSheetVisible(false);
+    if (pendingPlace?.id !== placeScope?.id) {
+      if (pendingPlace) {
+        setPlaceScope(pendingPlace);
+        void fetchPlaceObjects(pendingPlace);
+      } else {
+        handleExitPlaceScope();
+      }
+    }
     if (searchText.trim()) {
       triggerSearch(searchText, pendingDomains, pendingTypes);
     } else {
       triggerBrowse(pendingDomains, pendingTypes);
     }
-  }, [pendingDomains, pendingTypes, searchText, triggerSearch, triggerBrowse]);
+  }, [pendingDomains, pendingTypes, pendingPlace, placeScope, fetchPlaceObjects, handleExitPlaceScope, searchText, triggerSearch, triggerBrowse]);
 
   const handleClearAllFilters = useCallback(() => {
     setSearchText('');
     setSelectedDomains([]);
     setSelectedTypes([]);
     clearResults();
-    // "Clear all" includes the session scope — it is the escape hatch back to
-    // every note, so leaving one filter silently applied would belie the label.
+    // "Clear all" includes the session and place scopes — it is the escape
+    // hatch back to every note, so leaving one filter silently applied would
+    // belie the label.
     setSessionScope(undefined);
+    setPlaceScope(null);
+    setPlaceObjects([]);
     setFilters({});
   }, [setFilters, clearResults]);
 
@@ -484,7 +550,11 @@ export function ObjectsScreen({ navigation }: Props) {
     setEditContent('');
     setDetailsExpanded(false);
     clearDetail();
-  }, [clearDetail]);
+    // The scope list is fetched outside useObjects, so mutations made in the
+    // detail modal (done, delete, edit) don't flow into it — resync on close
+    // rather than leave a ghost card behind.
+    if (placeScope) void fetchPlaceObjects(placeScope);
+  }, [clearDetail, placeScope, fetchPlaceObjects]);
 
   const handleEditPress = useCallback(() => {
     if (selectedObject) {
@@ -542,35 +612,29 @@ export function ObjectsScreen({ navigation }: Props) {
 
   // ─── Renders: list screen ─────────────────────────────────────────────────
 
-  const renderGeofenceContext = useCallback(() => {
-    if (!geofenceId || geofenceObjects.length === 0) return null;
+  // Mirrors renderSessionScope: names the active place, counts its notes,
+  // offers the way out. Replaces the old horizontal "At this location" strip,
+  // which nothing navigated to anymore.
+  const renderPlaceScope = useCallback(() => {
+    if (!placeScope || isSearchMode) return null;
+    const count = placeObjects.length;
     return (
-      <View style={styles.geofenceBanner}>
-        <View style={styles.geofenceBannerHeader}>
-          <View style={styles.geofenceDot} />
-          <Text style={styles.geofenceBannerTitle}>
-            At this location · {geofenceObjects.length} note{geofenceObjects.length !== 1 ? 's' : ''}
-          </Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contextCardsRow}>
-          {geofenceObjects.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[styles.contextCard, styles.geofenceCard]}
-              onPress={() => handleObjectPress(item)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.geofenceCardLabel}>nearby</Text>
-              <Text style={styles.contextCardContent} numberOfLines={2}>{item.title || item.content}</Text>
-              {item.actionability?.nextAction && (
-                <Text style={styles.contextCardAction} numberOfLines={1}>{item.actionability.nextAction}</Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+      <View style={styles.sessionBanner}>
+        <View style={styles.sessionDot} />
+        <Text style={styles.sessionBannerTitle} numberOfLines={1}>
+          At {placeScope.name}{count > 0 ? ` · ${count} note${count !== 1 ? 's' : ''}` : ''}
+        </Text>
+        <TouchableOpacity
+          onPress={handleExitPlaceScope}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Show all notes"
+        >
+          <Text style={styles.sessionBannerAction}>Show all</Text>
+        </TouchableOpacity>
       </View>
     );
-  }, [geofenceId, geofenceObjects, handleObjectPress, styles]);
+  }, [placeScope, isSearchMode, placeObjects.length, handleExitPlaceScope, styles]);
 
   // Hidden in search mode: search runs unscoped, so leaving this up would
   // describe a list that is not what is on screen. Clearing the search restores
@@ -785,7 +849,7 @@ export function ObjectsScreen({ navigation }: Props) {
 
   const renderEmpty = useCallback(() => {
     if (isLoading || searchLoading) return null;
-    const hasFilters = isSearchMode || selectedDomains.length > 0 || selectedTypes.length > 0;
+    const hasFilters = isSearchMode || selectedDomains.length > 0 || selectedTypes.length > 0 || !!placeScope;
     return (
       <View style={styles.emptyState}>
         <Ionicons
@@ -807,7 +871,7 @@ export function ObjectsScreen({ navigation }: Props) {
         )}
       </View>
     );
-  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, handleClearAllFilters, styles, colors]);
+  }, [isLoading, searchLoading, isSearchMode, selectedDomains, selectedTypes, placeScope, handleClearAllFilters, styles, colors]);
 
   const renderSectionHeader = useCallback(
     ({ section: { title } }: { section: NoteSection }) => (
@@ -836,7 +900,7 @@ export function ObjectsScreen({ navigation }: Props) {
       title="Filter notes"
       headerRight={
         <TouchableOpacity
-          onPress={() => { setPendingDomains([]); setPendingTypes([]); }}
+          onPress={() => { setPendingDomains([]); setPendingTypes([]); setPendingPlace(null); }}
           accessibilityRole="button"
           accessibilityLabel="Reset filters"
         >
@@ -889,12 +953,44 @@ export function ObjectsScreen({ navigation }: Props) {
             </TouchableOpacity>
           );
         })}
+
+        {placeOptions.length > 0 ? (
+          <>
+            <Text style={[styles.sheetSectionLabel, styles.sheetSectionGap]}>Place</Text>
+            {placeOptions.map((place) => {
+              const isSelected = pendingPlace?.id === place.id;
+              return (
+                <TouchableOpacity
+                  key={`${place.kind}:${place.id}`}
+                  style={styles.sheetRow}
+                  // Single-select: a note list scoped to two places at once has
+                  // no honest banner, and one place is the actual use case
+                  // ("what did I leave myself at Foodland?").
+                  onPress={() =>
+                    setPendingPlace(
+                      isSelected ? null : { kind: place.kind, id: place.id, name: place.name }
+                    )
+                  }
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                  accessibilityLabel={place.name}
+                >
+                  <View style={[styles.sheetCheck, isSelected && styles.sheetCheckOn]}>
+                    {isSelected ? <Ionicons name="checkmark" size={13} color={colors.onPrimary} /> : null}
+                  </View>
+                  <Ionicons name="location-outline" size={15} color={colors.textMuted} style={{ marginRight: 6 }} />
+                  <Text style={styles.sheetRowText}>{place.name}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        ) : null}
       </ScrollView>
 
       <AppButton
         label={
-          pendingDomains.length + pendingTypes.length > 0
-            ? `Show notes · ${pendingDomains.length + pendingTypes.length} filters`
+          pendingDomains.length + pendingTypes.length + (pendingPlace ? 1 : 0) > 0
+            ? `Show notes · ${pendingDomains.length + pendingTypes.length + (pendingPlace ? 1 : 0)} filters`
             : 'Show all notes'
         }
         onPress={handleApplyFilters}
@@ -1181,15 +1277,16 @@ export function ObjectsScreen({ navigation }: Props) {
 
       {renderCategoryChips()}
       {renderSessionScope()}
-      {renderGeofenceContext()}
+      {renderPlaceScope()}
       {renderDashboardCard()}
       {renderStaleBanner()}
 
-      {(isLoading || searchLoading) && (isSearchMode ? searchResults.length === 0 : objects.length === 0) ? (
+      {(isLoading || searchLoading || placeLoading) &&
+      (isSearchMode ? searchResults.length === 0 : visibleObjects.length === 0) ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent} />
         </View>
-      ) : !isSearchMode && error && objects.length === 0 ? (
+      ) : !isSearchMode && error && visibleObjects.length === 0 ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={refresh}>
@@ -1207,14 +1304,16 @@ export function ObjectsScreen({ navigation }: Props) {
         />
       ) : (
         <SectionList
-          sections={groupNotesByDate(objects)}
+          sections={groupNotesByDate(visibleObjects)}
           keyExtractor={(item) => item.id}
           renderItem={renderNoteCard}
           renderSectionHeader={renderSectionHeader}
-          contentContainerStyle={objects.length === 0 ? styles.listEmpty : styles.listContent}
+          contentContainerStyle={visibleObjects.length === 0 ? styles.listEmpty : styles.listContent}
           ListEmptyComponent={renderEmpty}
           ListFooterComponent={renderFooter}
-          onEndReached={loadMore}
+          // A place scope is a complete, unpaged list — endless-scroll fetching
+          // would append unscoped pages beneath it.
+          onEndReached={placeScope ? undefined : loadMore}
           onEndReachedThreshold={0.5}
           stickySectionHeadersEnabled={false}
           refreshControl={
