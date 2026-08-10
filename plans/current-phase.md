@@ -1266,3 +1266,97 @@ one device, Oʻahu). Store reviews are permanent; TestFlight feedback is private
 **Session Complete**: 2026-08-09 (later)
 **Status**: ✅ 5.1.1(v) account deletion shipped end-to-end; Nominatim disclosed; geofence deletion wired
 **Next**: demo-account seeding + screenshots → EAS production build → TestFlight
+
+---
+
+## Session Update (2026-08-09, evening) — Deployment, Migration Runner, Honest Disclosures, and the Places/Notes Redesign
+
+### 🎯 Objectives Completed
+1. ✅ Deployed the App Store compliance work and **proved account deletion end to end against production** (PR #35)
+2. ✅ Built the boot-time SQL migration runner that closes the outage class permanently (PR #36)
+3. ✅ Rewrote the audio disclosures to match reality; `supportsTablet: false` (PR #37)
+4. ✅ Seeded + verified the reviewer demo account; captured 8 App Store screenshots + 3 verification shots
+5. ✅ Fixed the Place/Reminder naming and **redesigned the Places/Notes split** per Tui's product direction (PR #38)
+
+### ✅ PR #35 deployed — account deletion proven in production
+Against a throwaway account: wrong password → **403 INVALID_PASSWORD** (session
+survives — a 401 would have force-signed-out the user for mistyping); correct
+password → **204** (0-byte body); login afterwards → 401. Guideline 5.1.1(v) is
+satisfied and *demonstrated*, not just implemented.
+
+### ✅ PR #36 — migrations now run on boot
+First production boot: `[migrate] applied 13: 000…017` in 230ms (idempotent SQL
+made baselining unnecessary — the runner self-healed the 017 gap exactly as
+designed). Second boot: `[migrate] schema up to date (13 already applied)`.
+`hub.schema_migrations` is the tracking table; an advisory lock serialises
+replicas; failure is fatal *before* the port binds, so a bad migration leaves
+the previous deployment serving. `npm run build` now copies `*.sql` into
+`dist/` (tsc doesn't). A test asserts every migration stays idempotent — a bare
+`CREATE TABLE` now fails CI, not a deploy. 9 new tests; 360 → 362 total.
+
+### ✅ PR #37 — audio described honestly; iPad claim dropped
+The privacy policy claimed recordings were stored in S3. False **structurally**:
+the only upload path (`processAudioChunk → uploadAudioChunk`) has no caller —
+mobile's `sendAudioChunk` is dead code; the app transcribes via
+`POST /voice/transcribe-audio` and audio is discarded. It also under-disclosed
+that OpenAI receives the **raw audio** (gpt-4o-transcribe), not just transcript
+text. Policy, DeleteAccountScreen consequences ("recorded audio" → "search
+history"), accountService (probe storage once — no false ORPHANED_AUDIO per
+session), and a Nutrition Label checklist item (declare the transcript as User
+Content, NOT Audio Data) all moved together. Note: `/health`'s hardcoded
+`storage: 'disabled'` is deliberate and documented — S3 has no live consumer.
+`supportsTablet: false` — zero iPad handling exists in the UI; declaring
+support obliged iPad screenshots and invited Guideline 4.0 review.
+
+### ✅ Demo account + screenshots
+`demo@useoffload.app` / `OffloadDemo2026!` (user `5d14b5f6…`, display name
+"Sam" so the greeting doesn't read "Good afternoon, App"). Griffith Observatory
+(34.1184, −118.3004, 150m, notifyOnEnter) with open note "Planetarium tickets"
+linked; six varied notes; Insights generated. All review-notes placeholders
+filled; provisioning runbook added. `docs/app-store/screenshots/6.9-inch/`
+(8 shots, 1320×2868, Release build) + `verification/` (Settings,
+Delete-account, Always-consent sheet). ⚠️ Screenshots must be retaken from the
+EAS build — they predate the Place renames below.
+
+### 🔧 PR #38 — Places manages places; Notes owns the notes
+Found while walking the app on device (which also caught two wrong strings:
+the Always-location sheet's confirm button said **"Enable Notifications"** while
+requesting Always — now "Allow Always" — and `v1.1.0 · ·` from
+`Updates.channel` being `''` not null).
+
+Tui's design, now implemented: **Places is a home for places** (user-created or
+inferred) — tapping one opens **Edit Place** (name/type/radius/notifications/
+delete; delete was Known Issue 2b, now wired). **Notes owns the notes**, and
+the filter sheet gains a single-select **Place** section (fed by
+`/places/overview`), with a `sessionScope`-style banner "At {name} · N notes ·
+Show all". An active scope swaps the list's data source to
+`getGeofenceObjects`/`getPlaceObjects` (both link paths) and disables
+pagination. The old "At this location" strip in Notes was dead code (nothing
+passed `geofenceId` since arrival moved to PlaceSummary) and is gone.
+**Arrival flow untouched**: notification taps / ProximityBanner still open
+PlaceSummary; every geofence-engine file is byte-identical to `23fd1a2`.
+Renames: New/Save/Edit Reminder → New/Save/Edit **Place**; "Edit reminder
+settings" → "Edit place"; reviewer-script step 3 now states location simulation
+happens **outside the app** (Simulator menu path verified in Xcode 26).
+
+### ⚠️ Incidents (data, not code — both resolved)
+- Production signups had been broken since Aug 6 (missing `terms_accepted_at`,
+  migration 017 never applied). Found via the demo-account creation failing;
+  fixed by hand, then permanently by PR #36.
+- A cleanup loop mis-parsed place names and deleted the seeded Griffith
+  Observatory geofence from the demo account. Note survived (objects don't
+  cascade from geofences); recreated as `88921d87…` and relinked — review notes
+  updated. Places created during walkthroughs were removed; demo account ends
+  the day exactly: Griffith Observatory, 1 open note, reminders on.
+
+### 🚀 Deployed
+- Railway: PRs #35/#36/#37 all SUCCESS; migration runner verified live (apply
+  pass + skip pass). PR #38 is mobile-JS + docs only — reaches devices with the
+  next EAS build.
+- Production channel still not updated (consistent hold since Aug 8).
+
+---
+
+**Session Complete**: 2026-08-09 (evening)
+**Status**: ✅ All submission blockers deployed & proven; migrations automated; Places/Notes matches the product design
+**Next**: EAS production build (activates silent-push arming + supportsTablet:false + Place renames) → retake screenshots → walk reviewer script → App Store Connect
