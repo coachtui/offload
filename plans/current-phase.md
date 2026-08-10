@@ -1,11 +1,17 @@
-# Current Phase: Phase 7 — Cross-Domain Synthesis
+# Current Phase: App Store Launch Prep (Phase 7 queued behind it)
 
 ## Phase Overview
-**Phase**: 7 (Cross-Domain Synthesis & AI Insights)
-**Status**: 🔄 Up Next
+**Phase**: Launch — TestFlight → App Store submission
+**Status**: 🚀 Build 2 (v1.1.0) submitted to App Store Connect (ASC app `6799952861`), Apple processing → TestFlight internal
+**Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
-**Current Date**: 2026-08-09
-**Last Updated**: 2026-08-09
+**Current Date**: 2026-08-10
+**Last Updated**: 2026-08-10
+
+**Remaining before submitting for review** (detail in the 2026-08-10 session log at the bottom):
+field-test silent-push arming on device via TestFlight → walk the reviewer script on a clean
+install → retake screenshots (old ones say "Save Reminder") → ASC listing + Nutrition Label
+(Precise Location linked; transcript as User Content, NO Audio Data) → paste review notes.
 
 ## Executive Summary
 
