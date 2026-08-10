@@ -14,11 +14,6 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "_comment_supportsTablet": "false on purpose. The UI has no iPad handling at all — no size-class or useWindowDimensions branching, and three maxWidth rules in the whole app — so a 13-inch iPad gets phone layout stretched full-bleed. Declaring iPad support obliges us to supply iPad screenshots and invites review on a device the app was never designed for (Guideline 4.0). iPhone apps still run on iPad in compatibility mode. Flip this only alongside real iPad layout work.",
       "supportsTablet": false,
@@ -79,7 +74,19 @@
         }
       ],
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F6B5F",
+          "dark": {
+            "backgroundColor": "#0F6B5F"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
