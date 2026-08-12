@@ -26,6 +26,7 @@ import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
 import { apiService, PlaceOverviewItem } from '../services/api';
 import { updateNoteState } from '../services/noteLifecycle';
+import { subscribeNotesChanged } from '../services/notesBus';
 import {
   AppScreen,
   AppHeader,
@@ -358,6 +359,21 @@ export function ObjectsScreen({ navigation }: Props) {
     setPlaceScope(null);
     setPlaceObjects([]);
   }, []);
+
+  // useObjects re-fetches the main list on the notes bus by itself; the place
+  // scope and the "Don't forget" strip are fetched here, so they need their own
+  // subscription or they keep showing notes the user just closed.
+  useEffect(
+    () =>
+      subscribeNotesChanged(() => {
+        if (placeScope) void fetchPlaceObjects(placeScope);
+        apiService
+          .getStaleActionables()
+          .then(({ objects: items }) => setStaleObjects(items))
+          .catch(() => {});
+      }),
+    [placeScope, fetchPlaceObjects]
+  );
 
   // ─── Filter logic ─────────────────────────────────────────────────────────
 
@@ -1992,7 +2008,9 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontFamily: Fonts.medium,
   },
   filterChipTextActive: {
-    color: '#FFFFFF',
+    // Not white: the active chip is filled with c.primary, which is near-white
+    // in dark mode. onPrimary is the token that tracks it in both schemes.
+    color: c.onPrimary,
   },
 
   // Category picker (in detail modal)
@@ -2013,7 +2031,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderColor: c.primary,
   },
   categoryChipText: { fontSize: 13, color: c.textSecondary, fontFamily: Fonts.medium },
-  categoryChipTextActive: { color: '#FFFFFF' },
+  categoryChipTextActive: { color: c.onPrimary },
   swatchSm: { width: 10, height: 10, borderRadius: 5 },
 
   // Status picker

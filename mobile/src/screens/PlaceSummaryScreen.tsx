@@ -21,6 +21,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService } from '../services/api';
 import { updateNoteState, deleteNote } from '../services/noteLifecycle';
+import { subscribeNotesChanged } from '../services/notesBus';
 import { AtomicObject } from '../types';
 import { ConfirmSheet, useToast, Spacing, Radius } from '../components/ui';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
@@ -59,8 +60,8 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
 
   // ─── Load objects ───────────────────────────────────────────────────────────
 
-  const loadObjects = useCallback(async () => {
-    setLoading(true);
+  const loadObjects = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     try {
       const { objects: loaded } = geofenceId
         ? await apiService.getGeofenceObjects(geofenceId, true)
@@ -69,13 +70,21 @@ export default function PlaceSummaryScreen({ navigation }: Props) {
     } catch (err: any) {
       console.error('[PlaceSummary] Failed to load objects:', err.message);
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, [placeId, geofenceId]);
 
   useEffect(() => {
     loadObjects();
   }, [loadObjects]);
+
+  // Quiet, because this screen already applied its own Done/Delete
+  // optimistically — the reload is for changes made elsewhere, and a spinner
+  // over a list that is already correct just makes it flicker.
+  useEffect(
+    () => subscribeNotesChanged(() => { void loadObjects({ quiet: true }); }),
+    [loadObjects]
+  );
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 

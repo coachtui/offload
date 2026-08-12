@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { AppState } from 'react-native';
 import { AtomicObject } from '../types';
 import { apiService } from '../services/api';
 import { locationService } from '../services/locationService';
+import { subscribeNotesChanged } from '../services/notesBus';
 
 // Haversine distance in metres
 function distanceMetres(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -68,53 +70,64 @@ function scoreObject(
 export function useForYou() {
   const [items, setItems] = useState<AtomicObject[]>([]);
   const [loading, setLoading] = useState(true);
+  // Bumped on unmount and on every new load, so a slow in-flight fetch can't
+  // overwrite the results of a newer one (or set state after unmount).
+  const loadIdRef = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = useCallback(async () => {
+    const loadId = ++loadIdRef.current;
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      const res = await apiService.getObjects({ limit: 40, dateFrom: sevenDaysAgo });
 
-    async function load() {
+      if (loadId !== loadIdRef.current) return;
+
+      // Optionally enrich with current location (silent failure)
+      let userLat: number | undefined;
+      let userLon: number | undefined;
       try {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-        const res = await apiService.getObjects({ limit: 40, dateFrom: sevenDaysAgo });
-
-        if (cancelled) return;
-
-        // Optionally enrich with current location (silent failure)
-        let userLat: number | undefined;
-        let userLon: number | undefined;
-        try {
-          const loc = await locationService.getCurrentLocation();
-          if (loc) {
-            userLat = loc.coords.latitude;
-            userLon = loc.coords.longitude;
-          }
-        } catch {
-          // location is optional — silently skip
+        const loc = await locationService.getCurrentLocation();
+        if (loc) {
+          userLat = loc.coords.latitude;
+          userLon = loc.coords.longitude;
         }
-
-        if (cancelled) return;
-
-        const surfaced = res.objects
-          .filter((obj) => (obj as any).state !== 'archived' && (obj as any).state !== 'resolved')
-          .map((obj) => ({ obj, score: scoreObject(obj, userLat, userLon) }))
-          .filter(({ score }) => score > 0)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5)
-          .map(({ obj }) => obj);
-
-        setItems(surfaced);
       } catch {
-        // section simply won't show
-      } finally {
-        if (!cancelled) setLoading(false);
+        // location is optional — silently skip
       }
-    }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+      if (loadId !== loadIdRef.current) return;
+
+      const surfaced = res.objects
+        .filter((obj) => (obj as any).state !== 'archived' && (obj as any).state !== 'resolved')
+        .map((obj) => ({ obj, score: scoreObject(obj, userLat, userLon) }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map(({ obj }) => obj);
+
+      setItems(surfaced);
+    } catch {
+      // section simply won't show
+    } finally {
+      if (loadId === loadIdRef.current) setLoading(false);
+    }
   }, []);
 
-  return { items, loading };
+  useEffect(() => {
+    void refresh();
+    // Home stays mounted for the whole session, so without these this list is
+    // whatever was true at launch — the note just recorded never appears, and a
+    // note resolved elsewhere never leaves.
+    const unsubscribe = subscribeNotesChanged(() => { void refresh(); });
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refresh();
+    });
+    return () => {
+      loadIdRef.current++;
+      unsubscribe();
+      appState.remove();
+    };
+  }, [refresh]);
+
+  return { items, loading, refresh };
 }
