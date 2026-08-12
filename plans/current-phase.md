@@ -5,8 +5,8 @@
 **Status**: 🚀 Build **4** (v1.1.0) building + auto-submitting to App Store Connect (ASC app `6799952861`) — carries the Settings → Location & permissions fix (PR #39) in the binary. Build 2 is in ASC but its embedded bundle predates that fix; use build 4 for the reviewer script and screenshots. Nothing submitted for App Store review yet.
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
-**Current Date**: 2026-08-10
-**Last Updated**: 2026-08-10
+**Current Date**: 2026-08-11
+**Last Updated**: 2026-08-11 — TestFlight beta **approved**; external testers signing up. Web is now marketing-only (PR #40).
 
 **Remaining before submitting for review** (detail in the 2026-08-10 session logs at the bottom):
 field-test silent-push arming on device via TestFlight → walk the reviewer script on a clean
@@ -1495,3 +1495,64 @@ running `screencapture`) sits on top of the Simulator and swallows every click, 
 Dismiss with `cliclick kp:esc`; avoid `screencapture` entirely. Also, the Simulator window is
 not just the device screen — it includes a title bar and bezel, so do not map ratio-wise across
 the window bounds; derive the transform from one measured landmark.
+
+---
+
+## Session Update (2026-08-11, night) — Web Signup Was Broken for Everyone; Web Is Now Marketing-Only (PR #40)
+
+### 🐛 The report
+TestFlight beta approved today; first outside testers arriving. One reported "validation error"
+on signup. Railway HTTP logs told the real story: five `POST /api/v1/auth/register` → **400**
+in 2–24 ms from **iPhone Safari** (OPTIONS preflight + POST), 05:28–05:32 UTC — they were on
+the **website's** signup form, not the app. Native `Offload/4` signups in the same window all
+returned 201.
+
+### 🔍 Root cause
+`registerSchema` gained `acceptedTerms: z.literal(true)` on Aug 6 (App Store 5.1.1(v), commit
+`af1ccd6`). Only the mobile client was updated to send it. `frontend/web/lib/api.ts` sent
+`{email, password, name}` — so **every web signup since Aug 6 failed validation**, displayed
+as an unhelpful "Invalid input". (Not a password issue: validation rejects before any
+credential work — the near-instant identical 400s across retries rule that out. The one 401
+in the logs was a login mistype from a different device, native app, which registered fine a
+minute later.)
+
+### 🧭 Decision
+Rather than build web a second consent flow: **web auth removed entirely** — Offload is
+mobile-only by intent. The gated `/app` page was a feature list pointing at the iOS app; auth
+protected nothing. Accounts are created in the app, where onboarding/terms/permissions live.
+
+### 🚀 Shipped (PR #40, merged → auto-deployed to www.useoffload.app)
+- Deleted `/login`, `/signup`, `/app` (+ onboarding), `lib/auth.ts`, `lib/api.ts`,
+  `middleware.ts`. Site is fully static: `/`, `/terms`, `/privacy` (the latter two are App
+  Store listing links — keep them up).
+- Old URLs **307** to `/` (temporary on purpose — nothing cached permanently if a web
+  companion ever ships).
+- Single CTA: `components/AppStoreCta.tsx` driven by `APP_STORE_URL` in `lib/appStore.ts`.
+  `null` → "Coming soon to the App Store" badge. **At App Store approval, set it to
+  `https://apps.apple.com/app/id6799952861`** (pre-filled in the file's comment) — every CTA
+  goes live, no layout shift. A public TestFlight invite URL works there too in the interim.
+- Verified live: `/signup|/login|/app` → 307 to `/`; `/terms` + `/privacy` 200; no "Log In"
+  in the page; CTA badge renders.
+
+### 🗺️ Infra findings + cleanup (easy to lose, so on record)
+- The web site is Vercel project **brain-dump** (personal scope `coachtui`, serves
+  `www.useoffload.app`, git-integration builds on push; previews sit behind Vercel SSO — no
+  shareable bypass on this plan). It is **not** visible to the Vercel MCP's team scope; use
+  `npx vercel ls brain-dump`.
+- The Railway project literally named "offload" was a husk (one failed deploy, 2026-06-28) —
+  **deleted**. The real backend project **brain-dump** is **renamed → "offload"**
+  (`projectUpdate` via GraphQL). Project rename only: the **service** is still named
+  `brain-dump` and the public domain `brain-dump-production-895b.up.railway.app` is unchanged
+  — the mobile builds bake that URL in (`eas.json`), so the service name/domain must not be
+  touched casually.
+- Backend CORS: browser preflights for `/auth/*` succeed because `ALLOWED_ORIGINS` on the
+  Railway service includes the site origin. With no web client, that can be tightened to
+  localhost-only (one env-var edit + redeploy) to shave the bot/credential-stuffing surface.
+  **Deliberately not done tonight** — no code supports it being needed urgently, and beta
+  testers are actively signing up; avoid a backend redeploy mid-flow.
+
+### 📌 Lesson on record
+A server-side schema change (`acceptedTerms`) is a **breaking API change for every client**,
+not just the one being edited alongside it. The web client silently 400-ing for five days was
+only surfaced by a human tester. When adding a required field to a shared endpoint, grep all
+clients (`mobile/`, `frontend/`) in the same change.
