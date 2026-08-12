@@ -4,6 +4,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
 import { notifySaveResult } from '../services/saveNotification';
 import { syncGeofencesWithOS } from '../services/geofenceSync';
+import { emitNotesChanged, emitNotesChangedAfterSort } from '../services/notesBus';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
 
@@ -524,6 +525,12 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         // arrives as a push when the parse finishes; that push also carries the
         // geofence hand-off, which used to happen here off the save response.
         await notifySaveResult({ ok: true, title: transcriptToSave.slice(0, 60).trim() });
+
+        // Home is already on screen by now (RecordScreen pops on stop) and it
+        // fetched before this note existed. Nudge it — once for the transcript
+        // itself, then again as the server's background sort lands.
+        emitNotesChanged('saved');
+        emitNotesChangedAfterSort();
 
         // Arm the arrival snapshot without depending on the "note sorted" push,
         // which cannot execute JS once the app is backgrounded — record a note

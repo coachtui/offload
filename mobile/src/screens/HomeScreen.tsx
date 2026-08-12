@@ -14,7 +14,9 @@ import { RootStackParamList } from '../navigation/types';
 import { RagSearchResult } from '../services/api';
 import { useSearch } from '../hooks/useSearch';
 import { useForYou } from '../hooks/useForYou';
+import { useProximityAlerts } from '../hooks/useProximityAlerts';
 import { usePermissionStatus } from '../hooks/usePermissionStatus';
+import { AtomicObject } from '../types';
 import { PermissionBanner } from '../components/PermissionBanner';
 import { ArrivalPermissionSheet } from '../components/ArrivalPermissionSheet';
 import { subscribeArrivalPrompt } from '../services/arrivalPromptBus';
@@ -118,10 +120,30 @@ export function HomeScreen({ navigation }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const { results: searchResults, loading: searchLoading, search, clearResults } = useSearch();
   const { items: forYouItems } = useForYou();
+  // Arrival alerts land here rather than in a floating banner: the banner
+  // occupied the same strip of screen as the local notification it fires with,
+  // so both arrived at once and covered each other. As a group inside this card
+  // the place reads as one more thing that's relevant right now, which it is.
+  const { match: arrival } = useProximityAlerts();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isSearchMode = searchQuery.trim().length > 0;
   const [forYouExpanded, setForYouExpanded] = useState(true);
+
+  // A note at the place you're standing in would otherwise be listed twice.
+  const forYouRest = React.useMemo(() => {
+    const atPlace = new Set((arrival?.objects ?? []).map((o) => o.id));
+    return forYouItems.filter((o) => !atPlace.has(o.id));
+  }, [forYouItems, arrival]);
+  const hasForYou = !!arrival || forYouRest.length > 0;
+
+  const openArrivalPlace = useCallback(() => {
+    if (!arrival) return;
+    navigation.navigate('PlaceSummary', {
+      geofenceId: arrival.geofenceId,
+      placeName: arrival.name,
+    });
+  }, [arrival, navigation]);
 
   // ── Permission surfacing ──────────────────────────────────────────────────
   const { status: permissions, loading: permissionsLoading, refresh: refreshPermissions } =
@@ -161,6 +183,33 @@ export function HomeScreen({ navigation }: Props) {
     },
     [search, clearResults]
   );
+
+  const renderNoteRow = (obj: AtomicObject, withBorder: boolean) => {
+    const badge = obj.objectType ?? obj.domain ?? null;
+    return (
+      <AppPressable
+        key={obj.id}
+        scale={false}
+        style={[styles.forYouRow, withBorder && styles.forYouRowBorder]}
+        onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
+        accessibilityRole="button"
+        accessibilityLabel={obj.title ?? obj.content}
+      >
+        <View style={styles.forYouContent}>
+          <AppText variant="secondary" style={styles.forYouRowTitle} numberOfLines={1}>
+            {obj.title ?? obj.content}
+          </AppText>
+          <View style={styles.forYouRowMeta}>
+            <AppText variant="secondary" color="faint">
+              {formatRelativeTime(obj.createdAt)}
+            </AppText>
+            {badge ? <AppBadge label={badge} tone="accent" /> : null}
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={colors.borderStrong} />
+      </AppPressable>
+    );
+  };
 
   const renderSearchResult = ({ item }: { item: RagSearchResult }) => (
     <AppPressable
@@ -292,7 +341,7 @@ export function HomeScreen({ navigation }: Props) {
             showsVerticalScrollIndicator={false}
           >
             {/* For you right now */}
-            {forYouItems.length > 0 ? (
+            {hasForYou ? (
               <View style={styles.forYouSection}>
                 <AppPressable
                   scale={false}
@@ -313,32 +362,37 @@ export function HomeScreen({ navigation }: Props) {
                 </AppPressable>
                 {forYouExpanded ? (
                   <Animated.View entering={FadeInDown.duration(300)} style={styles.forYouCard}>
-                    {forYouItems.map((obj, i) => {
-                      const badge = obj.objectType ?? obj.domain ?? null;
-                      return (
+                    {/* Where you are, above what's merely recent */}
+                    {arrival ? (
+                      <>
                         <AppPressable
-                          key={obj.id}
-                          scale={false}
-                          style={[styles.forYouRow, i > 0 && styles.forYouRowBorder]}
-                          onPress={() => navigation.navigate('Objects', { objectId: obj.id })}
+                          style={styles.arrivalPill}
+                          onPress={openArrivalPlace}
                           accessibilityRole="button"
-                          accessibilityLabel={obj.title ?? obj.content}
+                          accessibilityLabel={`Near ${arrival.name}. Open this place`}
                         >
-                          <View style={styles.forYouContent}>
-                            <AppText variant="secondary" style={styles.forYouRowTitle} numberOfLines={1}>
-                              {obj.title ?? obj.content}
-                            </AppText>
-                            <View style={styles.forYouRowMeta}>
-                              <AppText variant="secondary" color="faint">
-                                {formatRelativeTime(obj.createdAt)}
-                              </AppText>
-                              {badge ? <AppBadge label={badge} tone="accent" /> : null}
-                            </View>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={colors.borderStrong} />
+                          <Ionicons name="navigate" size={13} color={colors.accent} />
+                          <AppText variant="secondary" style={styles.arrivalPillText} numberOfLines={1}>
+                            Near {arrival.name}
+                          </AppText>
                         </AppPressable>
-                      );
-                    })}
+                        {arrival.objects.slice(0, 3).map((obj, i) => renderNoteRow(obj, i > 0))}
+                        {arrival.count > 3 ? (
+                          <AppPressable
+                            scale={false}
+                            style={[styles.forYouRow, styles.forYouRowBorder]}
+                            onPress={openArrivalPlace}
+                            accessibilityRole="button"
+                            accessibilityLabel={`See all ${arrival.count} notes at ${arrival.name}`}
+                          >
+                            <AppText variant="secondary" color="accent" style={styles.arrivalMoreText}>
+                              {arrival.count - 3} more here
+                            </AppText>
+                          </AppPressable>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {forYouRest.map((obj, i) => renderNoteRow(obj, i > 0 || !!arrival))}
                   </Animated.View>
                 ) : null}
               </View>
@@ -491,6 +545,27 @@ const createStyles = (c: ThemeColors) =>
       alignItems: 'center',
       marginTop: 4,
       gap: Spacing.sm,
+    },
+    // Arrival group header — the place, named, sitting above its own notes
+    arrivalPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      maxWidth: '100%',
+      gap: 6,
+      backgroundColor: c.accentLight,
+      borderRadius: Radius.full,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: 6,
+      marginTop: Spacing.md,
+    },
+    arrivalPillText: {
+      color: c.accent,
+      fontFamily: Fonts.semibold,
+      flexShrink: 1,
+    },
+    arrivalMoreText: {
+      fontFamily: Fonts.semibold,
     },
     // Shortcuts grid
     grid: {

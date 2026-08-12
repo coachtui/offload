@@ -12,6 +12,7 @@ import { ThemeProvider, fontMap } from './src/theme';
 import { syncGeofencesWithOS } from './src/services/geofenceSync';
 import { registerBackgroundNotificationSync } from './src/services/backgroundNotificationSync';
 import { emitArrivalPromptCandidate } from './src/services/arrivalPromptBus';
+import { emitNotesChanged } from './src/services/notesBus';
 import { ToastProvider } from './src/components/ui';
 
 async function checkForUpdate() {
@@ -141,6 +142,7 @@ export default function App() {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
       console.log('[App] Notification tapped:', data);
+      if (data?.sessionId) emitNotesChanged('sorted');
       handleSessionProcessed(data);
       handleNotificationData(data);
     });
@@ -151,6 +153,9 @@ export default function App() {
       const data = notification.request.content.data as any;
       if (data?.sessionId) {
         console.log('[App] Session-processed push received:', data.sessionId);
+        // The notes this recording became now exist server-side — this is the
+        // earliest honest moment to refresh whatever list is on screen.
+        emitNotesChanged('sorted');
         handleSessionProcessed(data);
       }
     });

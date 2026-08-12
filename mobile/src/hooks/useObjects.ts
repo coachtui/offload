@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { deleteNote, deleteNotes } from '../services/noteLifecycle';
+import { emitNotesChanged, subscribeNotesChanged } from '../services/notesBus';
 import { AtomicObject } from '../types';
 
 interface ObjectsState {
@@ -181,6 +182,7 @@ export function useObjects(): UseObjectsReturn {
         ),
       }));
 
+      emitNotesChanged('updated');
       return true;
     } catch (error) {
       setDetailState((prev) => ({
@@ -237,6 +239,7 @@ export function useObjects(): UseObjectsReturn {
           ids.includes(obj.id) ? { ...obj, categoryId, categoryLocked: true } : obj
         ),
       }));
+      emitNotesChanged('updated');
       return true;
     } catch (error) {
       return false;
@@ -255,6 +258,14 @@ export function useObjects(): UseObjectsReturn {
   useEffect(() => {
     fetchObjects();
   }, [fetchObjects]);
+
+  // Keep the list live. Any note mutation — a recording sorting in, a Done from
+  // the detail modal, a delete from another screen — leaves this list stale,
+  // and it used to stay that way until the app was relaunched.
+  useEffect(
+    () => subscribeNotesChanged(() => { void fetchObjects(); }),
+    [fetchObjects]
+  );
 
   return {
     ...state,

@@ -308,25 +308,20 @@ export function RecordScreen({ navigation }: Props) {
         </View>
       ) : null}
 
-      {/* Bottom action */}
+      {/* Bottom hint — the orb is the only control; a second stop button below
+          it just competed with the mic the user already knows to tap. */}
       <View style={styles.bottomRow}>
-        {isRecording ? (
-          <AppPressable
-            onPress={handleRecordPress}
-            style={styles.stopPill}
-            accessibilityRole="button"
-            accessibilityLabel="Stop and save"
-          >
-            <Ionicons name="stop" size={13} color={D.onPrimary} />
-            <AppText variant="secondary" style={styles.stopPillText}>
-              Done — offload it
-            </AppText>
-          </AppPressable>
-        ) : (
-          <AppText variant="secondary" style={styles.bottomHint}>
-            {isConnecting ? 'Starting…' : isProcessing ? 'Saving…' : hasTranscript ? 'Tap the mic to add more' : 'Tap the mic to start'}
-          </AppText>
-        )}
+        <AppText variant="secondary" style={styles.bottomHint}>
+          {isRecording
+            ? 'Tap the mic when you’re done'
+            : isConnecting
+            ? 'Starting…'
+            : isProcessing
+            ? 'Saving…'
+            : hasTranscript
+            ? 'Tap the mic to add more'
+            : 'Tap the mic to start'}
+        </AppText>
       </View>
     </SafeAreaView>
   );
@@ -499,19 +494,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xxl,
     minHeight: 92,
     justifyContent: 'center',
-  },
-  stopPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    backgroundColor: D.primary,
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.xxl,
-    paddingVertical: Spacing.md,
-  },
-  stopPillText: {
-    color: D.onPrimary,
-    fontFamily: Fonts.bold,
   },
   bottomHint: {
     color: D.textFaint,

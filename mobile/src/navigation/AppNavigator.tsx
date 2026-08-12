@@ -25,8 +25,6 @@ import PermissionSettingsScreen from '../screens/PermissionSettingsScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
-import { ProximityBanner } from '../components/ProximityBanner';
-import { ErrorBoundary } from '../components/ErrorBoundary';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -167,12 +165,9 @@ export function AppNavigator() {
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
       {isAuthenticated ? (
-        <>
-          <MainStack needsPermissionOnboarding={needsPermissionOnboarding === true} />
-          <ErrorBoundary label="ProximityBanner">
-            <ProximityBanner />
-          </ErrorBoundary>
-        </>
+        // Arrival alerts are no longer a banner over the app — Home renders the
+        // place as a group in "For you right now" (see useProximityAlerts).
+        <MainStack needsPermissionOnboarding={needsPermissionOnboarding === true} />
       ) : (
         <AuthStack />
       )}

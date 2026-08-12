@@ -22,6 +22,7 @@
  */
 import { apiService } from './api';
 import { syncGeofencesWithOS } from './geofenceSync';
+import { emitNotesChanged } from './notesBus';
 
 export type NoteState = 'open' | 'active' | 'resolved' | 'archived';
 
@@ -37,6 +38,7 @@ export async function updateNoteState(
 ): Promise<{ object: any }> {
   const result = await apiService.updateObjectState(objectId, state, evolvedFromId);
   resyncRegions(`note-${state}`);
+  emitNotesChanged('state');
   return result;
 }
 
@@ -44,12 +46,14 @@ export async function updateNoteState(
 export async function deleteNote(objectId: string): Promise<void> {
   await apiService.deleteObject(objectId);
   resyncRegions('note-deleted');
+  emitNotesChanged('deleted');
 }
 
 /** Delete several notes at once. */
 export async function deleteNotes(ids: string[]): Promise<{ deleted: number }> {
   const result = await apiService.bulkDeleteObjects(ids);
   resyncRegions('notes-bulk-deleted');
+  emitNotesChanged('deleted');
   return result;
 }
 
@@ -61,5 +65,6 @@ export async function reviewDecision(
 ): Promise<{ object: any }> {
   const result = await apiService.reviewDecision(objectId, actualOutcome, outcomeAccuracy);
   resyncRegions('decision-reviewed');
+  emitNotesChanged('state');
   return result;
 }

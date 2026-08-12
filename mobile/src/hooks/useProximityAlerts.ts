@@ -5,8 +5,14 @@
  * an ENTER event if you're already inside the region when monitoring starts.
  * This hook is the dependable path: whenever the app becomes active (and on
  * mount), it checks the device's current location against the user's geofences
- * and, if you're at one with open notes, surfaces them immediately via an
- * in-app banner AND a local notification. No dependence on OS background events.
+ * and, if you're at one with open notes, surfaces them immediately in Home's
+ * "For you right now" card AND as a local notification. No dependence on OS
+ * background events.
+ *
+ * The in-app half used to be a floating banner pinned to the top of the screen,
+ * which landed in the same place as the local notification it fires alongside —
+ * two arrival alerts stacked over each other on every app open at a place. It
+ * now reads as the place's own group inside Home's list instead.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
@@ -14,6 +20,8 @@ import * as Notifications from 'expo-notifications';
 import { apiService } from '../services/api';
 import { locationService } from '../services/locationService';
 import { wasRecentlyNotified, markNotified } from '../services/arrivalLedger';
+import { subscribeNotesChanged } from '../services/notesBus';
+import type { AtomicObject } from '../types';
 
 export interface ProximityMatch {
   geofenceId: string;
@@ -21,6 +29,8 @@ export interface ProximityMatch {
   name: string;
   count: number;
   preview: string;
+  /** The open notes linked to this place, newest-first as the API returns them. */
+  objects: AtomicObject[];
 }
 
 // GPS jitter buffer added to the geofence radius when deciding "you're here".
@@ -87,6 +97,7 @@ export function useProximityAlerts() {
         name: best.name,
         count: objects.length,
         preview,
+        objects,
       };
       setMatch(next);
 
@@ -124,7 +135,13 @@ export function useProximityAlerts() {
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') check();
     });
-    return () => sub.remove();
+    // Closing one of the place's notes has to empty the group it was listed in,
+    // without waiting for the next foreground.
+    const unsubscribe = subscribeNotesChanged(() => { void check(); });
+    return () => {
+      sub.remove();
+      unsubscribe();
+    };
   }, [check]);
 
   return { match, dismiss: useCallback(() => setMatch(null), []) };
