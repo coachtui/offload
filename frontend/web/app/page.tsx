@@ -1,12 +1,11 @@
-import Link from 'next/link';
 import PublicNav from '@/components/PublicNav';
 import Footer from '@/components/Footer';
+import AppStoreCta from '@/components/AppStoreCta';
 import {
   MicIcon,
   LocationIcon,
   ShieldIcon,
   CheckIcon,
-  AppleIcon,
   LogoGlyph,
   LogoMark,
 } from '@/components/ui/icons';
@@ -110,12 +109,7 @@ export default function LandingPage() {
             </p>
 
             <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-              <Link
-                href="/signup"
-                className="inline-flex items-center justify-center px-7 py-3.5 text-base font-bold text-bg bg-ink rounded-full shadow-level2 hover:-translate-y-0.5 hover:shadow-level3 active:translate-y-0 active:shadow-level1 transition-all duration-150"
-              >
-                Get the app
-              </Link>
+              <AppStoreCta className="px-7 py-3.5 text-base rounded-full" />
               <a
                 href="#how"
                 className="text-base font-semibold text-accent hover:opacity-80 transition-opacity"
@@ -272,18 +266,7 @@ export default function LandingPage() {
           <h2 className="text-3xl sm:text-4xl font-bold text-ink tracking-tight mb-10 text-balance">
             Stop holding it all in your head.
           </h2>
-          <div className="inline-flex items-center gap-2 px-5 py-3 bg-ink text-bg font-semibold text-sm rounded-md cursor-default select-none">
-            <AppleIcon />
-            Available on the App Store
-          </div>
-          <p className="mt-6">
-            <Link
-              href="/signup"
-              className="text-sm font-semibold text-accent hover:opacity-80 transition-opacity"
-            >
-              Create your account&nbsp;→
-            </Link>
-          </p>
+          <AppStoreCta className="px-5 py-3 text-sm rounded-md" />
         </div>
       </section>
 

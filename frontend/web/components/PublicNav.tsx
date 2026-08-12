@@ -15,20 +15,12 @@ export default function PublicNav() {
           </span>
           Offload
         </Link>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <Link
-            href="/login"
-            className="px-3 sm:px-4 py-2 text-sm font-medium text-ink-muted hover:text-ink transition-colors rounded-sm"
-          >
-            Log In
-          </Link>
-          <Link
-            href="/signup"
-            className="px-3 sm:px-4 py-2 text-sm font-semibold text-bg bg-ink rounded-sm hover:opacity-90 transition-opacity"
-          >
-            Get Started
-          </Link>
-        </div>
+        <a
+          href="#how"
+          className="px-3 sm:px-4 py-2 text-sm font-semibold text-accent hover:opacity-80 transition-opacity"
+        >
+          How it works
+        </a>
       </div>
     </nav>
   );
