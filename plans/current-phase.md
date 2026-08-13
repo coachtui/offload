@@ -1,17 +1,18 @@
 # Current Phase: App Store Launch Prep (Phase 7 queued behind it)
 
 ## Phase Overview
-**Phase**: Launch — TestFlight cohort live, build 4 approved
-**Status**: ✅ Build **4** (v1.1.0) **approved** (2026-08-12 night, ASC app `6799952861`). TestFlight cohort actively testing and surfacing fixes. First-ever `production`-channel OTA published 2026-08-13 (group `347778a1`, commit `39acc7f`) — carries the PR #41 record-screen fixes and the PR #42 place-lookup mobile UI to build 4 users. Backend on Railway is main through PR #46.
+**Phase**: Launch — TestFlight cohort live, build 5 submitted
+**Status**: ✅ Build **4** (v1.1.0) **approved** (2026-08-12 night, ASC app `6799952861`). Build **5** built and submitted 2026-08-13 (commit `454e987`, submission `eebcc911`) — cut for a native change no OTA can carry: the iOS **time-sensitive notification entitlement**. Assigned to the external group. Both OTA channels now serve commit `454e987` — `preview` group `666e2a3f`, `production` group `345e3912`. Backend on Railway is main through PR #52.
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
 **Current Date**: 2026-08-13
-**Last Updated**: 2026-08-13 — Place-lookup fallback shipped end-to-end (PRs #42–#46, session log at bottom); production OTA out.
+**Last Updated**: 2026-08-13 — Time reminders rebuilt: accurate to the second, fire from the device, break through Focus (PRs #51–#52, session log at bottom). Build 5 submitted.
 
 **Remaining launch actions**:
 - At public App Store release: set `APP_STORE_URL` in `frontend/web/lib/appStore.ts` to `https://apps.apple.com/app/id6799952861` (CTA goes live site-wide).
 - Physical arrival field-test at a taught place (590 Paiea St canonical) — the one unverified link; the cohort may hit it organically first.
-- Cut build 5 only for a native change or ahead of public release (current mobile delta is JS-only and rides OTA).
+- Beta App Review for build 5 (external testers). Same version 1.1.0 with a new build number often clears without a full pass, but it's Apple's call.
+- ~~Cut build 5 only for a native change~~ — done 2026-08-13 (the entitlement). Future JS-only deltas still ride OTA; **adding any entitlement or permission needs a build AND a regenerated provisioning profile per distribution type** (see Known Issues → EAS credentials).
 
 **Parked (not launch-blocking, revisit later)**:
 - **Onboarding / "what is Offload" content** (noted 2026-08-13): Settings has no About section and the app never explains itself outside the one-shot permission ladder. Idea: an "About" section in Settings with a "How Offload works" row → short scrollable explainer (what to say, what happens to a note, how places/arrivals work), reusable later as a post-permissions carousel for new users. Existing product copy to draw from: LoginScreen tagline ("Say it once. It's handled."), RegisterScreen ("Get it out of your head — Offload keeps it"), PermissionsScreen `ROWS` copy.
@@ -637,7 +638,8 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
 0. 🔧 **Geofence arming gap: brand-new place + immediately-killed app** (2026-08-08; **fix implemented 2026-08-09, PR #34 — dormant until next EAS build**)
    - Registering a region with iOS requires running JS. If the user records a note, kills the app within ~35s (before the post-save syncs), and drives straight to the *newly created* place without reopening, the region is never armed. (Existing, already-registered places are unaffected — iOS monitors them independently of app life; practical exposure is small, which is why this was downgraded from its original High framing.)
    - **Implemented**: backend sends a content-available silent push only when `resolveObjectPlaces` actually created a region; a guarded background `TaskManager` task runs `syncGeofencesWithOS('silent-push')` on wake; the cold-start tap handler now runs `handleSessionProcessed` too (live via OTA `b17e6a43` immediately); `UIBackgroundModes` declared explicitly as `["location", "remote-notification"]`.
-   - **Remaining step**: the `remote-notification` entitlement is a native capability — the silent-push half activates on the **next EAS build** (App Store prep will force one anyway). No dedicated build needed; everything is inert-but-harmless until then.
+   - ~~**Remaining step**: the `remote-notification` entitlement activates on the next EAS build~~ — **closed**: `UIBackgroundModes: ["location", "remote-notification"]` has shipped in every build since Aug 10, so the silent-push wake is live for the whole cohort.
+   - **Still open for time reminders, deliberately** (2026-08-13): the identical gap exists for a dated note recorded then force-quit — nothing schedules its local notification until the next app open, so it falls back to the server push. `sendSilentToUser` is called *only* from `placeService`, so a note with a date and no place never wakes the device. Not fixed on purpose: it needs a three-way conjunction (record-and-pocket **and** never reopen before the fire time **and** no connectivity at that moment), the push fallback is now accurate to the second, and a second silent push per note would compete with geofence arming for iOS's content-available budget — a bad trade against the field-validated path. Revisit if a reminder is ever late while offline.
 
 1. ⚠️ **TypeScript Strict Mode Disabled**
    - Build command has `|| true` to bypass type errors
@@ -665,6 +667,19 @@ Weekly agentic workflow that finds patterns across domains (business, personal, 
    - TODO in `search.ts:159`
    - Feature: Hybrid search with full-text PostgreSQL search
    - Current: Semantic search working, keyword search basic
+
+### Medium Priority (continued)
+2d. ⚠️ **`mobile/` has no test infrastructure at all** (noted 2026-08-13)
+   - No `jest`, no `jest-expo`, no `src/__tests__`, no `test` script. Every line of mobile code in the repo is verified by `tsc --noEmit` and device testing only.
+   - Newly load-bearing: the device-side reminder claim logic (`timeReminderSync.ts`, PR #52) decides whether a reminder fires once, twice, or not at all, and its release path has been exercised exactly once, on one device, by hand. Backend half is covered (`__tests__/services/localReminderClaims.test.ts`); the client half is not.
+   - Standing up `jest-expo` is its own piece of work. Until then, a tester reporting a **duplicate** reminder is the failure signature to chase.
+
+3. ⚠️ **Adding an iOS entitlement needs a regenerated provisioning profile, per distribution type** (learned the hard way 2026-08-13)
+   - `eas build` only syncs capabilities to the App ID when it's authenticated with Apple. With valid cached remote credentials it prints `Skipping Provisioning Profile validation on Apple Servers because we aren't authenticated`, reuses the stale profile, and fails in Xcode with "provisioning profile doesn't support the X capability". Cost two failed builds.
+   - Fix: `npx eas credentials` → iOS → the build profile → Build Credentials → **Provisioning Profile: Delete one from your project** (there is no "create" option; EAS reissues on the next build, and *that* is when it authenticates and syncs). Do **not** touch Distribution Certificate options — the cert is fine and revoking it invalidates other profiles.
+   - `preview` (Ad Hoc) and `production` (App Store) sign with **separate profiles** — both needed regenerating for the same entitlement. The App ID capability itself is account-level and syncs once.
+   - `eas credentials` and Apple 2FA need a real TTY, so they can't be driven from a non-interactive shell. The build after the delete must also be interactive.
+   - Verify the result on the artifact, not the build status: `codesign -d --entitlements :- Payload/*.app` on the downloaded `.ipa`.
 
 ### Low Priority
 0. ⚠️ **EAS Update channel must match the installed build's profile**
@@ -1650,3 +1665,106 @@ may hit one first) · `PlaceLookupModel.findRetryable` has no caller yet (pre-ke
 rows don't self-re-geocode) · fan-out visibility chip (needs per-note armed-links endpoint)
 · teach-once → `vocabulary.json` ASR biasing · Google billing sanity-check after a few
 weeks of cohort usage (cache should keep it ≈ $0).
+
+---
+
+## Session Update (2026-08-13) — Time Reminders: From "Sometime After 9" to On the Second, Offline (PRs #51–#52)
+
+### 🐛 The report
+A field-tested time reminder fired **2 minutes late**. Not a bug — the design: `timeReminderJob`
+polled on a fixed `setInterval` of 5 minutes, so every reminder was 0–5 minutes late (2.5 avg),
+with a phase that re-randomized on every Railway deploy. 2 minutes sat dead centre of that
+distribution. For a *time* reminder that is the product: 9:00 meant "sometime after 9".
+
+Investigation found three independent causes, only one of which was the obvious one:
+1. **The poll interval** — dominant, 0–5 min.
+2. **No `interruptionLevel`** — a plain `active` notification, which iOS Focus modes and the
+   scheduled notification summary are free to hold for *hours*. Unbounded, not 5 minutes.
+3. **No device-side scheduling at all** — every `scheduleNotificationAsync` in the app used
+   `trigger: null`, and `mobile/src` had zero references to `remindAt` even though
+   `AtomicObject.toJSON` already put it on the wire. Delivery depended on Railway + APNs at
+   the exact due second.
+
+Checked and *cleared* as a cause: Expo's default push priority is already **high on iOS**
+(APNs 10) — the opposite of what I'd assumed from memory. Worth reading the docs before
+optimizing the wrong layer.
+
+### 🚀 PR #51 — accuracy (backend + `app.json`)
+- **Event-driven scheduler** replaces the interval: after each sweep the job queries the
+  earliest pending `remind_at` and arms one timer for exactly that instant. Lateness is now
+  timer precision, not tick width. `MAX_SLEEP_MS` (15 min) caps blind sleep so a clock jump or
+  an out-of-band `remind_at` write self-heals; `AtomicObject.create` calls
+  `rearmTimeReminderJob()` so a note due before the armed wake-up pulls it earlier; a re-arm
+  landing mid-sweep sets a flag and the sweep loops once more rather than deferring to the
+  heartbeat. The job also sweeps on boot — a restart can no longer step over a due reminder.
+- **Claim lease** (`reminder_claimed_at`, migration 020). The old select-then-send left the
+  entire send window unguarded by `reminder_fired_at`, so a second Railway replica would have
+  double-pushed *every* reminder. `UPDATE … FOR UPDATE SKIP LOCKED … RETURNING` makes the claim
+  atomic. A claim is a lease: failed push releases immediately, crash mid-send reclaims once
+  stale — a crash delays a reminder, never loses one.
+- **`interruptionLevel: 'time-sensitive'`** on the reminder push, opt-in per caller so the
+  weekly digest stays `active` and its payload is byte-identical to before. Needed the
+  entitlement in `app.json` → a native build.
+
+### 🚀 PR #52 — fire from the device (backend + mobile)
+Same principle as arrival reminders: the moment a reminder is due is the worst moment to need
+the network. `timeReminderSync.ts` schedules each pending reminder as a dated local
+notification and claims it (`reminder_local_claim_at`, migration 021); the push job skips
+claimed rows via one added line in `PENDING_PREDICATE`.
+
+**Ownership is honest by construction** — the device claims exactly the identifiers the OS
+confirmed, *after* scheduling, and re-states the whole set every sync. So anything it can't
+take falls back to the push instead of silently never firing: permission denied (claims
+nothing, server behaves as before), past iOS's 64-pending-request budget (capped at 56, and it
+logs what it left behind), or due inside 5s (scheduling would race the fire time).
+
+**No expiry on a claim, deliberately.** An OS-scheduled notification needs neither network nor
+server, every way it can fail (permission revoked, app deleted) breaks push delivery too, and a
+staleness backstop would double-notify every reminder it misjudged.
+
+**The subtle case, caught in self-review before shipping.** A local notification runs no JS when
+it fires, so the device can never report delivery — the next sync simply stops listing that
+reminder. Releasing the claim there hands an overdue unfired row to the push job, which
+re-sends a reminder the user got hours ago. A short-fuse test would have hit it immediately.
+Fix: a device-owned reminder whose time has passed is stamped `reminder_fired_at = remind_at`,
+and ownership is only ever rearranged for reminders still in the future. **Any change to the
+claim logic must preserve that.**
+
+Sync coverage: app-active, sign-in (the mount-time sync runs and is throttled *before* there is
+a session), post-save on both staggered attempts, the silent-push background wake, notification
+permission grant, sign-out (release, so the next account doesn't inherit them), and every
+`noteLifecycle` mutation — a resolved note's notification is already in the OS and only a
+re-sync cancels it. `resyncRegions` → `resyncTriggers` accordingly. Body text moved to
+`services/reminderContent.ts` so the two delivery paths can't word the same reminder differently.
+
+### ✅ Field-validated (all same session, on device)
+- Reminder fired **on time** after #51 deployed (was 2 min late an hour earlier).
+- Reminder fired in **airplane mode** after #52 + build 4, and **no duplicate** arrived when the
+  radio came back — which is the proof the server honoured the claim.
+- Entitlement verified by `codesign -d --entitlements` on the downloaded `.ipa` for build 4
+  (Ad Hoc) and build 5 (App Store), rather than trusting a green build.
+
+### 📦 Shipped
+523 backend tests (from 512), `tsc --noEmit` clean. Migrations 020 + 021 applied on Railway.
+Build 4 (`preview`) + OTA `666e2a3f`; build 5 (`production`, submission `eebcc911`) + OTA
+`345e3912`. Both channels on commit `454e987`.
+
+### 📌 Lessons on record
+- **A polling interval is a product decision.** "Every 5 minutes" silently redefined what the
+  user's stated time meant. The fix wasn't a smaller interval, it was not polling.
+- **Check the docs before optimizing the layer you assume is wrong.** Push priority was already
+  correct on iOS; the real second cause was `interruptionLevel`, which I'd never have found by
+  reasoning from the symptom.
+- **Two delivery paths for one event need an explicit ownership protocol**, and the hard part
+  isn't the handoff — it's the *release*. Delivery you can't observe (no JS at fire time) has to
+  be inferred from time passing, not from silence in the next sync.
+- **Claim what you did, not what you intend to do.** Claiming after the OS confirms is what
+  makes every failure mode degrade to the old behaviour instead of to silence.
+- **Verify the artifact, not the status.** A green build can drop an entitlement; `codesign` on
+  the `.ipa` is the only real answer.
+
+### 🔭 Open
+Record-and-pocket dated notes don't schedule locally until the next app open (see Known Issues
+→ item 0, deliberately unfixed) · `mobile/` still has no test harness, so `timeReminderSync` is
+typecheck-and-hand-tested only · Do Not Disturb path untested on device · Beta App Review for
+build 5 · duplicate-reminder reports from the cohort are the claim-release failure signature.
