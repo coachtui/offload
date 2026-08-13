@@ -18,11 +18,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { RouteProp, useRoute } from '@react-navigation/native';
 import MapView, { Marker, Circle } from 'react-native-maps';
 import { locationService, LocationUsageReason } from '../services/locationService';
 import { useGeofences } from '../hooks/useGeofences';
 import { apiService } from '../services/api';
 import { AtomicObject } from '../types';
+import { RootStackParamList } from '../navigation/types';
 import {
   AppInput,
   ConfirmSheet,
@@ -39,9 +41,14 @@ interface CreateGeofenceScreenProps {
 export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScreenProps) {
   const { colors, scheme } = useTheme();
   const styles = useThemedStyles(createStyles);
+  // Arriving from a pending lookup's "Pick on the map": the spoken name is
+  // pre-filled, and saving also resolves the lookup (linking the note).
+  const route = useRoute<RouteProp<RootStackParamList, 'CreateGeofence'>>();
+  const prefillName = route.params?.prefillName;
+  const pendingLookupId = route.params?.pendingLookupId;
 
   // Form state
-  const [name, setName] = useState('');
+  const [name, setName] = useState(prefillName ?? '');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<'home' | 'work' | 'gym' | 'store' | 'custom'>('custom');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -220,6 +227,19 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       if (!geofence) {
         toast.show({ message: "Couldn't save place", description: 'Please try again.', tone: 'error' });
         return;
+      }
+
+      // Saving FOR a pending lookup: tell the server, so the note that asked
+      // the question gets linked and the row leaves the "needs a location"
+      // queue. Non-fatal — the geofence exists either way, and the pending row
+      // simply stays answerable.
+      if (pendingLookupId) {
+        try {
+          await apiService.resolvePendingPlace(pendingLookupId, { geofenceId: geofence.id });
+          console.log(`[CreateGeofence] Resolved pending lookup ${pendingLookupId}`);
+        } catch (resolveErr) {
+          console.warn('[CreateGeofence] Failed to resolve pending lookup (non-fatal):', resolveErr);
+        }
       }
 
       // Link selected objects after geofence is created

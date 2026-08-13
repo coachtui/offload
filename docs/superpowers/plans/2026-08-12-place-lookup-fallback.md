@@ -206,12 +206,15 @@ The behavioural core. Everything else is plumbing around it.
 - Modify: `mobile/src/screens/ObjectsScreen.tsx` (note-detail chip)
 - Modify: `mobile/src/services/api.ts`
 
-- [ ] **Step 1: API client methods** — `getPendingPlaces`, `resolvePendingPlace`, `dismissPendingPlace`.
-- [ ] **Step 2: "Needs a location" section** in `PlacesScreen`, rendered **first**, above "Your places" and "Detected places" (the sections array at `PlacesScreen.tsx:36`).
-- [ ] **Step 3: `SetPlaceLocationSheet`** — candidate rows (name, address, distance), then "Use my current location", "Pick on the map" (reuses `CreateGeofenceScreen` with the name pre-filled), "Not a place". Follow Deep Lagoon tokens from `mobile/src/theme`; coral is record-only, so it must not appear here.
-- [ ] **Step 4: Note-detail chip** — `📍 Melaleuca — set location` on any note with a pending lookup, opening the same sheet.
-- [ ] **Step 5: Fan-out visibility** — a chain note shows `📍 3 Foodlands armed ›`, opening the same sheet with branches removable. Visible and correctable without a blocking question.
-- [ ] **Step 6: Verify on the simulator** per `offload-simulator-driving` — Release build, record a Melaleuca note, confirm the section appears, tap through both resolution paths.
+- [x] **Step 1: API client methods** — `getPendingPlaces`, `resolvePendingPlace`, `dismissPendingPlace`, plus `PendingPlaceLookup`/`PendingPlaceCandidate`/`PendingResolveChoice` types and the `kind: 'pending'` extension of `PlaceOverviewItem`.
+- [x] **Step 2: "Needs a location" section** in `PlacesScreen`, rendered first. Pending rows carry a help icon, "N possible locations — tap to choose", and open the sheet; they are excluded from the notes-filter options in ObjectsScreen (nothing to scope to yet).
+- [x] **Step 3: `SetPlaceLocationSheet`** — shared component (`components/SetPlaceLocationSheet.tsx`): candidate rows with name/address/distance, "Use my current location" (via `locationService.getCurrentLocation`), "Pick on the map", "Not a place — don't ask again". After any resolve it runs `syncGeofencesWithOS('pending-lookup-resolved')` so the new region arms while the app is open. Deep Lagoon tokens throughout; no coral.
+  **Map-pick plumbing:** `CreateGeofence` gained optional `{ prefillName, pendingLookupId }` route params — the name arrives pre-filled, and a successful save also calls `resolvePendingPlace(id, { geofenceId })` (best-effort) so the note gets linked and the row leaves the queue.
+- [x] **Step 4: Note chip** — `<query> — set location` on the note card (list, not buried in detail) for any note with a pending lookup; opens the same sheet. Lookup map fetched per focus, best-effort — a fetch failure means no chips, never an error state.
+- [ ] **Step 5: Fan-out visibility — DEFERRED.** `📍 3 Foodlands armed ›` needs per-note armed-geofence data that no endpoint currently provides; inventing that endpoint mid-task is scope creep. The armed branches are already visible and removable in Places. Revisit after field use shows whether the invisibility actually bites.
+- [ ] **Step 6: Simulator verify — BLOCKED on deploy.** The app points at production, which does not have `/places/pending` until this branch deploys; the chip fetch 404s and degrades to no-chips (by design). Fold this into Task 9's rollout order: deploy backend → simulator/TestFlight pass → field test.
+
+Mobile `tsc`: only the 3 pre-existing errors (`api.ts` HeadersInit, `locationService.ts` export conflict, `websocket.ts` deviceId) — none in files this task touched.
 
 ---
 
