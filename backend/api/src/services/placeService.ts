@@ -521,6 +521,182 @@ async function maybeCreateInferredGeofence(
   }
 }
 
+// ─── Pending lookups — the "needs your help" queue ───────────────────────────
+
+export interface PendingLookupView {
+  id: string;
+  query: string;
+  objectId: string;
+  notePreview: string | null;
+  provider: string | null;
+  createdAt: Date;
+  candidates: Array<{
+    name: string;
+    address: string | null;
+    lat: number;
+    lng: number;
+    category: string | null;
+    /** From where the note was recorded, when that is known. */
+    distanceKm: number | null;
+  }>;
+}
+
+/** Pending rows with note previews and per-candidate distances, for the sheet. */
+export async function getPendingPlaceLookups(userId: string): Promise<PendingLookupView[]> {
+  const lookups = await PlaceLookupModel.findPendingByUser(userId);
+  if (lookups.length === 0) return [];
+
+  const objectIds = [...new Set(lookups.map((l) => l.objectId))];
+  const objects = await AtomicObjectModel.findByIds(objectIds);
+  const previews = new Map<string, string>();
+  for (const model of objects) {
+    const obj = model.toAtomicObject();
+    const text = obj.title || obj.content || '';
+    previews.set(obj.id, text.length > 80 ? `${text.slice(0, 77)}…` : text);
+  }
+
+  return lookups.map((l) => ({
+    id: l.id,
+    query: l.query,
+    objectId: l.objectId,
+    notePreview: previews.get(l.objectId) ?? null,
+    provider: l.provider,
+    createdAt: l.createdAt,
+    candidates: l.candidates.map((c) => ({
+      name: c.name,
+      address: c.address,
+      lat: c.lat,
+      lng: c.lng,
+      category: c.category,
+      distanceKm:
+        l.recordedLat !== null && l.recordedLng !== null
+          ? Math.round(haversineKm(l.recordedLat, l.recordedLng, c.lat, c.lng) * 10) / 10
+          : null,
+    })),
+  }));
+}
+
+export type PendingResolveChoice =
+  | { candidateIndex: number }
+  | { lat: number; lng: number; radius?: number }
+  | { geofenceId: string };
+
+/**
+ * The user answered the question. Whichever affordance they used — a listed
+ * candidate, "use my current location", "pick on the map" (both arrive as
+ * coordinates), or an existing geofence — the result is the same shape as a
+ * promoted place: a MANUAL geofence, so the name-match step catches every
+ * future mention of this word and the question is never asked again.
+ *
+ * Notes ride on geofence_objects (not object_place_links) because that is the
+ * table manual-geofence detail views read — mirroring promotePlaceToGeofence,
+ * and for the same reason the manual-match step links there.
+ */
+export async function resolvePendingLookup(
+  userId: string,
+  lookupId: string,
+  choice: PendingResolveChoice
+): Promise<GeofenceModel> {
+  const lookup = await PlaceLookupModel.findById(lookupId);
+  if (!lookup) throw Object.assign(new Error('Lookup not found'), { status: 404 });
+  if (lookup.userId !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+  if (lookup.status !== 'pending') {
+    throw Object.assign(new Error('Lookup already handled'), { status: 409 });
+  }
+
+  let geofence: GeofenceModel;
+  let placeId: string | null = null;
+  let method: string;
+
+  if ('geofenceId' in choice) {
+    const existing = await GeofenceModel.findById(choice.geofenceId);
+    if (!existing || existing.userId !== userId) {
+      throw Object.assign(new Error('Geofence not found'), { status: 404 });
+    }
+    geofence = existing;
+    method = 'existing_geofence';
+  } else {
+    let lat: number;
+    let lng: number;
+    let name = lookup.query;
+    let category: string | null = null;
+    let providerPlaceId: string | null = null;
+
+    if ('candidateIndex' in choice) {
+      const candidate = lookup.candidates[choice.candidateIndex];
+      if (!candidate) throw Object.assign(new Error('No such candidate'), { status: 400 });
+      ({ lat, lng } = candidate);
+      name = candidate.name;
+      category = candidate.category;
+      providerPlaceId = candidate.providerPlaceId;
+      method = 'candidate';
+    } else {
+      ({ lat, lng } = choice);
+      method = 'coordinates';
+    }
+
+    const radius = 'radius' in choice && choice.radius ? choice.radius : 200;
+
+    const place = await PlaceModel.create({
+      userId,
+      rawName: lookup.query,
+      normalizedName: name,
+      providerPlaceId,
+      lat,
+      lng,
+      radiusMeters: radius,
+      category,
+      confidence: 1.0, // the user pointed at it — there is no higher signal
+      userConfirmed: true,
+      createdBy: 'manual',
+    });
+    placeId = place.id;
+
+    const existingManual = (await GeofenceModel.findByUserAndName(userId, name))
+      .find((g) => g.createdBy === 'manual');
+    geofence = existingManual ?? await GeofenceModel.create(userId, {
+      name,
+      center: { latitude: lat, longitude: lng },
+      radius,
+      type: 'custom',
+      notificationSettings: { enabled: true, onEnter: true, onExit: false },
+      placeId: place.id,
+      createdBy: 'manual',
+    });
+  }
+
+  await GeofenceModel.addLinkedObject(geofence.id, lookup.objectId);
+  await PlaceLookupModel.markResolved(lookupId, placeId);
+  logLifecycle('PLACE_USER_RESOLVED', {
+    userId,
+    objectId: lookup.objectId,
+    placeId,
+    geofenceId: geofence.id,
+    query: lookup.query,
+    method,
+  });
+
+  return geofence;
+}
+
+/**
+ * "Not a place" / "don't ask again". The dismissed row itself is the
+ * ignore-list entry (see PlaceLookupModel.isQueryIgnored), so this word stops
+ * re-queueing on every future note without any extra bookkeeping.
+ */
+export async function dismissPendingLookup(userId: string, lookupId: string): Promise<void> {
+  const lookup = await PlaceLookupModel.findById(lookupId);
+  if (!lookup) throw Object.assign(new Error('Lookup not found'), { status: 404 });
+  if (lookup.userId !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+
+  await PlaceLookupModel.markDismissed(lookupId);
+  logLifecycle('PLACE_LOOKUP_DISMISSED', {
+    userId,
+    objectId: lookup.objectId,
+    query: lookup.query,
+  });
+}
+
 // ─── Place objects ────────────────────────────────────────────────────────────
 
 /**

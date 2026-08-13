@@ -143,8 +143,12 @@ export class PlaceLookupModel {
     return rows.map(rowToLookup);
   }
 
-  /** Only a pending row can resolve — never resurrect a dismissed one. */
-  static async markResolved(id: string, placeId: string): Promise<PlaceLookup | null> {
+  /**
+   * Only a pending row can resolve — never resurrect a dismissed one.
+   * placeId is null when the user pointed at an existing geofence instead of
+   * creating a place.
+   */
+  static async markResolved(id: string, placeId: string | null): Promise<PlaceLookup | null> {
     const row = await queryOne<PlaceLookupRow>(
       `UPDATE hub.place_lookups
        SET status = 'resolved', resolved_place_id = $2, resolved_at = NOW()

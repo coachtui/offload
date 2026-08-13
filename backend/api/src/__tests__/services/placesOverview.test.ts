@@ -2,10 +2,21 @@ import { getPlacesOverview } from '../../services/geofenceService';
 import * as queries from '../../db/queries';
 
 jest.mock('../../db/queries');
+jest.mock('../../models/PlaceLookup', () => ({
+  PlaceLookupModel: { findPendingByUser: jest.fn(async () => []) },
+  PlaceProviderCacheModel: { get: jest.fn(async () => null), put: jest.fn(async () => {}) },
+}));
+
+import { PlaceLookupModel } from '../../models/PlaceLookup';
+
 const mockQueries = queries as jest.Mocked<typeof queries>;
+const mockLookup = PlaceLookupModel as jest.Mocked<typeof PlaceLookupModel>;
 
 describe('getPlacesOverview', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLookup.findPendingByUser.mockResolvedValue([]);
+  });
 
   it('returns manual geofences, inferred geofences, then geofence-less detected places', async () => {
     mockQueries.queryMany
@@ -52,5 +63,39 @@ describe('getPlacesOverview', () => {
     // Distinct ids => toggling one does not affect the others; enabled is per-row.
     expect(result.map((r) => r.enabled)).toEqual([true, false, true]);
     expect(result.every((r) => r.kind === 'geofence')).toBe(true);
+  });
+});
+
+describe('getPlacesOverview — pending lookups', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLookup.findPendingByUser.mockResolvedValue([]);
+  });
+
+  it('renders pending lookups FIRST — a one-tap question outranks working rows', async () => {
+    mockQueries.queryMany
+      .mockResolvedValueOnce([
+        { id: 'g-home', name: 'Home', open_count: '2', notification_enabled: true },
+      ] as any)
+      .mockResolvedValueOnce([] as any)
+      .mockResolvedValueOnce([] as any);
+    mockLookup.findPendingByUser.mockResolvedValue([
+      {
+        id: 'pl-1', query: 'Melaleuca',
+        candidates: [{ name: 'Melaleuca', address: '590 Paiea St', lat: 21.33, lng: -157.91, providerPlaceId: 'google:p', category: 'store' }],
+      },
+    ] as any);
+
+    const result = await getPlacesOverview('u1');
+
+    expect(result[0]).toMatchObject({
+      kind: 'pending',
+      id: 'pl-1',
+      name: 'Melaleuca',
+      enabled: false,
+      query: 'Melaleuca',
+    });
+    expect(result[0].candidates).toHaveLength(1);
+    expect(result[1]).toMatchObject({ kind: 'geofence', id: 'g-home' });
   });
 });

@@ -174,12 +174,12 @@ The behavioural core. Everything else is plumbing around it.
 - Modify: `backend/api/src/services/placeService.ts` (resolve/dismiss handlers)
 - Test: `backend/api/src/__tests__/routes/placesPending.test.ts`
 
-- [ ] **Step 1: Write the failing route tests**, including ownership — another user's lookup id must 403, matching `verifyPlaceOwnership`.
-- [ ] **Step 2:** `GET /api/v1/places/pending` — pending rows with candidates, note preview, and distance from the recorded point.
-- [ ] **Step 3:** `POST /api/v1/places/pending/:id/resolve` accepting `{ candidateIndex }` | `{ lat, lng, radius }` | `{ geofenceId }`. Creates the place (`created_by: 'manual'`, `user_confirmed: true`), creates or reuses the geofence, links the object, marks the row resolved, emits `PLACE_USER_RESOLVED`.
-- [ ] **Step 4:** `POST /api/v1/places/pending/:id/dismiss` — marks dismissed and adds the query to a per-user ignore list so the word stops re-queueing on every future note.
-- [ ] **Step 5: Extend `PlaceOverviewItem`** with `kind: 'pending'` carrying `query` and `candidates`, so `GET /places/overview` delivers it and the client needs no second fetch.
-- [ ] **Step 6: Verify** — `npx tsc --noEmit`, `npm test`.
+- [x] **Step 1: Write the failing tests** — service level (`placePendingLookups.test.ts`, 13) covering ownership (403), unknown row (404), already-handled (409), plus route level (`placesPendingRoute.test.ts`, 10) covering the three body shapes, a 400 for none-of-the-above, and forwarding of service rejections.
+- [x] **Step 2:** `GET /api/v1/places/pending` — rows with note previews (title-or-content, 80-char cap) and per-candidate `distanceKm` from the recorded point; `[]` short-circuits before touching objects.
+- [x] **Step 3:** `POST /pending/:id/resolve` with the three shapes. All three converge on a **manual** geofence (reusing a same-name manual one when present) so the name-match step answers every future mention — the teach-once promise. Coordinates resolve under the SPOKEN name, not the provider's, for the same reason. Notes link via `geofence_objects`, mirroring `promotePlaceToGeofence` and for the same reason (that is the table manual detail views read). `markResolved` takes `placeId: null` for the existing-geofence shape. Emits `PLACE_USER_RESOLVED` with the method used.
+- [x] **Step 4:** `POST /pending/:id/dismiss` — the dismissed row itself is the ignore-list entry (Task 4's design), so there is no list to append to; emits `PLACE_LOOKUP_DISMISSED`.
+- [x] **Step 5: Extend `PlaceOverviewItem`** with `kind: 'pending'` + `query`/`candidates`, rendered FIRST in the overview — a one-tap question outranks rows that already work. Pending rows come via `PlaceLookupModel` (not a fourth inline query) so the overview tests' ordered `queryMany` mocks stay valid; both overview test files gained the model mock.
+- [x] **Step 6: Verify** — `npx tsc --noEmit` clean (one cast where this zod version's union inference widens members to optionals); `npm test` 65 suites / 469 tests (was 63/445 — +13 service, +10 route, +1 overview).
 
 ---
 
