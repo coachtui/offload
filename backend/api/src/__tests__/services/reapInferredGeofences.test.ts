@@ -16,23 +16,37 @@ import {
 } from '../../services/placeService';
 import { PlaceModel } from '../../models/Place';
 import { GeofenceModel } from '../../models/Geofence';
-import { resolvePlaceNameMulti } from '../../services/placeResolutionService';
+import { searchPlaceCandidates } from '../../services/placeResolutionService';
 import { sendSilentToUser } from '../../services/pushService';
 
 jest.mock('../../models/Place');
 jest.mock('../../models/Geofence');
 jest.mock('../../models/AtomicObject');
 // Mock only the geocoder — haversineKm must stay real so the near/far branch
-// fall-through logic under test actually measures distance.
+// fall-through logic under test actually measures distance, and arbitration +
+// confidence scoring stay real so the geocode path is the true one.
 jest.mock('../../services/placeResolutionService', () => ({
   ...jest.requireActual('../../services/placeResolutionService'),
-  resolvePlaceNameMulti: jest.fn(),
+  searchPlaceCandidates: jest.fn(),
+}));
+jest.mock('../../services/placeAnchors', () => ({
+  resolveAnchors: jest.fn(async () => []),
+}));
+jest.mock('../../models/PlaceLookup', () => ({
+  PlaceLookupModel: {
+    isQueryIgnored: jest.fn(async () => false),
+    create: jest.fn(async () => ({})),
+  },
+  PlaceProviderCacheModel: { get: jest.fn(async () => null), put: jest.fn(async () => {}) },
+}));
+jest.mock('../../models/ReminderLifecycleEvent', () => ({
+  ReminderLifecycleEventModel: { record: jest.fn(async () => {}) },
 }));
 jest.mock('../../services/pushService');
 
 const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
-const mockResolve = resolvePlaceNameMulti as jest.MockedFunction<typeof resolvePlaceNameMulti>;
+const mockResolve = searchPlaceCandidates as jest.MockedFunction<typeof searchPlaceCandidates>;
 const mockSilentPush = sendSilentToUser as jest.MockedFunction<typeof sendSilentToUser>;
 
 const USER_ID = 'u-1';
@@ -227,7 +241,7 @@ describe('re-arming a place that lost its geofence', () => {
     const farBranch = { ...reapedPlace, lat: 21.55, lng: -158.05 };
     mockPlace.findByUserId.mockResolvedValue([farBranch]);
     mockGeo.findByPlaceId.mockResolvedValue([{ id: 'gf-existing' } as any]);
-    mockResolve.mockResolvedValue([]);
+    mockResolve.mockResolvedValue({ provider: null, anchor: null, candidates: [] });
 
     await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco'], { latitude: 21.3, longitude: -157.8 });
 
@@ -267,15 +281,19 @@ describe('re-arming a place that lost its geofence', () => {
 
   it('re-arms a place matched by proximity, not just by name', async () => {
     mockPlace.findByUserId.mockResolvedValue([]); // no name match
-    mockResolve.mockResolvedValue([{
-      rawName: 'costco',
-      normalizedName: 'Costco',
-      providerPlaceId: 'osm-1',
-      lat: 21.3,
-      lng: -157.8,
-      category: 'shop',
-      confidence: 0.8,
-    } as any]);
+    mockResolve.mockResolvedValue({
+      provider: 'osm',
+      anchor: null,
+      candidates: [{
+        name: 'Costco',
+        address: null,
+        lat: 21.3,
+        lng: -157.8,
+        providerPlaceId: 'osm:1',
+        category: 'shop',
+        relevance: 0.8,
+      }],
+    } as any);
     mockPlace.findNearby.mockResolvedValue([reapedPlace]);
     mockGeo.findByPlaceId.mockResolvedValue([]);
 

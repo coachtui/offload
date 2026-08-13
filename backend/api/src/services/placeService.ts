@@ -8,7 +8,16 @@
 import { PlaceModel } from '../models/Place';
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
-import { resolvePlaceNameMulti, haversineKm } from './placeResolutionService';
+import { PlaceLookupModel } from '../models/PlaceLookup';
+import { ReminderLifecycleEventModel } from '../models/ReminderLifecycleEvent';
+import {
+  searchPlaceCandidates,
+  candidateToResolvedPlace,
+  selectNearestResolved,
+  haversineKm,
+} from './placeResolutionService';
+import { resolveAnchors } from './placeAnchors';
+import { arbitrate } from './candidateArbitration';
 import { matchPlaceName } from './placeNameMatch';
 import { sendSilentToUser } from './pushService';
 import type { AtomicObject } from '@shared/types';
@@ -39,18 +48,30 @@ export type ReminderLifecycleEvent =
   | 'REMINDER_CANDIDATE_DETECTED'
   | 'PLACE_RESOLVED'
   | 'PLACE_DEDUPED'
-  | 'PLACE_UNRESOLVABLE'
+  | 'PLACE_UNRESOLVABLE' // historical rows only — superseded by PLACE_NEEDS_USER
+  | 'PLACE_PROVIDER_FALLBACK'
+  | 'PLACE_NEEDS_USER'
+  | 'PLACE_USER_RESOLVED'
+  | 'PLACE_LOOKUP_DISMISSED'
   | 'GEOFENCE_CREATED'
   | 'GEOFENCE_REARMED'
   | 'GEOFENCE_REAPED'
   | 'GEOFENCE_SKIPPED_LOW_CONFIDENCE'
   | 'GEOFENCE_LIMIT_REACHED';
 
-function logLifecycle(
+/**
+ * Console for Railway's live tail, plus a persisted row for
+ * GET /diagnostics/reminders — which had been reading an empty table since
+ * migration 010, because nothing ever wrote to it. Fire-and-forget: the
+ * model's record() never throws, and diagnostics must never break the
+ * pipeline they observe.
+ */
+export function logLifecycle(
   event: ReminderLifecycleEvent,
   details: Record<string, unknown>
 ): void {
   console.log(`[ReminderLifecycle] ${event}`, JSON.stringify(details));
+  void ReminderLifecycleEventModel.record(event, details);
 }
 
 // ─── Place resolution pipeline ───────────────────────────────────────────────
@@ -63,14 +84,15 @@ export async function resolveObjectPlaces(
   userId: string,
   objectId: string,
   placeNames: string[],
-  userLocation?: { latitude: number; longitude: number }
+  userLocation?: { latitude: number; longitude: number },
+  noteText?: string
 ): Promise<void> {
-  logLifecycle('REMINDER_CANDIDATE_DETECTED', { objectId, placeNames, hasUserLocation: !!userLocation });
+  logLifecycle('REMINDER_CANDIDATE_DETECTED', { userId, objectId, placeNames, hasUserLocation: !!userLocation });
   console.log(`[placeService] resolveObjectPlaces: ${placeNames.length} place(s) for object ${objectId}${userLocation ? ` (user at ${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})` : ' (no user location)'}`);
   let geofencesChanged = false;
   for (const rawName of placeNames) {
     try {
-      const changed = await resolveAndLinkPlace(userId, objectId, rawName, userLocation);
+      const changed = await resolveAndLinkPlace(userId, objectId, rawName, userLocation, noteText);
       geofencesChanged = geofencesChanged || changed;
     } catch (err) {
       console.warn(`[placeService] Failed to resolve place "${rawName}" for object ${objectId}:`, err);
@@ -94,7 +116,8 @@ async function resolveAndLinkPlace(
   userId: string,
   objectId: string,
   rawName: string,
-  userLocation?: { latitude: number; longitude: number }
+  userLocation?: { latitude: number; longitude: number },
+  noteText?: string
 ): Promise<boolean> {
   const normalizedQuery = rawName.trim();
   if (!normalizedQuery) return false;
@@ -117,7 +140,7 @@ async function resolveAndLinkPlace(
   if (geofenceMatch) {
     const geofence = geofenceMatch.candidate;
     console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
-    logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
+    logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
     return false; // labeled place is authoritative — do not geocode or create an inferred place
   }
@@ -143,7 +166,7 @@ async function resolveAndLinkPlace(
     for (const existing of matchedPlaces) {
       const match = matchPlaceName(normalizedQuery, [existing], x => x.normalizedName)!;
       console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${match.reason}`);
-      logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
+      logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
       await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
       geofencesChanged = (await rearmInferredGeofence(userId, existing)) || geofencesChanged;
     }
@@ -161,18 +184,88 @@ async function resolveAndLinkPlace(
     console.log(`[placeService] No matched "${normalizedQuery}" place within ${NEARBY_BRANCH_KM}km of user — geocoding for a local branch`);
   }
 
-  // ─── 2. Geocode via OSM Nominatim (up to 3 candidates) ───────────────────
+  // ─── 1c. The user's ignore list ────────────────────────────────────────────
+  // A word the user has answered "not a place" to must not re-queue on every
+  // future note that contains it.
+  if (await PlaceLookupModel.isQueryIgnored(userId, normalizedQuery)) {
+    console.log(`[placeService] "${normalizedQuery}" is on the user's ignore list — skipping`);
+    return geofencesChanged;
+  }
+
+  // ─── 2. Anchored provider chain + arbitration ──────────────────────────────
   const userLatLng = userLocation
     ? { lat: userLocation.latitude, lng: userLocation.longitude }
     : undefined;
 
-  const resolvedList = await resolvePlaceNameMulti(normalizedQuery, userLatLng);
+  const anchors = await resolveAnchors({
+    userId,
+    noteText: noteText ?? '',
+    placeName: normalizedQuery,
+    recorded: userLatLng,
+  });
+  const search = await searchPlaceCandidates(normalizedQuery, anchors);
 
-  if (resolvedList.length === 0) {
-    console.log(`[placeService] Could not resolve "${normalizedQuery}" — skipping`);
-    logLifecycle('PLACE_UNRESOLVABLE', { objectId, query: normalizedQuery, reason: 'nominatim_no_results' });
+  if (search.provider === 'google') {
+    logLifecycle('PLACE_PROVIDER_FALLBACK', {
+      userId,
+      objectId,
+      query: normalizedQuery,
+      anchorSource: search.anchor?.source ?? null,
+      candidateCount: search.candidates.length,
+    });
+  }
+
+  const { verdict, locations } = arbitrate(normalizedQuery, search.candidates);
+
+  // ─── 2b. Nothing found, or same name at two different destinations: ASK. ──
+  // The old pipeline logged PLACE_UNRESOLVABLE and dropped the name on the
+  // floor — invisible until the user drove somewhere and nothing fired. Now
+  // both outcomes become a pending lookup: a visible row in Places, a chip on
+  // the note, and a retry ledger for later backfills.
+  if (verdict === 'none' || verdict === 'ambiguous') {
+    // The confirm sheet needs addresses to distinguish two same-name rows, and
+    // the cheap-SKU search deliberately omits them. Re-fetch with addresses
+    // only here — exactly the "about to ask the user" case the field-mask
+    // discipline exists for. Best-effort: the bare candidates still ask a
+    // usable question if this second pass fails.
+    let pendingCandidates = locations;
+    if (verdict === 'ambiguous') {
+      const enriched = await searchPlaceCandidates(normalizedQuery, anchors, { withAddress: true });
+      const rearbitrated = arbitrate(normalizedQuery, enriched.candidates);
+      if (rearbitrated.locations.length > 0) pendingCandidates = rearbitrated.locations;
+    }
+
+    logLifecycle('PLACE_NEEDS_USER', {
+      userId,
+      objectId,
+      query: normalizedQuery,
+      verdict,
+      provider: search.provider,
+      candidateCount: pendingCandidates.length,
+    });
+    try {
+      await PlaceLookupModel.create({
+        userId,
+        objectId,
+        query: normalizedQuery,
+        candidates: pendingCandidates,
+        provider: verdict === 'none' ? null : search.provider,
+        recorded: userLatLng,
+      });
+    } catch (err) {
+      // The queue write is the fallback of the fallback — its failure must not
+      // abort the remaining place names on this note.
+      console.warn(`[placeService] Failed to queue pending lookup for "${normalizedQuery}":`, err);
+    }
     return geofencesChanged;
   }
+
+  // ─── 2c. single arms as-is; chain fans out to the nearest 3 ────────────────
+  const resolvedList = selectNearestResolved(
+    locations.map((c) => candidateToResolvedPlace(c, normalizedQuery, userLatLng)),
+    userLatLng
+  );
+  console.log(`[placeService] "${normalizedQuery}" → ${verdict} (${locations.length} location(s), arming ${resolvedList.length}) via ${search.provider}`);
 
   for (const resolved of resolvedList) {
     // ─── 3. Proximity de-dup (same place within 300m already exists?) ────────
@@ -184,7 +277,7 @@ async function resolveAndLinkPlace(
 
     if (sameNameNearby) {
       console.log(`[placeService] Deduped to nearby place: ${sameNameNearby.id} (${sameNameNearby.normalizedName})`);
-      logLifecycle('PLACE_DEDUPED', { objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
+      logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
       await PlaceModel.linkObject(sameNameNearby.id, objectId, 'mentioned_in_note');
       geofencesChanged = (await rearmInferredGeofence(userId, sameNameNearby)) || geofencesChanged;
       continue;
@@ -207,6 +300,7 @@ async function resolveAndLinkPlace(
     });
 
     logLifecycle('PLACE_RESOLVED', {
+      userId,
       objectId,
       placeId: place.id,
       name: place.normalizedName,
@@ -226,6 +320,7 @@ async function resolveAndLinkPlace(
       geofencesChanged = (await maybeCreateInferredGeofence(userId, place)) || geofencesChanged;
     } else {
       logLifecycle('GEOFENCE_SKIPPED_LOW_CONFIDENCE', {
+        userId,
         objectId,
         placeId: place.id,
         name: resolved.normalizedName,
@@ -272,7 +367,7 @@ async function rearmInferredGeofence(
       return false;
     }
 
-    logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName });
+    logLifecycle('GEOFENCE_REARMED', { userId, placeId: place.id, name: place.normalizedName });
     console.log(`[placeService] Re-arming geofence for existing place ${place.id} "${place.normalizedName}"`);
     return await maybeCreateInferredGeofence(userId, place);
   } catch (err) {
@@ -307,7 +402,7 @@ export async function rearmStrandedInferredGeofences(userId: string, reason: str
       if (place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD && !place.userConfirmed) continue;
       if (await maybeCreateInferredGeofence(userId, place)) {
         rearmed++;
-        logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName, reason });
+        logLifecycle('GEOFENCE_REARMED', { userId, placeId: place.id, name: place.normalizedName, reason });
       }
     }
     if (rearmed > 0) {
@@ -340,6 +435,7 @@ export async function reapEmptyInferredGeofences(userId: string, reason: string)
     if (reaped.length === 0) return 0;
 
     logLifecycle('GEOFENCE_REAPED', {
+      userId,
       reason,
       count: reaped.length,
       geofences: reaped.map(g => ({ id: g.id, name: g.name })),
@@ -382,6 +478,7 @@ async function maybeCreateInferredGeofence(
   const currentCount = await PlaceModel.countInferredGeofences(userId);
   if (currentCount >= MAX_INFERRED_GEOFENCES) {
     logLifecycle('GEOFENCE_LIMIT_REACHED', {
+      userId,
       placeId: place.id,
       name: place.normalizedName,
       currentCount,
@@ -408,6 +505,7 @@ async function maybeCreateInferredGeofence(
     });
 
     logLifecycle('GEOFENCE_CREATED', {
+      userId,
       geofenceId: geofence.id,
       placeId: place.id,
       name: place.normalizedName,

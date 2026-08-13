@@ -131,7 +131,9 @@ export async function processTranscript(params: {
         hasGeofenceCandidates = true;
         candidatePlaceNames.push(...places);
         console.log(`[Processing] fallback place trigger — places: ${places.join(', ')}`);
-        resolveObjectPlaces(userId, object.id, places, geoLocation).catch((err) =>
+        // The transcript rides along so a spoken region ("the Foodland in
+        // Hilo") can anchor the geocode search there.
+        resolveObjectPlaces(userId, object.id, places, geoLocation, transcript).catch((err) =>
           console.warn('[Processing] place resolution failed for', object.id, ':', err)
         );
       }
@@ -181,18 +183,19 @@ export async function processTranscript(params: {
         sequenceIndex: parsedObject.sequenceIndex,
       });
 
-      return { object, effectiveGeofenceCandidate, parsedPlaces };
+      return { object, effectiveGeofenceCandidate, parsedPlaces, textContent };
     }
   );
 
-  for (const { object, effectiveGeofenceCandidate, parsedPlaces } of written) {
+  for (const { object, effectiveGeofenceCandidate, parsedPlaces, textContent } of written) {
     objectIds.push(object.id);
 
-    // Fire-and-forget: geofence creation must not hold up completion.
+    // Fire-and-forget: geofence creation must not hold up completion. The
+    // object's own text rides along for named-region anchoring.
     if (effectiveGeofenceCandidate && parsedPlaces.length > 0) {
       hasGeofenceCandidates = true;
       candidatePlaceNames.push(...parsedPlaces);
-      resolveObjectPlaces(userId, object.id, parsedPlaces, geoLocation).catch((err) =>
+      resolveObjectPlaces(userId, object.id, parsedPlaces, geoLocation, textContent).catch((err) =>
         console.warn('[Processing] place resolution failed for', object.id, ':', err)
       );
     }

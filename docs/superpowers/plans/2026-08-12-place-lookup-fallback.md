@@ -143,7 +143,7 @@ The behavioural core. Everything else is plumbing around it.
 - [x] **Step 3: Model methods** — `create` (upsert on the conflict target, guarded `WHERE status='pending'` so re-processing a transcript can never resurrect a resolved/dismissed row), `findById`, `findPendingByUser`, `findByObject`, `markResolved`/`markDismissed` (both pending-only), `findRetryable`, `isQueryIgnored`.
 - [x] **Step 4: Provider cache** — `PlaceProviderCacheModel.get/put`, 30-day TTL enforced in the SQL, wired into `searchPlaceCandidates`. Contracts pinned by tests: a cached `[]` is an answer ("this provider has nothing here" — no re-fetch); the **raw** response is cached and the distance gate re-applies per read (the gate depends on the anchor set, which varies); `withAddress` bypasses in both directions (cheap-mask entries lack addresses; sheet-bound lookups must not poison the cache); unanchored searches bypass (no cell to key on); cache outage degrades to a live call.
 - [x] **Step 4b (carried over from Task 3): home-region cache live** — `computeHomeRegion` now reads `hub.users.home_*`, recomputes past 7 days, writes back. Null centroids are deliberately never cached, so a user's first manual geofence gives them a home region immediately rather than a week later.
-- [x] **Step 5: Verify** — `npx tsc --noEmit` clean; `npm test` 63 suites / 434 tests (was 61/414 — +9 model, +7 chain-cache, +4 home-cache).
+- [x] **Step 5: Verify** — `npx tsc --noEmit` clean; `npm test` 62 suites / 434 tests (was 61/414 — +9 model, +7 chain-cache, +4 home-cache).
 
 ---
 
@@ -153,11 +153,16 @@ The behavioural core. Everything else is plumbing around it.
 - Modify: `backend/api/src/services/placeService.ts`
 - Test: `backend/api/src/__tests__/services/placeResolutionOutcomes.test.ts`
 
-- [ ] **Step 1: Write the failing outcome tests** — for each arbitration verdict, assert exactly what gets written: `single` → place + geofence (subject to the 0.45 threshold); `chain` → nearest 3 as today; `ambiguous` → **no place, no geofence**, one pending row holding both candidates; `none` → one pending row, no candidates.
-- [ ] **Step 2: Branch `resolveAndLinkPlace` on the verdict.** Steps 1 and 1b (manual-geofence match, then existing-place match) are untouched and still run first — that path already works and is why a taught place needs no lookup at all.
-- [ ] **Step 3: Replace the `PLACE_UNRESOLVABLE` dead end** (`placeService.ts:171-175`) with a pending-row write.
-- [ ] **Step 4: Persist lifecycle events.** `logLifecycle` currently only `console.log`s, so `hub.reminder_lifecycle_events` has been empty since migration 010 while `GET /diagnostics/reminders` reads it. Make it write the row too, and add `PLACE_PROVIDER_FALLBACK`, `PLACE_NEEDS_USER`, `PLACE_USER_RESOLVED`, `PLACE_LOOKUP_DISMISSED`.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit`, `npm test`.
+- [x] **Step 1: Write the failing outcome tests** (`placeResolutionOutcomes.test.ts`, 11 tests) — for each arbitration verdict, exactly what gets written: `single` → place + geofence; `chain` → nearest 3 of 4 with the far branch excluded by id; `ambiguous` → **no place, no geofence**, one pending row with both candidates; `none` → one pending row, no candidates. `arbitrate` and the confidence scoring are deliberately REAL in these tests — only I/O is mocked.
+- [x] **Step 2: Branch `resolveAndLinkPlace` on the verdict.** Steps 1/1b untouched and pinned by a test (manual match short-circuits before any anchor or search work). Added step 1c: the ignore list — a dismissed word never reaches the geocoder again.
+- [x] **Step 3: Replace the `PLACE_UNRESOLVABLE` dead end** with a pending-row write. **Addition:** on `ambiguous`, a second `withAddress` search enriches the stored candidates — the sheet needs addresses to tell two same-name rows apart, and this is exactly the "about to ask the user" case the field-mask discipline was built for. Best-effort: bare candidates still queue if the second pass fails. A failed queue write is logged, never thrown — other names on the note still process.
+- [x] **Step 4: Persist lifecycle events.** New `ReminderLifecycleEventModel.record` (never throws); `logLifecycle` now console-logs AND persists, with `userId` added to every call site so the diagnostics endpoint's per-user filter actually matches. New events wired: `PLACE_PROVIDER_FALLBACK` (google answered), `PLACE_NEEDS_USER`; `PLACE_USER_RESOLVED`/`PLACE_LOOKUP_DISMISSED` reserved for Task 6. `PLACE_UNRESOLVABLE` kept in the type union for historical rows, no writer.
+- [x] **Step 5: Verify** — `npx tsc --noEmit` clean; `npm test` 63 suites / 445 tests (was 62/434 — the 11 outcome tests).
+
+**Deviations & notes:**
+- `resolvePlaceNameMulti` is gone (Task 3's compat wrapper included) — `placeMatching.test.ts` and `reapInferredGeofences.test.ts` were migrated to the `searchPlaceCandidates` seam with every behavioural assertion preserved; the reap test's arbitration + scoring now run REAL through the geocode path.
+- `resolveObjectPlaces` gained an optional `noteText` param, threaded from both transcriptProcessing call sites (transcript on the degraded path, the object's own text on the parsed path) — this is what feeds named-region anchoring ("the Foodland in Hilo").
+- Jest gotcha recorded for future editors: `clearAllMocks` keeps implementations, so per-test `mockResolvedValue` leaks into later describes — outcome tests re-pin defaults in the global `beforeEach`.
 
 ---
 

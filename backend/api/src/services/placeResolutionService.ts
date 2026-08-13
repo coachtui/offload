@@ -115,7 +115,7 @@ function computeConfidence(
   return Math.round(confidence * 100) / 100;
 }
 
-function toResolvedPlace(
+export function candidateToResolvedPlace(
   candidate: ProviderCandidate,
   rawName: string,
   userLocation?: { lat: number; lng: number }
@@ -220,31 +220,17 @@ export async function searchPlaceCandidates(
 }
 
 /**
- * Resolve a place name to up to 3 geographic candidates.
- * Used when creating multiple geofences for the same named place (e.g. chain stores).
- *
- * Compatibility wrapper: existing callers pass a bare user location, which
- * becomes a single current_location anchor — so they get the OSM→Google chain
- * without signature churn. Task 5 moves the pipeline onto resolveAnchors +
- * searchPlaceCandidates + arbitrate directly, at which point this thins out.
+ * For a chain name we create a geofence per branch, so pick the N NEAREST to
+ * the user (provider order is by prominence/distance-from-anchor, not
+ * distance-from-user — the anchor may be home while the user is away).
+ * Without a user location, keep the provider's own order.
  */
-export async function resolvePlaceNameMulti(
-  placeName: string,
-  userLocation?: { lat: number; lng: number }
-): Promise<ResolvedPlace[]> {
-  const anchors: Anchor[] = userLocation
-    ? [{ lat: userLocation.lat, lng: userLocation.lng, source: 'current_location' }]
-    : [];
-  const { candidates } = await searchPlaceCandidates(placeName, anchors);
-  if (candidates.length === 0) return [];
-
-  const resolved = candidates.map((c) => toResolvedPlace(c, placeName, userLocation));
-
-  // For a chain name we create a geofence per candidate, so return the 3
-  // NEAREST to the user (provider order is by prominence, not distance).
-  // Without a user location, fall back to the provider's own order.
-  const NEAREST_N = 3;
-  const selected = (userLocation
+export function selectNearestResolved(
+  resolved: ResolvedPlace[],
+  userLocation?: { lat: number; lng: number },
+  n = 3
+): ResolvedPlace[] {
+  const sorted = userLocation
     ? resolved
         .slice()
         .sort(
@@ -252,9 +238,6 @@ export async function resolvePlaceNameMulti(
             haversineKm(userLocation.lat, userLocation.lng, a.lat, a.lng) -
             haversineKm(userLocation.lat, userLocation.lng, b.lat, b.lng)
         )
-    : resolved
-  ).slice(0, NEAREST_N);
-
-  console.log(`[PlaceResolution] Resolved "${placeName}" → ${selected.length} of ${resolved.length} candidate(s) (nearest): ${selected.map(r => r.normalizedName).join(', ')}`);
-  return selected;
+    : resolved;
+  return sorted.slice(0, n);
 }
