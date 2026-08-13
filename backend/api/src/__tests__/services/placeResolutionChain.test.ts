@@ -10,9 +10,15 @@ jest.mock('../../services/placeProviders/osmProvider', () => ({
 jest.mock('../../services/placeProviders/googleProvider', () => ({
   googleProvider: { name: 'google', search: jest.fn() },
 }));
+jest.mock('../../models/PlaceLookup', () => ({
+  PlaceProviderCacheModel: { get: jest.fn(), put: jest.fn() },
+}));
+
+import { PlaceProviderCacheModel } from '../../models/PlaceLookup';
 
 const mockOsm = osmProvider as jest.Mocked<typeof osmProvider>;
 const mockGoogle = googleProvider as jest.Mocked<typeof googleProvider>;
+const mockCache = PlaceProviderCacheModel as jest.Mocked<typeof PlaceProviderCacheModel>;
 
 const HOME: Anchor = { lat: 21.33, lng: -157.92, source: 'home_region' };
 const CURRENT: Anchor = { lat: 36.17, lng: -115.14, source: 'current_location' };
@@ -25,6 +31,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockOsm.search.mockResolvedValue([]);
   mockGoogle.search.mockResolvedValue([]);
+  mockCache.get.mockResolvedValue(null);
+  mockCache.put.mockResolvedValue(undefined);
 });
 
 describe('searchPlaceCandidates', () => {
@@ -126,5 +134,84 @@ describe('searchPlaceCandidates', () => {
       { lat: HOME.lat, lng: HOME.lng },
       { withAddress: true }
     );
+  });
+});
+
+describe('searchPlaceCandidates — provider cache', () => {
+  it('a cache hit answers without any provider call — repeat lookups cost zero', async () => {
+    const cached = [candidateAt(21.3366, -157.915)];
+    mockCache.get.mockImplementation(async (_q, _lat, _lng, provider) =>
+      provider === 'osm' ? cached : null
+    );
+
+    const result = await searchPlaceCandidates('Melaleuca', [HOME]);
+
+    expect(result.provider).toBe('osm');
+    expect(result.candidates).toEqual(cached);
+    expect(mockOsm.search).not.toHaveBeenCalled();
+    expect(mockGoogle.search).not.toHaveBeenCalled();
+  });
+
+  it('a cached EMPTY result counts as that provider answering "nothing" — no re-fetch', async () => {
+    const melaleuca = [candidateAt(21.3366, -157.915)];
+    mockCache.get.mockImplementation(async (_q, _lat, _lng, provider) =>
+      provider === 'osm' ? [] : melaleuca
+    );
+
+    const result = await searchPlaceCandidates('Melaleuca', [HOME]);
+
+    expect(result.provider).toBe('google');
+    expect(mockOsm.search).not.toHaveBeenCalled();
+    expect(mockGoogle.search).not.toHaveBeenCalled();
+  });
+
+  it('a miss calls the provider and writes what came back — empties included', async () => {
+    const found = [candidateAt(21.3366, -157.915)];
+    mockGoogle.search.mockResolvedValue(found);
+
+    await searchPlaceCandidates('Melaleuca', [HOME]);
+
+    expect(mockCache.put).toHaveBeenCalledWith('Melaleuca', HOME.lat, HOME.lng, 'osm', []);
+    expect(mockCache.put).toHaveBeenCalledWith('Melaleuca', HOME.lat, HOME.lng, 'google', found);
+  });
+
+  it('caches the RAW response — the distance gate re-applies on every read', async () => {
+    const near = candidateAt(21.34, -157.90);
+    const spain = candidateAt(40.42, -3.70);
+    mockOsm.search.mockResolvedValue([near, spain]);
+
+    const result = await searchPlaceCandidates('Melaleuca', [HOME]);
+
+    expect(mockCache.put).toHaveBeenCalledWith('Melaleuca', HOME.lat, HOME.lng, 'osm', [near, spain]);
+    expect(result.candidates).toEqual([near]);
+  });
+
+  it('withAddress bypasses the cache in both directions — cheap-mask entries lack addresses', async () => {
+    mockGoogle.search.mockResolvedValue([candidateAt(21.3366, -157.915)]);
+
+    await searchPlaceCandidates('Melaleuca', [HOME], { withAddress: true });
+
+    expect(mockCache.get).not.toHaveBeenCalled();
+    expect(mockCache.put).not.toHaveBeenCalled();
+  });
+
+  it('an unanchored search bypasses the cache — there is no cell to key on', async () => {
+    mockOsm.search.mockResolvedValue([candidateAt(21.34, -157.90)]);
+
+    await searchPlaceCandidates('Melaleuca', []);
+
+    expect(mockCache.get).not.toHaveBeenCalled();
+    expect(mockCache.put).not.toHaveBeenCalled();
+  });
+
+  it('a cache outage degrades to the provider call, never a failed resolution', async () => {
+    mockCache.get.mockRejectedValue(new Error('db down'));
+    mockCache.put.mockRejectedValue(new Error('db down'));
+    const found = [candidateAt(21.3366, -157.915)];
+    mockOsm.search.mockResolvedValue(found);
+
+    const result = await searchPlaceCandidates('Melaleuca', [HOME]);
+
+    expect(result.candidates).toEqual(found);
   });
 });

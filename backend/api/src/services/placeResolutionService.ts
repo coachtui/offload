@@ -12,7 +12,8 @@
 
 import { osmProvider } from './placeProviders/osmProvider';
 import { googleProvider } from './placeProviders/googleProvider';
-import type { PlaceProviderSearchOptions, ProviderCandidate } from './placeProviders/types';
+import { PlaceProviderCacheModel } from '../models/PlaceLookup';
+import type { PlaceProvider, PlaceProviderSearchOptions, ProviderCandidate } from './placeProviders/types';
 // Type-only: placeAnchors imports haversineKm from this module at runtime, so a
 // value import here would be a cycle. Types are erased at compile time.
 import type { Anchor } from './placeAnchors';
@@ -173,12 +174,41 @@ export async function searchPlaceCandidates(
   // downstream.
   const anchorPasses: Array<Anchor | null> = anchors.length > 0 ? anchors : [null];
 
+  // The cache is keyed on the anchor's ~11 km cell, so it only participates
+  // when there IS an anchor. withAddress bypasses it in both directions:
+  // entries are written from the cheap field mask and lack addresses, and a
+  // sheet-bound lookup must not poison the cache with costlier-SKU data
+  // either. Cache failures degrade to a live call — never a failed resolution.
+  const cacheable = !opts?.withAddress;
+
+  const fetchThroughCache = async (
+    provider: PlaceProvider,
+    near: { lat: number; lng: number } | undefined
+  ): Promise<ProviderCandidate[]> => {
+    if (!near || !cacheable) {
+      return opts ? provider.search(query, near, opts) : provider.search(query, near);
+    }
+    try {
+      const cached = await PlaceProviderCacheModel.get(query, near.lat, near.lng, provider.name);
+      if (cached !== null) return cached; // [] is an answer: "this provider has nothing here"
+    } catch (error) {
+      console.warn(`[PlaceResolution] Cache read failed for "${query}":`, error);
+    }
+    const found = await provider.search(query, near);
+    try {
+      // Raw response, pre-gate: the gate depends on the anchor set, which
+      // varies call to call — it re-applies on every read.
+      await PlaceProviderCacheModel.put(query, near.lat, near.lng, provider.name, found);
+    } catch (error) {
+      console.warn(`[PlaceResolution] Cache write failed for "${query}":`, error);
+    }
+    return found;
+  };
+
   for (const anchor of anchorPasses) {
     const near = anchor ? { lat: anchor.lat, lng: anchor.lng } : undefined;
     for (const provider of [osmProvider, googleProvider]) {
-      const found = opts
-        ? await provider.search(query, near, opts)
-        : await provider.search(query, near);
+      const found = await fetchThroughCache(provider, near);
       const gated = found.filter(withinGate);
       if (gated.length > 0) {
         return { provider: provider.name, anchor, candidates: gated };

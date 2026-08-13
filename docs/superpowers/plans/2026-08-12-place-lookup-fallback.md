@@ -138,11 +138,12 @@ The behavioural core. Everything else is plumbing around it.
 - Create: `backend/api/src/models/PlaceLookup.ts`
 - Test: `backend/api/src/__tests__/models/placeLookup.test.ts`
 
-- [ ] **Step 1: Write the migration** — `hub.place_lookups` and `hub.place_provider_cache` per the spec, plus `home_lat`/`home_lng`/`home_computed_at` on `hub.users`. Idempotent throughout (`IF NOT EXISTS`); `UNIQUE(object_id, lower(query))`; partial index on `(user_id, created_at DESC) WHERE status = 'pending'`.
-- [ ] **Step 2: Confirm it self-applies** — `src/db/migrate.ts` picks up new files with no registration step. Verify locally by booting the API and checking the migrations table, not by running psql by hand.
-- [ ] **Step 3: Model methods** — `create`, `findPendingByUser`, `findByObject`, `markResolved(placeId)`, `markDismissed`, and `findRetryable(sinceProvider)` for the backfill in Task 9.
-- [ ] **Step 4: Provider cache** — `get(query, lat, lng, provider)` / `put(...)`, keyed on `(lower(query), round(lat,1), round(lng,1), provider)` with a 30-day TTL. Wire it into Tasks 1–2 so a repeat lookup makes zero provider calls.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit`, `npm test`.
+- [x] **Step 1: Write the migration** — `hub.place_lookups` and `hub.place_provider_cache` per the spec, plus `home_lat`/`home_lng`/`home_computed_at` on `hub.users`. Idempotent throughout; unique **expression index** on `(object_id, lower(query))` (a table `UNIQUE` constraint cannot hold an expression); pending partial index. **Deviation: no separate ignore table** — `status='dismissed'` rows ARE the ignore list, served by their own partial index on `(user_id, lower(query))`; one less table to drift out of sync.
+- [x] **Step 2: Confirm it self-applies** — `migrate.test.ts` reads the real migrations directory, so 018 is inside its order/skip/failure assertions as of this commit; the boot-time runner applies it on deploy (failure = failed deploy, previous deployment keeps serving, by the runner's design). No psql by hand.
+- [x] **Step 3: Model methods** — `create` (upsert on the conflict target, guarded `WHERE status='pending'` so re-processing a transcript can never resurrect a resolved/dismissed row), `findById`, `findPendingByUser`, `findByObject`, `markResolved`/`markDismissed` (both pending-only), `findRetryable`, `isQueryIgnored`.
+- [x] **Step 4: Provider cache** — `PlaceProviderCacheModel.get/put`, 30-day TTL enforced in the SQL, wired into `searchPlaceCandidates`. Contracts pinned by tests: a cached `[]` is an answer ("this provider has nothing here" — no re-fetch); the **raw** response is cached and the distance gate re-applies per read (the gate depends on the anchor set, which varies); `withAddress` bypasses in both directions (cheap-mask entries lack addresses; sheet-bound lookups must not poison the cache); unanchored searches bypass (no cell to key on); cache outage degrades to a live call.
+- [x] **Step 4b (carried over from Task 3): home-region cache live** — `computeHomeRegion` now reads `hub.users.home_*`, recomputes past 7 days, writes back. Null centroids are deliberately never cached, so a user's first manual geofence gives them a home region immediately rather than a week later.
+- [x] **Step 5: Verify** — `npx tsc --noEmit` clean; `npm test` 63 suites / 434 tests (was 61/414 — +9 model, +7 chain-cache, +4 home-cache).
 
 ---
 

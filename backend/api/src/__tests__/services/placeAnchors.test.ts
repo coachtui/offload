@@ -16,11 +16,15 @@ jest.mock('../../models/Session', () => ({
 jest.mock('../../services/placeProviders/osmProvider', () => ({
   osmProvider: { name: 'osm', search: jest.fn() },
 }));
+jest.mock('../../db/queries');
+
+import * as queries from '../../db/queries';
 
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
 const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 const mockSession = Session as jest.Mocked<typeof Session>;
 const mockOsm = osmProvider as jest.Mocked<typeof osmProvider>;
+const mockQ = queries as jest.Mocked<typeof queries>;
 
 const HONOLULU = { lat: 21.33, lng: -157.92 };
 const VEGAS = { lat: 36.17, lng: -115.14 };
@@ -44,6 +48,9 @@ beforeEach(() => {
   mockPlace.findByUserId.mockResolvedValue([]);
   mockSession.findByUserId.mockResolvedValue({ sessions: [], total: 0 });
   mockOsm.search.mockResolvedValue([]);
+  // Default: no cached home centroid, cache writes succeed silently.
+  mockQ.queryOne.mockResolvedValue(null);
+  mockQ.query.mockResolvedValue({ rows: [] } as any);
 });
 
 describe('extractNamedRegion', () => {
@@ -180,5 +187,76 @@ describe('resolveAnchors', () => {
     });
 
     expect(anchors).toEqual([]);
+  });
+});
+
+describe('resolveAnchors — home-region cache (hub.users)', () => {
+  it('a fresh cached centroid short-circuits the geofence/place/session scans', async () => {
+    mockQ.queryOne.mockResolvedValue({
+      home_lat: '21.33600000',
+      home_lng: '-157.91500000',
+      home_computed_at: new Date(), // fresh
+    } as any);
+
+    const anchors = await resolveAnchors({
+      userId: 'u1',
+      noteText: 'grab poke at Foodland',
+      placeName: 'Foodland',
+      recorded: VEGAS,
+    });
+
+    expect(anchors[0]).toEqual({ lat: 21.336, lng: -157.915, source: 'home_region' });
+    expect(mockGeo.findByUserId).not.toHaveBeenCalled();
+    expect(mockPlace.findByUserId).not.toHaveBeenCalled();
+    expect(mockSession.findByUserId).not.toHaveBeenCalled();
+  });
+
+  it('a stale cache recomputes and writes the new centroid back', async () => {
+    mockQ.queryOne.mockResolvedValue({
+      home_lat: '99.00000000',
+      home_lng: '99.00000000',
+      home_computed_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000), // 8 days old
+    } as any);
+    mockGeo.findByUserId.mockResolvedValue([geofenceAt(21.336, -157.915)]);
+
+    const anchors = await resolveAnchors({
+      userId: 'u1',
+      noteText: 'grab poke at Foodland',
+      placeName: 'Foodland',
+      recorded: VEGAS,
+    });
+
+    expect(anchors[0].lat).toBeCloseTo(21.336, 3);
+    const updateCall = mockQ.query.mock.calls.find(([sql]) => /UPDATE hub\.users/.test(sql as string));
+    expect(updateCall).toBeDefined();
+    expect(updateCall![1]).toEqual(['u1', 21.336, -157.915]);
+  });
+
+  it('a null centroid is never cached — the first geofence must take effect immediately', async () => {
+    const anchors = await resolveAnchors({
+      userId: 'u1',
+      noteText: 'grab poke at Foodland',
+      placeName: 'Foodland',
+      recorded: VEGAS,
+    });
+
+    expect(anchors.every((a) => a.source !== 'home_region')).toBe(true);
+    const updateCall = mockQ.query.mock.calls.find(([sql]) => /UPDATE hub\.users/.test(sql as string));
+    expect(updateCall).toBeUndefined();
+  });
+
+  it('a cache read failure degrades to computing fresh', async () => {
+    mockQ.queryOne.mockRejectedValue(new Error('db down'));
+    mockGeo.findByUserId.mockResolvedValue([geofenceAt(21.336, -157.915)]);
+
+    const anchors = await resolveAnchors({
+      userId: 'u1',
+      noteText: 'grab poke at Foodland',
+      placeName: 'Foodland',
+      recorded: VEGAS,
+    });
+
+    expect(anchors[0].source).toBe('home_region');
+    expect(anchors[0].lat).toBeCloseTo(21.336, 3);
   });
 });

@@ -27,6 +27,7 @@
 import { GeofenceModel } from '../models/Geofence';
 import { PlaceModel } from '../models/Place';
 import { Session } from '../models/Session';
+import { query, queryOne } from '../db/queries';
 import { osmProvider } from './placeProviders/osmProvider';
 import { haversineKm } from './placeResolutionService';
 
@@ -79,12 +80,57 @@ async function geocodeRegion(regionName: string): Promise<Anchor | null> {
   return { lat: region.lat, lng: region.lng, source: 'named_region' };
 }
 
+/** Cached centroid staleness bound — home drifts slowly; a week is plenty. */
+const HOME_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Centroid of the user's saved geography, or null when there is none.
+ *
+ * Cached on hub.users (migration 018) and recomputed when older than 7 days —
+ * resolution runs on every place-bearing note, and three table scans per note
+ * for a value that moves house-moving slowly is waste. A cache read/write
+ * failure degrades to computing fresh, and null centroids are deliberately
+ * NOT cached: the first manual geofence should give the user a home region
+ * immediately, not a week from now.
+ *
  * Never throws — anchor computation is advisory, and a DB hiccup here must
  * degrade to fewer anchors, not fail the resolution that asked.
  */
 async function computeHomeRegion(userId: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const cached = await queryOne<{ home_lat: string | null; home_lng: string | null; home_computed_at: Date | null }>(
+      'SELECT home_lat, home_lng, home_computed_at FROM hub.users WHERE id = $1',
+      [userId]
+    );
+    if (
+      cached?.home_lat != null &&
+      cached.home_lng != null &&
+      cached.home_computed_at != null &&
+      Date.now() - new Date(cached.home_computed_at).getTime() < HOME_CACHE_MAX_AGE_MS
+    ) {
+      return { lat: parseFloat(cached.home_lat.toString()), lng: parseFloat(cached.home_lng.toString()) };
+    }
+  } catch (error) {
+    console.warn(`[placeAnchors] Home cache read failed for ${userId}:`, error);
+  }
+
+  const home = await computeHomeRegionFresh(userId);
+
+  if (home) {
+    try {
+      await query(
+        'UPDATE hub.users SET home_lat = $2, home_lng = $3, home_computed_at = NOW() WHERE id = $1',
+        [userId, home.lat, home.lng]
+      );
+    } catch (error) {
+      console.warn(`[placeAnchors] Home cache write failed for ${userId}:`, error);
+    }
+  }
+
+  return home;
+}
+
+async function computeHomeRegionFresh(userId: string): Promise<{ lat: number; lng: number } | null> {
   try {
     const [geofences, places] = await Promise.all([
       GeofenceModel.findByUserId(userId),
