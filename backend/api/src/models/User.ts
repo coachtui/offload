@@ -11,6 +11,7 @@ export interface UserRow {
   password_hash: string;
   name: string | null;
   terms_accepted_at: Date | null;
+  last_seen_timezone: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -28,6 +29,7 @@ export class User {
   passwordHash: string;
   name: string | null;
   termsAcceptedAt: Date | null;
+  lastSeenTimezone: string | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -37,8 +39,25 @@ export class User {
     this.passwordHash = row.password_hash;
     this.name = row.name ?? null;
     this.termsAcceptedAt = row.terms_accepted_at ?? null;
+    this.lastSeenTimezone = row.last_seen_timezone ?? null;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
+  }
+
+  /**
+   * Record the device's IANA timezone from a recording's session metadata.
+   * Best-effort by design: callers fire-and-forget, and garbage input is
+   * dropped here rather than validated upstream (the value is client-
+   * controlled). Zone validity is checked by consumers at read time.
+   */
+  static async touchTimezone(userId: string, timezone: unknown): Promise<void> {
+    if (typeof timezone !== 'string') return;
+    const tz = timezone.trim();
+    if (tz.length === 0 || tz.length > 64) return;
+    await query(
+      'UPDATE hub.users SET last_seen_timezone = $2, updated_at = now() WHERE id = $1',
+      [userId, tz]
+    );
   }
 
   /**

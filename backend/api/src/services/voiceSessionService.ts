@@ -3,6 +3,7 @@
  */
 
 import { Session, SessionCreateInput } from '../models/Session';
+import { User } from '../models/User';
 import { createObject } from './objectService';
 import { uploadAudioChunk, mergeAudioChunks, getAudioUrl } from './storageService';
 import { StreamingTranscriber, TranscriptionResult } from './transcriptionService';
@@ -46,6 +47,12 @@ export async function startSession(
   };
 
   const session = await Session.create(sessionInput);
+
+  // Remember the device's zone for local-time scheduling (weekly digest).
+  // Fire-and-forget: a timezone bookkeeping failure must never fail a session.
+  void User.touchTimezone(userId, options.metadata?.timezone).catch((err) =>
+    console.warn('[voiceSessionService] touchTimezone failed (non-fatal):', err)
+  );
 
   // Create streaming transcriber
   const transcriber = new StreamingTranscriber({
