@@ -2,6 +2,10 @@ import { getPlacesOverview } from '../../services/geofenceService';
 import * as queries from '../../db/queries';
 
 jest.mock('../../db/queries');
+jest.mock('../../models/PlaceLookup', () => ({
+  PlaceLookupModel: { findPendingByUser: jest.fn(async () => []) },
+  PlaceProviderCacheModel: { get: jest.fn(async () => null), put: jest.fn(async () => {}) },
+}));
 const mockQueries = queries as jest.Mocked<typeof queries>;
 
 describe('getPlacesOverview — enabled flag', () => {

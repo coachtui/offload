@@ -7,6 +7,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { apiService, PlaceOverviewItem } from '../services/api';
 import { Spacing, Radius, AppPressable, SkeletonCard, useToast } from '../components/ui';
+import { SetPlaceLocationSheet, PendingLookupForSheet } from '../components/SetPlaceLocationSheet';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Places'>;
@@ -17,6 +18,7 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   const toast = useToast();
   const [items, setItems] = useState<PlaceOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeLookup, setActiveLookup] = useState<PendingLookupForSheet | null>(null);
   const inFlight = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
@@ -34,9 +36,19 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const sections = [
-    { title: 'Your places', data: items.filter((i) => i.labeled) },
-    { title: 'Detected places', data: items.filter((i) => !i.labeled) },
+    // A question the user can answer in one tap outranks rows that already work.
+    { title: 'Needs a location', data: items.filter((i) => i.kind === 'pending') },
+    { title: 'Your places', data: items.filter((i) => i.kind !== 'pending' && i.labeled) },
+    { title: 'Detected places', data: items.filter((i) => i.kind !== 'pending' && !i.labeled) },
   ].filter((s) => s.data.length > 0);
+
+  const openPendingSheet = (item: PlaceOverviewItem) => {
+    setActiveLookup({
+      id: item.id,
+      query: item.query ?? item.name,
+      candidates: item.candidates ?? [],
+    });
+  };
 
   const toggleBell = async (item: PlaceOverviewItem) => {
     const key = `${item.kind}:${item.id}`;
@@ -73,6 +85,10 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
   // page, filterable by that place. PlaceSummary (the notes-waiting view) is
   // reserved for the arrival flow: notification taps and the proximity banner.
   const openPlace = async (item: PlaceOverviewItem) => {
+    if (item.kind === 'pending') {
+      openPendingSheet(item);
+      return;
+    }
     if (item.kind === 'geofence') {
       try {
         const { geofences } = await apiService.getGeofences();
@@ -139,6 +155,30 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
           <Text style={styles.sectionHeader}>{section.title}</Text>
         )}
         renderItem={({ item }) => {
+          if (item.kind === 'pending') {
+            const count = item.candidates?.length ?? 0;
+            return (
+              <AppPressable
+                style={[styles.card, styles.pendingCard]}
+                onPress={() => openPendingSheet(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set location for ${item.name}`}
+              >
+                <View style={[styles.iconChip, styles.pendingIconChip]}>
+                  <Ionicons name="help" size={20} color={colors.warning ?? colors.accent} />
+                </View>
+                <View style={styles.cardBody}>
+                  <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.subline} numberOfLines={1}>
+                    {count > 0
+                      ? `${count} possible location${count === 1 ? '' : 's'} — tap to choose`
+                      : 'Tap to set where this is'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </AppPressable>
+            );
+          }
           const bellOn = item.kind === 'geofence' && item.enabled;
           return (
             <AppPressable
@@ -189,6 +229,18 @@ export default function PlacesScreen({ navigation }: { navigation: Nav }) {
           </AppPressable>
         }
         contentContainerStyle={styles.listContent}
+      />
+      <SetPlaceLocationSheet
+        visible={activeLookup !== null}
+        lookup={activeLookup}
+        onClose={() => setActiveLookup(null)}
+        onDone={load}
+        onPickOnMap={(lookup) =>
+          navigation.navigate('CreateGeofence', {
+            prefillName: lookup.query,
+            pendingLookupId: lookup.id,
+          })
+        }
       />
     </SafeAreaView>
   );
@@ -252,6 +304,8 @@ const createStyles = (c: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
+    pendingCard: { borderColor: c.accentBorder, borderWidth: 1 },
+    pendingIconChip: { backgroundColor: c.bgMuted },
     bellButtonOn: { backgroundColor: c.accentLight },
     bellButtonOff: { backgroundColor: c.bgMuted },
     addCard: {

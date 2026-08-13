@@ -35,8 +35,19 @@ const WRITE_CONCURRENCY = 5;
 
 export interface ProcessResult {
   objectIds: string[];
+  /**
+   * Legacy alias kept for installed clients: true iff arrivalArmed is
+   * non-empty. It used to mean "we found place names and will TRY to resolve
+   * them" — which had the client showing the Always-permission sheet for
+   * reminders that never came to exist.
+   */
   hasGeofenceCandidates: boolean;
+  /** Every place name the note mentioned (labels for prompts, not promises). */
   placeNames: string[];
+  /** Names an arrival reminder is actually armed for. */
+  arrivalArmed: string[];
+  /** Names waiting on the user to set a location (pending lookups). */
+  needsLocation: string[];
   /** True when the parse was skipped or failed and the note was stored whole. */
   degraded: boolean;
 }
@@ -78,7 +89,8 @@ export async function processTranscript(params: {
 
   const objectIds: string[] = [];
   const candidatePlaceNames: string[] = [];
-  let hasGeofenceCandidates = false;
+  const arrivalArmed: string[] = [];
+  const needsLocation: string[] = [];
 
   const source = {
     type: 'voice' as const,
@@ -128,16 +140,29 @@ export async function processTranscript(params: {
     if (textHasArrivalTrigger(transcript)) {
       const places = extractPlacesFromText(transcript);
       if (places.length > 0) {
-        hasGeofenceCandidates = true;
         candidatePlaceNames.push(...places);
         console.log(`[Processing] fallback place trigger — places: ${places.join(', ')}`);
-        resolveObjectPlaces(userId, object.id, places, geoLocation).catch((err) =>
-          console.warn('[Processing] place resolution failed for', object.id, ':', err)
-        );
+        // Awaited (no longer fire-and-forget): the completion push reports
+        // what happened, and honesty requires knowing. The transcript rides
+        // along so a spoken region ("the Foodland in Hilo") can anchor there.
+        const summary = await resolveObjectPlaces(userId, object.id, places, geoLocation, transcript)
+          .catch((err) => {
+            console.warn('[Processing] place resolution failed for', object.id, ':', err);
+            return undefined;
+          });
+        arrivalArmed.push(...(summary?.armed ?? []));
+        needsLocation.push(...(summary?.needsLocation ?? []));
       }
     }
 
-    return { objectIds, hasGeofenceCandidates, placeNames: [...new Set(candidatePlaceNames)], degraded: true };
+    return {
+      objectIds,
+      hasGeofenceCandidates: arrivalArmed.length > 0,
+      placeNames: [...new Set(candidatePlaceNames)],
+      arrivalArmed,
+      needsLocation,
+      degraded: true,
+    };
   }
 
   // Written concurrently, but results land back in parse order so objectIds
@@ -181,27 +206,37 @@ export async function processTranscript(params: {
         sequenceIndex: parsedObject.sequenceIndex,
       });
 
-      return { object, effectiveGeofenceCandidate, parsedPlaces };
+      return { object, effectiveGeofenceCandidate, parsedPlaces, textContent };
     }
   );
 
-  for (const { object, effectiveGeofenceCandidate, parsedPlaces } of written) {
+  for (const { object, effectiveGeofenceCandidate, parsedPlaces, textContent } of written) {
     objectIds.push(object.id);
 
-    // Fire-and-forget: geofence creation must not hold up completion.
+    // Awaited, no longer fire-and-forget: the completion push now reports what
+    // actually happened ("reminder armed" vs "needs a location"), which is
+    // unknowable before resolution finishes. The seconds this adds are spent
+    // off the request path — the 202 went out at save time — and only on notes
+    // that name places. The object's own text rides along for named-region
+    // anchoring.
     if (effectiveGeofenceCandidate && parsedPlaces.length > 0) {
-      hasGeofenceCandidates = true;
       candidatePlaceNames.push(...parsedPlaces);
-      resolveObjectPlaces(userId, object.id, parsedPlaces, geoLocation).catch((err) =>
-        console.warn('[Processing] place resolution failed for', object.id, ':', err)
-      );
+      const summary = await resolveObjectPlaces(userId, object.id, parsedPlaces, geoLocation, textContent)
+        .catch((err) => {
+          console.warn('[Processing] place resolution failed for', object.id, ':', err);
+          return undefined;
+        });
+      arrivalArmed.push(...(summary?.armed ?? []));
+      needsLocation.push(...(summary?.needsLocation ?? []));
     }
   }
 
   return {
     objectIds,
-    hasGeofenceCandidates,
+    hasGeofenceCandidates: arrivalArmed.length > 0,
     placeNames: [...new Set(candidatePlaceNames)],
+    arrivalArmed,
+    needsLocation,
     degraded: false,
   };
 }
@@ -229,6 +264,14 @@ export function completionTarget(
 
 /** Wording for the completion push. Kept apart so it is trivially testable. */
 export function completionMessage(result: ProcessResult): { title: string; body: string } {
+  // A place that needs the user outranks everything else in the wording: it is
+  // the one outcome where silence means a reminder that never fires.
+  if (result.needsLocation.length > 0) {
+    return {
+      title: '✅ Note saved',
+      body: `Tap to set where ${result.needsLocation[0]} is — the reminder needs a location.`,
+    };
+  }
   if (result.degraded) {
     return {
       title: '✅ Note saved',
@@ -286,6 +329,8 @@ export async function processSessionInBackground(session: Session): Promise<void
         objectIds: result.objectIds,
         hasGeofenceCandidates: result.hasGeofenceCandidates,
         placeNames: result.placeNames,
+        arrivalArmed: result.arrivalArmed,
+        needsLocation: result.needsLocation,
       },
     });
   } catch (error) {

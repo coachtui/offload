@@ -24,11 +24,68 @@ import {
   snoozePlaceObject,
   unlinkPlaceObject,
   promotePlaceToGeofence,
+  getPendingPlaceLookups,
+  resolvePendingLookup,
+  dismissPendingLookup,
 } from '../services/placeService';
 import { getPlacesOverview } from '../services/geofenceService';
 
 const router = Router();
 router.use(authenticate);
+
+// ─── Pending lookups — place names that need the user's help ───────────────
+// Declared before the /:id param routes so "pending" is never read as an id.
+
+router.get('/pending', async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const pending = await getPendingPlaceLookups(userId);
+    res.json({ pending });
+  } catch (error: any) {
+    console.error('[places] GET /pending error:', error);
+    res.status(error.status ?? 500).json({ error: error.message || 'Failed to load pending lookups' });
+  }
+});
+
+const resolvePendingSchema = z.union([
+  z.object({ candidateIndex: z.number().int().min(0) }),
+  z.object({ lat: z.number(), lng: z.number(), radius: z.number().positive().optional() }),
+  z.object({ geofenceId: z.string().min(1) }),
+]);
+
+router.post('/pending/:id/resolve', async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const parsed = resolvePendingSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
+  }
+
+  try {
+    // The union is validated above; this zod version's union inference widens
+    // members to optionals, so re-narrow to the service's type.
+    const choice = parsed.data as import('../services/placeService').PendingResolveChoice;
+    const geofence = await resolvePendingLookup(userId, req.params.id, choice);
+    res.json({ geofence });
+  } catch (error: any) {
+    console.error('[places] POST /pending/:id/resolve error:', error);
+    res.status(error.status ?? 500).json({ error: error.message || 'Failed to resolve lookup' });
+  }
+});
+
+router.post('/pending/:id/dismiss', async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    await dismissPendingLookup(userId, req.params.id);
+    res.json({ ok: true });
+  } catch (error: any) {
+    console.error('[places] POST /pending/:id/dismiss error:', error);
+    res.status(error.status ?? 500).json({ error: error.message || 'Failed to dismiss lookup' });
+  }
+});
 
 // ─── GET /api/v1/places ────────────────────────────────────────────────────
 

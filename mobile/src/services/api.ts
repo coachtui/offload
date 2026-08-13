@@ -169,13 +169,43 @@ export interface ContradictionResult {
 }
 
 export interface PlaceOverviewItem {
-  kind: 'geofence' | 'place';
+  kind: 'geofence' | 'place' | 'pending';
   id: string;
   name: string;
   openCount: number;
   labeled: boolean;
   enabled: boolean;
+  /** kind 'pending' only: the spoken name that could not be silently resolved. */
+  query?: string;
+  /** kind 'pending' only: candidate locations for the confirm sheet. */
+  candidates?: PendingPlaceCandidate[];
 }
+
+export interface PendingPlaceCandidate {
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  category: string | null;
+  /** Distance from where the note was recorded, when known. */
+  distanceKm?: number | null;
+}
+
+/** A place name waiting on the user to say where it is. */
+export interface PendingPlaceLookup {
+  id: string;
+  query: string;
+  objectId: string;
+  notePreview: string | null;
+  provider: string | null;
+  createdAt: string;
+  candidates: PendingPlaceCandidate[];
+}
+
+export type PendingResolveChoice =
+  | { candidateIndex: number }
+  | { lat: number; lng: number; radius?: number }
+  | { geofenceId: string };
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -789,6 +819,33 @@ class ApiService {
 
   async getPlacesOverview(): Promise<{ places: PlaceOverviewItem[] }> {
     return this.request<{ places: PlaceOverviewItem[] }>('/api/v1/places/overview');
+  }
+
+  // ─── Pending place lookups — names waiting on the user ────────────────────
+
+  async getPendingPlaces(): Promise<{ pending: PendingPlaceLookup[] }> {
+    return this.request('/api/v1/places/pending');
+  }
+
+  /**
+   * Answer a pending lookup. All three shapes land on a manual geofence
+   * server-side, so this word is taught once and never asked about again.
+   */
+  async resolvePendingPlace(
+    lookupId: string,
+    choice: PendingResolveChoice
+  ): Promise<{ geofence: any }> {
+    return this.request(`/api/v1/places/pending/${lookupId}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(choice),
+    });
+  }
+
+  /** "Not a place" — dismiss and stop asking about this word. */
+  async dismissPendingPlace(lookupId: string): Promise<{ ok: boolean }> {
+    return this.request(`/api/v1/places/pending/${lookupId}/dismiss`, {
+      method: 'POST',
+    });
   }
 
   async getPlaceObjects(placeId: string): Promise<{ objects: AtomicObject[] }> {

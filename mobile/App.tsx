@@ -97,7 +97,17 @@ function handleNotificationData(data: any, attempt = 0) {
 const processedSessions = new Set<string>();
 
 function handleSessionProcessed(data: any): void {
-  if (!data?.hasGeofenceCandidates) return;
+  // arrivalArmed is the honest signal: names a reminder actually exists for.
+  // Older server payloads carry only hasGeofenceCandidates ("we tried"), so
+  // fall back to the old reading when the new field is absent. A note whose
+  // places merely queued as pending lookups arms nothing — no sync, and no
+  // Always-permission escalation for a reminder that doesn't exist.
+  const armed: string[] = Array.isArray(data?.arrivalArmed)
+    ? data.arrivalArmed
+    : data?.hasGeofenceCandidates && Array.isArray(data?.placeNames)
+      ? data.placeNames
+      : [];
+  if (armed.length === 0) return;
 
   // Reachable twice for one note: once on receipt, again if the user then taps
   // it. Both paths are needed — receipt is missed when the app is killed, taps
@@ -109,18 +119,17 @@ function handleSessionProcessed(data: any): void {
     processedSessions.add(sessionId);
   }
 
-  const placeNames: string[] = Array.isArray(data.placeNames) ? data.placeNames : [];
-  console.log('[App] Session processed with place candidates:', placeNames);
+  console.log('[App] Session processed with armed places:', armed);
 
-  // Server-side place resolution is fire-and-forget and may still be in flight
-  // when this push lands, so give it a moment before asking for the geofences.
+  // Resolution is finished by the time this push sends, but the region write
+  // and the push race — a short grace keeps the sync from asking too early.
   setTimeout(() => {
     syncGeofencesWithOS('session-processed').catch((err) =>
       console.warn('[App] geofence re-sync after processing failed:', err)
     );
   }, 6000);
 
-  emitArrivalPromptCandidate(placeNames);
+  emitArrivalPromptCandidate(armed);
 }
 
 export default function App() {

@@ -2,6 +2,8 @@
  * Geofence service - business logic for geofences
  */
 
+import { PlaceLookupModel } from '../models/PlaceLookup';
+import type { ProviderCandidate } from './placeProviders/types';
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { PlaceModel } from '../models/Place';
@@ -374,12 +376,16 @@ async function filterValidObjectIds(userId: string, objectIds: string[]): Promis
 }
 
 export interface PlaceOverviewItem {
-  kind: 'geofence' | 'place';
+  kind: 'geofence' | 'place' | 'pending';
   id: string;
   name: string;
   openCount: number;
   labeled: boolean;
   enabled: boolean;
+  /** kind 'pending' only: the spoken name that could not be silently resolved. */
+  query?: string;
+  /** kind 'pending' only: the candidates the confirm sheet offers. */
+  candidates?: ProviderCandidate[];
 }
 
 /**
@@ -436,7 +442,16 @@ export async function getPlacesOverview(userId: string): Promise<PlaceOverviewIt
     [userId]
   );
 
+  // Pending lookups render FIRST: a question the user can answer in one tap
+  // outranks rows that are already working.
+  const pending = await PlaceLookupModel.findPendingByUser(userId);
+
   return [
+    ...pending.map((l) => ({
+      kind: 'pending' as const, id: l.id, name: l.query,
+      openCount: 0, labeled: false, enabled: false,
+      query: l.query, candidates: l.candidates,
+    })),
     ...manualGeofences.map((g) => ({
       kind: 'geofence' as const, id: g.id, name: g.name,
       openCount: parseInt(g.open_count, 10), labeled: true,

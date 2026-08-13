@@ -14,7 +14,12 @@ export type RootStackParamList = {
     placeName?: string;
   } | undefined;
   Places: undefined;
-  CreateGeofence: undefined;
+  CreateGeofence: {
+    /** Pre-fill the name — arriving from a pending place lookup's "Pick on the map". */
+    prefillName?: string;
+    /** When set, creating the geofence also resolves this pending lookup (links the note). */
+    pendingLookupId?: string;
+  } | undefined;
   ManageGeofenceObjects: { geofenceId: string; geofenceName: string };
   EditGeofence: {
     geofenceId: string;

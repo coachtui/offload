@@ -24,7 +24,8 @@ import { useSearch, ObjectDomain, ObjectType } from '../hooks/useSearch';
 import { useCategories } from '../hooks/useCategories';
 import { AtomicObject } from '../types';
 import type { RagSearchResult, DashboardMetrics } from '../services/api';
-import { apiService, PlaceOverviewItem } from '../services/api';
+import { apiService, PlaceOverviewItem, PendingPlaceLookup } from '../services/api';
+import { SetPlaceLocationSheet, PendingLookupForSheet } from '../components/SetPlaceLocationSheet';
 import { updateNoteState } from '../services/noteLifecycle';
 import { subscribeNotesChanged } from '../services/notesBus';
 import {
@@ -297,8 +298,23 @@ export function ObjectsScreen({ navigation }: Props) {
   const [dashboard, setDashboard] = useState<DashboardMetrics | null>(null);
   const [dashboardExpanded, setDashboardExpanded] = useState(false);
 
+  // Pending place lookups keyed by note id — powers the "set location" chip on
+  // a note whose spoken place couldn't be resolved. Best-effort: a fetch
+  // failure just means no chips this visit.
+  const [pendingLookups, setPendingLookups] = useState<Map<string, PendingPlaceLookup>>(new Map());
+  const [activeLookup, setActiveLookup] = useState<PendingLookupForSheet | null>(null);
+
+  const refreshPendingLookups = useCallback(async () => {
+    try {
+      const { pending } = await apiService.getPendingPlaces();
+      setPendingLookups(new Map(pending.map((l) => [l.objectId, l])));
+    } catch {
+      /* chips are an enhancement, never an error state */
+    }
+  }, []);
+
   useFocusEffect(
-    useCallback(() => { refreshCategories(); }, [refreshCategories])
+    useCallback(() => { refreshCategories(); refreshPendingLookups(); }, [refreshCategories, refreshPendingLookups])
   );
 
   useEffect(() => {
@@ -407,7 +423,8 @@ export function ObjectsScreen({ navigation }: Props) {
     // of band, and the list is small enough that refetching beats going stale.
     apiService
       .getPlacesOverview()
-      .then(({ places }) => setPlaceOptions(places))
+      // Pending lookups have no notes to scope to yet — not filter options.
+      .then(({ places }) => setPlaceOptions(places.filter((pl) => pl.kind !== 'pending')))
       .catch(() => {});
   }, [selectedDomains, selectedTypes, placeScope]);
 
@@ -775,6 +792,7 @@ export function ObjectsScreen({ navigation }: Props) {
     const category = (item as any).categoryId ? categoryById.get((item as any).categoryId) : undefined;
     const tagColor = category?.color ?? DOMAIN_COLORS[item.domain ?? 'misc'] ?? colors.textMuted;
     const tagLabel = category?.name ?? getFriendlyType(item.objectType);
+    const pendingLookup = pendingLookups.get(item.id);
 
     return (
       <TouchableOpacity
@@ -821,10 +839,31 @@ export function ObjectsScreen({ navigation }: Props) {
               </>
             )}
           </View>
+          {pendingLookup && !isDone && !selectionMode && (
+            <TouchableOpacity
+              style={styles.pendingChip}
+              onPress={() =>
+                setActiveLookup({
+                  id: pendingLookup.id,
+                  query: pendingLookup.query,
+                  notePreview: pendingLookup.notePreview,
+                  candidates: pendingLookup.candidates,
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`Set location for ${pendingLookup.query}`}
+            >
+              <Ionicons name="location-outline" size={13} color={colors.accent} />
+              <Text style={styles.pendingChipText} numberOfLines={1}>
+                {pendingLookup.query} — set location
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color={colors.accent} />
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     );
-  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress, categoryById, styles, colors]);
+  }, [selectionMode, selectedIds, toggleSelected, handleObjectPress, categoryById, styles, colors, pendingLookups]);
 
   const renderSearchResultCard = useCallback(({ item }: { item: RagSearchResult }) => {
     const subtitle = buildCardSubtitle(item.type, item.domain);
@@ -984,7 +1023,9 @@ export function ObjectsScreen({ navigation }: Props) {
                   // ("what did I leave myself at Foodland?").
                   onPress={() =>
                     setPendingPlace(
-                      isSelected ? null : { kind: place.kind, id: place.id, name: place.name }
+                      isSelected || place.kind === 'pending'
+                        ? null
+                        : { kind: place.kind, id: place.id, name: place.name }
                     )
                   }
                   accessibilityRole="checkbox"
@@ -1412,6 +1453,19 @@ export function ObjectsScreen({ navigation }: Props) {
           ))}
         </ScrollView>
       </AppSheet>
+
+      <SetPlaceLocationSheet
+        visible={activeLookup !== null}
+        lookup={activeLookup}
+        onClose={() => setActiveLookup(null)}
+        onDone={refreshPendingLookups}
+        onPickOnMap={(lookup) =>
+          navigation.navigate('CreateGeofence', {
+            prefillName: lookup.query,
+            pendingLookupId: lookup.id,
+          })
+        }
+      />
     </AppScreen>
   );
 }
@@ -1638,6 +1692,25 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     gap: Spacing.sm,
     marginTop: Spacing.sm + 1,
   },
+    pendingChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 4,
+      marginTop: Spacing.sm,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 5,
+      borderRadius: Radius.sm,
+      backgroundColor: c.accentLight,
+      borderWidth: 1,
+      borderColor: c.accentBorder,
+    },
+    pendingChipText: {
+      color: c.accent,
+      fontSize: 12,
+      fontFamily: Fonts.semibold,
+      flexShrink: 1,
+    },
   noteTag: {
     borderRadius: Radius.full,
     paddingHorizontal: 8,

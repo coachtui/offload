@@ -8,7 +8,16 @@
 import { PlaceModel } from '../models/Place';
 import { GeofenceModel } from '../models/Geofence';
 import { AtomicObjectModel } from '../models/AtomicObject';
-import { resolvePlaceNameMulti, haversineKm } from './placeResolutionService';
+import { PlaceLookupModel } from '../models/PlaceLookup';
+import { ReminderLifecycleEventModel } from '../models/ReminderLifecycleEvent';
+import {
+  searchPlaceCandidates,
+  candidateToResolvedPlace,
+  selectNearestResolved,
+  haversineKm,
+} from './placeResolutionService';
+import { resolveAnchors } from './placeAnchors';
+import { arbitrate } from './candidateArbitration';
 import { matchPlaceName } from './placeNameMatch';
 import { sendSilentToUser } from './pushService';
 import type { AtomicObject } from '@shared/types';
@@ -39,39 +48,64 @@ export type ReminderLifecycleEvent =
   | 'REMINDER_CANDIDATE_DETECTED'
   | 'PLACE_RESOLVED'
   | 'PLACE_DEDUPED'
-  | 'PLACE_UNRESOLVABLE'
+  | 'PLACE_UNRESOLVABLE' // historical rows only — superseded by PLACE_NEEDS_USER
+  | 'PLACE_PROVIDER_FALLBACK'
+  | 'PLACE_NEEDS_USER'
+  | 'PLACE_USER_RESOLVED'
+  | 'PLACE_LOOKUP_DISMISSED'
   | 'GEOFENCE_CREATED'
   | 'GEOFENCE_REARMED'
   | 'GEOFENCE_REAPED'
   | 'GEOFENCE_SKIPPED_LOW_CONFIDENCE'
   | 'GEOFENCE_LIMIT_REACHED';
 
-function logLifecycle(
+/**
+ * Console for Railway's live tail, plus a persisted row for
+ * GET /diagnostics/reminders — which had been reading an empty table since
+ * migration 010, because nothing ever wrote to it. Fire-and-forget: the
+ * model's record() never throws, and diagnostics must never break the
+ * pipeline they observe.
+ */
+export function logLifecycle(
   event: ReminderLifecycleEvent,
   details: Record<string, unknown>
 ): void {
   console.log(`[ReminderLifecycle] ${event}`, JSON.stringify(details));
+  void ReminderLifecycleEventModel.record(event, details);
 }
 
 // ─── Place resolution pipeline ───────────────────────────────────────────────
 
+export interface PlaceResolutionSummary {
+  /** Names a region now covers (created, or linked to one that exists) — an arrival will fire. */
+  armed: string[];
+  /** Names queued as pending lookups — the user has to place them before anything can fire. */
+  needsLocation: string[];
+}
+
 /**
  * Resolve place names from a parsed atomic object and create place records + geofences.
- * Called asynchronously (fire-and-forget) from voice.ts — must not throw.
+ * Must not throw. The returned summary is what makes the completion push honest:
+ * "armed" and "needs your help" are different messages, and the old boolean
+ * conflated them into "we tried".
  */
 export async function resolveObjectPlaces(
   userId: string,
   objectId: string,
   placeNames: string[],
-  userLocation?: { latitude: number; longitude: number }
-): Promise<void> {
-  logLifecycle('REMINDER_CANDIDATE_DETECTED', { objectId, placeNames, hasUserLocation: !!userLocation });
+  userLocation?: { latitude: number; longitude: number },
+  noteText?: string
+): Promise<PlaceResolutionSummary> {
+  logLifecycle('REMINDER_CANDIDATE_DETECTED', { userId, objectId, placeNames, hasUserLocation: !!userLocation });
   console.log(`[placeService] resolveObjectPlaces: ${placeNames.length} place(s) for object ${objectId}${userLocation ? ` (user at ${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})` : ' (no user location)'}`);
+  const summary: PlaceResolutionSummary = { armed: [], needsLocation: [] };
   let geofencesChanged = false;
   for (const rawName of placeNames) {
     try {
-      const changed = await resolveAndLinkPlace(userId, objectId, rawName, userLocation);
+      const { changed, outcome } = await resolveAndLinkPlace(userId, objectId, rawName, userLocation, noteText);
       geofencesChanged = geofencesChanged || changed;
+      if (outcome === 'armed') summary.armed.push(rawName);
+      else if (outcome === 'pending') summary.needsLocation.push(rawName);
     } catch (err) {
       console.warn(`[placeService] Failed to resolve place "${rawName}" for object ${objectId}:`, err);
     }
@@ -87,17 +121,25 @@ export async function resolveObjectPlaces(
   if (geofencesChanged) {
     await sendSilentToUser(userId, { type: 'geofence-sync', objectId });
   }
+  return summary;
 }
 
-/** Returns true when the user's geofence set changed (a region was created). */
+interface LinkResult {
+  /** True when the user's geofence set changed (a region was created). */
+  changed: boolean;
+  /** armed: a region will fire for this name. pending: queued, needs the user. none: skipped. */
+  outcome: 'armed' | 'pending' | 'none';
+}
+
 async function resolveAndLinkPlace(
   userId: string,
   objectId: string,
   rawName: string,
-  userLocation?: { latitude: number; longitude: number }
-): Promise<boolean> {
+  userLocation?: { latitude: number; longitude: number },
+  noteText?: string
+): Promise<LinkResult> {
   const normalizedQuery = rawName.trim();
-  if (!normalizedQuery) return false;
+  if (!normalizedQuery) return { changed: false, outcome: 'none' };
 
   console.log(`[placeService] Resolving place "${normalizedQuery}" for object ${objectId}`);
 
@@ -117,9 +159,10 @@ async function resolveAndLinkPlace(
   if (geofenceMatch) {
     const geofence = geofenceMatch.candidate;
     console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
-    logLifecycle('PLACE_DEDUPED', { objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
+    logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
-    return false; // labeled place is authoritative — do not geocode or create an inferred place
+    // Labeled place is authoritative — do not geocode or create an inferred place.
+    return { changed: false, outcome: 'armed' };
   }
 
   // ─── 1b. Match existing inferred places by name — ALL of them ──────────────
@@ -143,7 +186,7 @@ async function resolveAndLinkPlace(
     for (const existing of matchedPlaces) {
       const match = matchPlaceName(normalizedQuery, [existing], x => x.normalizedName)!;
       console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${match.reason}`);
-      logLifecycle('PLACE_DEDUPED', { objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
+      logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
       await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
       geofencesChanged = (await rearmInferredGeofence(userId, existing)) || geofencesChanged;
     }
@@ -157,22 +200,95 @@ async function resolveAndLinkPlace(
     const someBranchNearby = !userLocation || matchedPlaces.some(
       p => haversineKm(userLocation.latitude, userLocation.longitude, p.lat, p.lng) <= NEARBY_BRANCH_KM
     );
-    if (someBranchNearby) return geofencesChanged;
+    if (someBranchNearby) return { changed: geofencesChanged, outcome: 'armed' };
     console.log(`[placeService] No matched "${normalizedQuery}" place within ${NEARBY_BRANCH_KM}km of user — geocoding for a local branch`);
   }
 
-  // ─── 2. Geocode via OSM Nominatim (up to 3 candidates) ───────────────────
+  // ─── 1c. The user's ignore list ────────────────────────────────────────────
+  // A word the user has answered "not a place" to must not re-queue on every
+  // future note that contains it.
+  if (await PlaceLookupModel.isQueryIgnored(userId, normalizedQuery)) {
+    console.log(`[placeService] "${normalizedQuery}" is on the user's ignore list — skipping`);
+    return { changed: geofencesChanged, outcome: 'none' };
+  }
+
+  // ─── 2. Anchored provider chain + arbitration ──────────────────────────────
   const userLatLng = userLocation
     ? { lat: userLocation.latitude, lng: userLocation.longitude }
     : undefined;
 
-  const resolvedList = await resolvePlaceNameMulti(normalizedQuery, userLatLng);
+  const anchors = await resolveAnchors({
+    userId,
+    noteText: noteText ?? '',
+    placeName: normalizedQuery,
+    recorded: userLatLng,
+  });
+  const search = await searchPlaceCandidates(normalizedQuery, anchors);
 
-  if (resolvedList.length === 0) {
-    console.log(`[placeService] Could not resolve "${normalizedQuery}" — skipping`);
-    logLifecycle('PLACE_UNRESOLVABLE', { objectId, query: normalizedQuery, reason: 'nominatim_no_results' });
-    return geofencesChanged;
+  if (search.provider === 'google') {
+    logLifecycle('PLACE_PROVIDER_FALLBACK', {
+      userId,
+      objectId,
+      query: normalizedQuery,
+      anchorSource: search.anchor?.source ?? null,
+      candidateCount: search.candidates.length,
+    });
   }
+
+  const { verdict, locations } = arbitrate(normalizedQuery, search.candidates);
+
+  // ─── 2b. Nothing found, or same name at two different destinations: ASK. ──
+  // The old pipeline logged PLACE_UNRESOLVABLE and dropped the name on the
+  // floor — invisible until the user drove somewhere and nothing fired. Now
+  // both outcomes become a pending lookup: a visible row in Places, a chip on
+  // the note, and a retry ledger for later backfills.
+  if (verdict === 'none' || verdict === 'ambiguous') {
+    // The confirm sheet needs addresses to distinguish two same-name rows, and
+    // the cheap-SKU search deliberately omits them. Re-fetch with addresses
+    // only here — exactly the "about to ask the user" case the field-mask
+    // discipline exists for. Best-effort: the bare candidates still ask a
+    // usable question if this second pass fails.
+    let pendingCandidates = locations;
+    if (verdict === 'ambiguous') {
+      const enriched = await searchPlaceCandidates(normalizedQuery, anchors, { withAddress: true });
+      const rearbitrated = arbitrate(normalizedQuery, enriched.candidates);
+      if (rearbitrated.locations.length > 0) pendingCandidates = rearbitrated.locations;
+    }
+
+    logLifecycle('PLACE_NEEDS_USER', {
+      userId,
+      objectId,
+      query: normalizedQuery,
+      verdict,
+      provider: search.provider,
+      candidateCount: pendingCandidates.length,
+    });
+    try {
+      await PlaceLookupModel.create({
+        userId,
+        objectId,
+        query: normalizedQuery,
+        candidates: pendingCandidates,
+        provider: verdict === 'none' ? null : search.provider,
+        recorded: userLatLng,
+      });
+    } catch (err) {
+      // The queue write is the fallback of the fallback — its failure must not
+      // abort the remaining place names on this note.
+      console.warn(`[placeService] Failed to queue pending lookup for "${normalizedQuery}":`, err);
+    }
+    // Far-branch fall-through can arrive here having already linked existing
+    // branches in 1b — that name IS armed; the pending row is a bonus question,
+    // not a blocker, and the push must not nag about it.
+    return { changed: geofencesChanged, outcome: matchedPlaces.length > 0 ? 'armed' : 'pending' };
+  }
+
+  // ─── 2c. single arms as-is; chain fans out to the nearest 3 ────────────────
+  const resolvedList = selectNearestResolved(
+    locations.map((c) => candidateToResolvedPlace(c, normalizedQuery, userLatLng)),
+    userLatLng
+  );
+  console.log(`[placeService] "${normalizedQuery}" → ${verdict} (${locations.length} location(s), arming ${resolvedList.length}) via ${search.provider}`);
 
   for (const resolved of resolvedList) {
     // ─── 3. Proximity de-dup (same place within 300m already exists?) ────────
@@ -184,7 +300,7 @@ async function resolveAndLinkPlace(
 
     if (sameNameNearby) {
       console.log(`[placeService] Deduped to nearby place: ${sameNameNearby.id} (${sameNameNearby.normalizedName})`);
-      logLifecycle('PLACE_DEDUPED', { objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
+      logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
       await PlaceModel.linkObject(sameNameNearby.id, objectId, 'mentioned_in_note');
       geofencesChanged = (await rearmInferredGeofence(userId, sameNameNearby)) || geofencesChanged;
       continue;
@@ -207,6 +323,7 @@ async function resolveAndLinkPlace(
     });
 
     logLifecycle('PLACE_RESOLVED', {
+      userId,
       objectId,
       placeId: place.id,
       name: place.normalizedName,
@@ -226,6 +343,7 @@ async function resolveAndLinkPlace(
       geofencesChanged = (await maybeCreateInferredGeofence(userId, place)) || geofencesChanged;
     } else {
       logLifecycle('GEOFENCE_SKIPPED_LOW_CONFIDENCE', {
+        userId,
         objectId,
         placeId: place.id,
         name: resolved.normalizedName,
@@ -235,7 +353,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Confidence ${resolved.confidence} < ${GEOFENCE_CONFIDENCE_THRESHOLD} — skipping geofence for "${resolved.normalizedName}"`);
     }
   }
-  return geofencesChanged;
+  return { changed: geofencesChanged, outcome: 'armed' };
 }
 
 /**
@@ -272,7 +390,7 @@ async function rearmInferredGeofence(
       return false;
     }
 
-    logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName });
+    logLifecycle('GEOFENCE_REARMED', { userId, placeId: place.id, name: place.normalizedName });
     console.log(`[placeService] Re-arming geofence for existing place ${place.id} "${place.normalizedName}"`);
     return await maybeCreateInferredGeofence(userId, place);
   } catch (err) {
@@ -307,7 +425,7 @@ export async function rearmStrandedInferredGeofences(userId: string, reason: str
       if (place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD && !place.userConfirmed) continue;
       if (await maybeCreateInferredGeofence(userId, place)) {
         rearmed++;
-        logLifecycle('GEOFENCE_REARMED', { placeId: place.id, name: place.normalizedName, reason });
+        logLifecycle('GEOFENCE_REARMED', { userId, placeId: place.id, name: place.normalizedName, reason });
       }
     }
     if (rearmed > 0) {
@@ -340,6 +458,7 @@ export async function reapEmptyInferredGeofences(userId: string, reason: string)
     if (reaped.length === 0) return 0;
 
     logLifecycle('GEOFENCE_REAPED', {
+      userId,
       reason,
       count: reaped.length,
       geofences: reaped.map(g => ({ id: g.id, name: g.name })),
@@ -382,6 +501,7 @@ async function maybeCreateInferredGeofence(
   const currentCount = await PlaceModel.countInferredGeofences(userId);
   if (currentCount >= MAX_INFERRED_GEOFENCES) {
     logLifecycle('GEOFENCE_LIMIT_REACHED', {
+      userId,
       placeId: place.id,
       name: place.normalizedName,
       currentCount,
@@ -408,6 +528,7 @@ async function maybeCreateInferredGeofence(
     });
 
     logLifecycle('GEOFENCE_CREATED', {
+      userId,
       geofenceId: geofence.id,
       placeId: place.id,
       name: place.normalizedName,
@@ -421,6 +542,182 @@ async function maybeCreateInferredGeofence(
     console.warn(`[placeService] Failed to create inferred geofence for "${place.normalizedName}":`, err);
     return false;
   }
+}
+
+// ─── Pending lookups — the "needs your help" queue ───────────────────────────
+
+export interface PendingLookupView {
+  id: string;
+  query: string;
+  objectId: string;
+  notePreview: string | null;
+  provider: string | null;
+  createdAt: Date;
+  candidates: Array<{
+    name: string;
+    address: string | null;
+    lat: number;
+    lng: number;
+    category: string | null;
+    /** From where the note was recorded, when that is known. */
+    distanceKm: number | null;
+  }>;
+}
+
+/** Pending rows with note previews and per-candidate distances, for the sheet. */
+export async function getPendingPlaceLookups(userId: string): Promise<PendingLookupView[]> {
+  const lookups = await PlaceLookupModel.findPendingByUser(userId);
+  if (lookups.length === 0) return [];
+
+  const objectIds = [...new Set(lookups.map((l) => l.objectId))];
+  const objects = await AtomicObjectModel.findByIds(objectIds);
+  const previews = new Map<string, string>();
+  for (const model of objects) {
+    const obj = model.toAtomicObject();
+    const text = obj.title || obj.content || '';
+    previews.set(obj.id, text.length > 80 ? `${text.slice(0, 77)}…` : text);
+  }
+
+  return lookups.map((l) => ({
+    id: l.id,
+    query: l.query,
+    objectId: l.objectId,
+    notePreview: previews.get(l.objectId) ?? null,
+    provider: l.provider,
+    createdAt: l.createdAt,
+    candidates: l.candidates.map((c) => ({
+      name: c.name,
+      address: c.address,
+      lat: c.lat,
+      lng: c.lng,
+      category: c.category,
+      distanceKm:
+        l.recordedLat !== null && l.recordedLng !== null
+          ? Math.round(haversineKm(l.recordedLat, l.recordedLng, c.lat, c.lng) * 10) / 10
+          : null,
+    })),
+  }));
+}
+
+export type PendingResolveChoice =
+  | { candidateIndex: number }
+  | { lat: number; lng: number; radius?: number }
+  | { geofenceId: string };
+
+/**
+ * The user answered the question. Whichever affordance they used — a listed
+ * candidate, "use my current location", "pick on the map" (both arrive as
+ * coordinates), or an existing geofence — the result is the same shape as a
+ * promoted place: a MANUAL geofence, so the name-match step catches every
+ * future mention of this word and the question is never asked again.
+ *
+ * Notes ride on geofence_objects (not object_place_links) because that is the
+ * table manual-geofence detail views read — mirroring promotePlaceToGeofence,
+ * and for the same reason the manual-match step links there.
+ */
+export async function resolvePendingLookup(
+  userId: string,
+  lookupId: string,
+  choice: PendingResolveChoice
+): Promise<GeofenceModel> {
+  const lookup = await PlaceLookupModel.findById(lookupId);
+  if (!lookup) throw Object.assign(new Error('Lookup not found'), { status: 404 });
+  if (lookup.userId !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+  if (lookup.status !== 'pending') {
+    throw Object.assign(new Error('Lookup already handled'), { status: 409 });
+  }
+
+  let geofence: GeofenceModel;
+  let placeId: string | null = null;
+  let method: string;
+
+  if ('geofenceId' in choice) {
+    const existing = await GeofenceModel.findById(choice.geofenceId);
+    if (!existing || existing.userId !== userId) {
+      throw Object.assign(new Error('Geofence not found'), { status: 404 });
+    }
+    geofence = existing;
+    method = 'existing_geofence';
+  } else {
+    let lat: number;
+    let lng: number;
+    let name = lookup.query;
+    let category: string | null = null;
+    let providerPlaceId: string | null = null;
+
+    if ('candidateIndex' in choice) {
+      const candidate = lookup.candidates[choice.candidateIndex];
+      if (!candidate) throw Object.assign(new Error('No such candidate'), { status: 400 });
+      ({ lat, lng } = candidate);
+      name = candidate.name;
+      category = candidate.category;
+      providerPlaceId = candidate.providerPlaceId;
+      method = 'candidate';
+    } else {
+      ({ lat, lng } = choice);
+      method = 'coordinates';
+    }
+
+    const radius = 'radius' in choice && choice.radius ? choice.radius : 200;
+
+    const place = await PlaceModel.create({
+      userId,
+      rawName: lookup.query,
+      normalizedName: name,
+      providerPlaceId,
+      lat,
+      lng,
+      radiusMeters: radius,
+      category,
+      confidence: 1.0, // the user pointed at it — there is no higher signal
+      userConfirmed: true,
+      createdBy: 'manual',
+    });
+    placeId = place.id;
+
+    const existingManual = (await GeofenceModel.findByUserAndName(userId, name))
+      .find((g) => g.createdBy === 'manual');
+    geofence = existingManual ?? await GeofenceModel.create(userId, {
+      name,
+      center: { latitude: lat, longitude: lng },
+      radius,
+      type: 'custom',
+      notificationSettings: { enabled: true, onEnter: true, onExit: false },
+      placeId: place.id,
+      createdBy: 'manual',
+    });
+  }
+
+  await GeofenceModel.addLinkedObject(geofence.id, lookup.objectId);
+  await PlaceLookupModel.markResolved(lookupId, placeId);
+  logLifecycle('PLACE_USER_RESOLVED', {
+    userId,
+    objectId: lookup.objectId,
+    placeId,
+    geofenceId: geofence.id,
+    query: lookup.query,
+    method,
+  });
+
+  return geofence;
+}
+
+/**
+ * "Not a place" / "don't ask again". The dismissed row itself is the
+ * ignore-list entry (see PlaceLookupModel.isQueryIgnored), so this word stops
+ * re-queueing on every future note without any extra bookkeeping.
+ */
+export async function dismissPendingLookup(userId: string, lookupId: string): Promise<void> {
+  const lookup = await PlaceLookupModel.findById(lookupId);
+  if (!lookup) throw Object.assign(new Error('Lookup not found'), { status: 404 });
+  if (lookup.userId !== userId) throw Object.assign(new Error('Forbidden'), { status: 403 });
+
+  await PlaceLookupModel.markDismissed(lookupId);
+  logLifecycle('PLACE_LOOKUP_DISMISSED', {
+    userId,
+    objectId: lookup.objectId,
+    query: lookup.query,
+  });
 }
 
 // ─── Place objects ────────────────────────────────────────────────────────────
