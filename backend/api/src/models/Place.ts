@@ -209,6 +209,15 @@ export class PlaceModel {
   }
 
   /**
+   * Move a place. Used when the user drags a geofence's pin — future spoken
+   * place names resolve against hub.places (findNearby), so the place row
+   * must follow its geofence or name resolution keeps pointing at the old spot.
+   */
+  static async updateCoordinates(placeId: string, lat: number, lng: number): Promise<void> {
+    await query('UPDATE hub.places SET lat = $1, lng = $2 WHERE id = $3', [lat, lng, placeId]);
+  }
+
+  /**
    * List all places for a user
    */
   static async findByUserId(userId: string): Promise<Place[]> {
