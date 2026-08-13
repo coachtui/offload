@@ -190,11 +190,11 @@ The behavioural core. Everything else is plumbing around it.
 - Modify: `mobile/App.tsx`
 - Test: `backend/api/src/__tests__/services/transcriptProcessing.test.ts`
 
-- [ ] **Step 1: Write the failing test** — a note whose place could not be resolved must NOT report an armed arrival.
-- [ ] **Step 2: Split the flag.** `hasGeofenceCandidates` currently means "we tried", not "we succeeded", so the client shows the Always-permission sheet for reminders that do not exist. Replace with `arrivalArmed: string[]` (names that produced a geofence) and `needsLocation: string[]` (names that queued a lookup). Keep `hasGeofenceCandidates` in the payload as `arrivalArmed.length > 0` for older installs.
-- [ ] **Step 3: Gate the escalation sheet on `arrivalArmed`** in `App.tsx`; route `needsLocation` to the pending sheet instead.
-- [ ] **Step 4: Completion push copy** — when `needsLocation` is non-empty, body becomes "Tap to set where Melaleuca is", deep-linking to the sheet.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit`, `npm test`.
+- [x] **Step 1: Write the failing test** — a note whose place could not be resolved reports `needsLocation`, `arrivalArmed: []`, and `hasGeofenceCandidates: false` ("the old lie, retired").
+- [x] **Step 2: Split the flag.** `ProcessResult` gains `arrivalArmed`/`needsLocation`; `hasGeofenceCandidates` kept as the legacy alias `arrivalArmed.length > 0`. **Structural consequence:** `resolveObjectPlaces` now RETURNS a `PlaceResolutionSummary` and is **awaited** rather than fire-and-forget — honesty requires knowing the outcome, and the seconds this adds are off the request path (the 202 went out at save time) and only on notes that name places. `resolveAndLinkPlace` returns `{changed, outcome: 'armed'|'pending'|'none'}`; a far-branch fall-through that already linked existing branches counts as **armed** (the pending row is a bonus question, not a blocker — the push must not nag).
+- [x] **Step 3: Gate the escalation on `arrivalArmed`** in `App.tsx` — armed-empty returns before the sync and the sheet. Older server payloads (only `hasGeofenceCandidates`) fall back to the old reading, so an un-updated backend keeps working.
+- [x] **Step 4: Completion push copy** — "Tap to set where Melaleuca is — the reminder needs a location." The location-ask outranks even the degraded-save wording (silence there = a reminder that never fires). Tap target stays the note (the Task 8 chip lives there); `arrivalArmed`/`needsLocation` ride in the push data.
+- [x] **Step 5: Verify** — backend `tsc` clean, 65 suites / 475 tests (was 65/469 — +6, one Task 5 assertion updated for the new return type). Mobile `tsc` has 3 pre-existing errors (`api.ts:321`, `locationService.ts:307`, `websocket.ts:167`), none in `App.tsx`.
 
 ---
 

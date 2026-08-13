@@ -76,9 +76,18 @@ export function logLifecycle(
 
 // ─── Place resolution pipeline ───────────────────────────────────────────────
 
+export interface PlaceResolutionSummary {
+  /** Names a region now covers (created, or linked to one that exists) — an arrival will fire. */
+  armed: string[];
+  /** Names queued as pending lookups — the user has to place them before anything can fire. */
+  needsLocation: string[];
+}
+
 /**
  * Resolve place names from a parsed atomic object and create place records + geofences.
- * Called asynchronously (fire-and-forget) from voice.ts — must not throw.
+ * Must not throw. The returned summary is what makes the completion push honest:
+ * "armed" and "needs your help" are different messages, and the old boolean
+ * conflated them into "we tried".
  */
 export async function resolveObjectPlaces(
   userId: string,
@@ -86,14 +95,17 @@ export async function resolveObjectPlaces(
   placeNames: string[],
   userLocation?: { latitude: number; longitude: number },
   noteText?: string
-): Promise<void> {
+): Promise<PlaceResolutionSummary> {
   logLifecycle('REMINDER_CANDIDATE_DETECTED', { userId, objectId, placeNames, hasUserLocation: !!userLocation });
   console.log(`[placeService] resolveObjectPlaces: ${placeNames.length} place(s) for object ${objectId}${userLocation ? ` (user at ${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)})` : ' (no user location)'}`);
+  const summary: PlaceResolutionSummary = { armed: [], needsLocation: [] };
   let geofencesChanged = false;
   for (const rawName of placeNames) {
     try {
-      const changed = await resolveAndLinkPlace(userId, objectId, rawName, userLocation, noteText);
+      const { changed, outcome } = await resolveAndLinkPlace(userId, objectId, rawName, userLocation, noteText);
       geofencesChanged = geofencesChanged || changed;
+      if (outcome === 'armed') summary.armed.push(rawName);
+      else if (outcome === 'pending') summary.needsLocation.push(rawName);
     } catch (err) {
       console.warn(`[placeService] Failed to resolve place "${rawName}" for object ${objectId}:`, err);
     }
@@ -109,18 +121,25 @@ export async function resolveObjectPlaces(
   if (geofencesChanged) {
     await sendSilentToUser(userId, { type: 'geofence-sync', objectId });
   }
+  return summary;
 }
 
-/** Returns true when the user's geofence set changed (a region was created). */
+interface LinkResult {
+  /** True when the user's geofence set changed (a region was created). */
+  changed: boolean;
+  /** armed: a region will fire for this name. pending: queued, needs the user. none: skipped. */
+  outcome: 'armed' | 'pending' | 'none';
+}
+
 async function resolveAndLinkPlace(
   userId: string,
   objectId: string,
   rawName: string,
   userLocation?: { latitude: number; longitude: number },
   noteText?: string
-): Promise<boolean> {
+): Promise<LinkResult> {
   const normalizedQuery = rawName.trim();
-  if (!normalizedQuery) return false;
+  if (!normalizedQuery) return { changed: false, outcome: 'none' };
 
   console.log(`[placeService] Resolving place "${normalizedQuery}" for object ${objectId}`);
 
@@ -142,7 +161,8 @@ async function resolveAndLinkPlace(
     console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
     logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
-    return false; // labeled place is authoritative — do not geocode or create an inferred place
+    // Labeled place is authoritative — do not geocode or create an inferred place.
+    return { changed: false, outcome: 'armed' };
   }
 
   // ─── 1b. Match existing inferred places by name — ALL of them ──────────────
@@ -180,7 +200,7 @@ async function resolveAndLinkPlace(
     const someBranchNearby = !userLocation || matchedPlaces.some(
       p => haversineKm(userLocation.latitude, userLocation.longitude, p.lat, p.lng) <= NEARBY_BRANCH_KM
     );
-    if (someBranchNearby) return geofencesChanged;
+    if (someBranchNearby) return { changed: geofencesChanged, outcome: 'armed' };
     console.log(`[placeService] No matched "${normalizedQuery}" place within ${NEARBY_BRANCH_KM}km of user — geocoding for a local branch`);
   }
 
@@ -189,7 +209,7 @@ async function resolveAndLinkPlace(
   // future note that contains it.
   if (await PlaceLookupModel.isQueryIgnored(userId, normalizedQuery)) {
     console.log(`[placeService] "${normalizedQuery}" is on the user's ignore list — skipping`);
-    return geofencesChanged;
+    return { changed: geofencesChanged, outcome: 'none' };
   }
 
   // ─── 2. Anchored provider chain + arbitration ──────────────────────────────
@@ -257,7 +277,10 @@ async function resolveAndLinkPlace(
       // abort the remaining place names on this note.
       console.warn(`[placeService] Failed to queue pending lookup for "${normalizedQuery}":`, err);
     }
-    return geofencesChanged;
+    // Far-branch fall-through can arrive here having already linked existing
+    // branches in 1b — that name IS armed; the pending row is a bonus question,
+    // not a blocker, and the push must not nag about it.
+    return { changed: geofencesChanged, outcome: matchedPlaces.length > 0 ? 'armed' : 'pending' };
   }
 
   // ─── 2c. single arms as-is; chain fans out to the nearest 3 ────────────────
@@ -330,7 +353,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Confidence ${resolved.confidence} < ${GEOFENCE_CONFIDENCE_THRESHOLD} — skipping geofence for "${resolved.normalizedName}"`);
     }
   }
-  return geofencesChanged;
+  return { changed: geofencesChanged, outcome: 'armed' };
 }
 
 /**

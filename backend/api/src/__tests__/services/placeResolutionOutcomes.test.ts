@@ -145,10 +145,13 @@ describe('verdict: ambiguous — the founding Melaleuca case', () => {
     expect(stored[1].address).toContain('500 Ala Moana Blvd');
   });
 
-  it('a failed pending write is logged, not thrown — other names on the note still process', async () => {
+  it('a failed pending write is logged, not thrown — and the name still reports needsLocation', async () => {
     mockLookup.create.mockRejectedValue(new Error('db down'));
 
-    await expect(resolveObjectPlaces(USER, OBJ, ['Melaleuca'], RECORDED)).resolves.toBeUndefined();
+    await expect(resolveObjectPlaces(USER, OBJ, ['Melaleuca'], RECORDED)).resolves.toEqual({
+      armed: [],
+      needsLocation: ['Melaleuca'],
+    });
   });
 });
 

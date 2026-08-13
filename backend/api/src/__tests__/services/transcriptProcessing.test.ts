@@ -12,8 +12,11 @@ jest.mock('../../services/mlService');
 jest.mock('../../services/objectService');
 jest.mock('../../services/pushService');
 jest.mock('../../services/placeService', () => ({
-  resolveObjectPlaces: jest.fn().mockResolvedValue(undefined),
+  resolveObjectPlaces: jest.fn().mockResolvedValue({ armed: [], needsLocation: [] }),
 }));
+
+import * as placeService from '../../services/placeService';
+const mockPlaces = placeService.resolveObjectPlaces as jest.Mock;
 
 const mockMl = mlService as jest.Mocked<typeof mlService>;
 const mockObjects = objectService as jest.Mocked<typeof objectService>;
@@ -205,7 +208,7 @@ describe('processSessionInBackground', () => {
 });
 
 describe('completionMessage', () => {
-  const base = { objectIds: [], hasGeofenceCandidates: false, placeNames: [], degraded: false };
+  const base = { objectIds: [], hasGeofenceCandidates: false, placeNames: [], arrivalArmed: [], needsLocation: [], degraded: false };
 
   it('pluralises correctly', () => {
     expect(completionMessage({ ...base, objectIds: ['a'] }).body).toBe('Saved as 1 note');
@@ -217,6 +220,78 @@ describe('completionMessage', () => {
     const msg = completionMessage({ ...base, objectIds: ['a'], degraded: true });
     expect(msg.title).toContain('saved');
     expect(msg.body).toContain('safe');
+  });
+
+  // A reminder with no location is the one outcome where silence = a reminder
+  // that never fires, so its wording outranks everything else.
+  it('asks for a location when a place could not be resolved', () => {
+    const msg = completionMessage({ ...base, objectIds: ['a'], needsLocation: ['Melaleuca'] });
+    expect(msg.body).toContain('Melaleuca');
+    expect(msg.body.toLowerCase()).toContain('location');
+  });
+
+  it('the location ask wins even on a degraded save', () => {
+    const msg = completionMessage({ ...base, objectIds: ['a'], degraded: true, needsLocation: ['Melaleuca'] });
+    expect(msg.body).toContain('Melaleuca');
+  });
+});
+
+describe('push honesty — arrivalArmed vs needsLocation', () => {
+  // One parsed item that is unambiguously a place errand, so the resolution
+  // rules fire without leaning on the parser flag.
+  const errand = [{
+    rawText: 'get chicken from Costco',
+    cleanedText: 'get chicken from Costco',
+    entities: [], people: [], tags: [],
+    temporalHints: {},
+    locationHints: { places: ['Costco'], geofenceCandidate: true },
+    sequenceIndex: 0,
+  }];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockObjects.createObject.mockImplementation(async () => ({ id: 'o-1' }) as any);
+    mockMl.checkMLServiceHealth.mockResolvedValue(true);
+    mockMl.parseTranscript.mockResolvedValue({ atomicObjects: errand } as any);
+  });
+
+  it('an unresolvable place reports needsLocation and does NOT claim an armed reminder', async () => {
+    mockPlaces.mockResolvedValue({ armed: [], needsLocation: ['Costco'] });
+
+    const result = await processTranscript({ userId: 'u-1', sessionId: 's-1', transcript: 'x' });
+
+    expect(result.needsLocation).toEqual(['Costco']);
+    expect(result.arrivalArmed).toEqual([]);
+    expect(result.hasGeofenceCandidates).toBe(false); // the old lie, retired
+  });
+
+  it('an armed place reports arrivalArmed and keeps the legacy flag true', async () => {
+    mockPlaces.mockResolvedValue({ armed: ['Costco'], needsLocation: [] });
+
+    const result = await processTranscript({ userId: 'u-1', sessionId: 's-1', transcript: 'x' });
+
+    expect(result.arrivalArmed).toEqual(['Costco']);
+    expect(result.hasGeofenceCandidates).toBe(true);
+  });
+
+  it('passes the note text through for named-region anchoring', async () => {
+    mockPlaces.mockResolvedValue({ armed: [], needsLocation: [] });
+
+    await processTranscript({ userId: 'u-1', sessionId: 's-1', transcript: 'x' });
+
+    expect(mockPlaces).toHaveBeenCalledWith(
+      'u-1', 'o-1', ['Costco'], undefined, 'get chicken from Costco'
+    );
+  });
+
+  it('a resolution failure degrades to empty outcome arrays, never a crash', async () => {
+    mockPlaces.mockRejectedValue(new Error('resolution exploded'));
+
+    const result = await processTranscript({ userId: 'u-1', sessionId: 's-1', transcript: 'x' });
+
+    expect(result.objectIds).toHaveLength(1);
+    expect(result.arrivalArmed).toEqual([]);
+    expect(result.needsLocation).toEqual([]);
   });
 });
 
