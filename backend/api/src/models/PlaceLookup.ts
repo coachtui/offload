@@ -114,11 +114,24 @@ export class PlaceLookupModel {
     return row ? rowToLookup(row) : null;
   }
 
+  /**
+   * Pending rows whose note is still ALIVE. A lookup's question is "where is
+   * the place this note mentions?" — once the note is soft-deleted or
+   * completed, the question is moot and must leave the queue. Filtering at
+   * read time (rather than sweeping rows on every note transition) also
+   * self-heals: un-deleting or reopening the note brings its question back.
+   * The row itself is kept — it is the retry ledger, and its status is NOT
+   * flipped to dismissed, because dismissed rows are the ignore list and a
+   * deleted note must never ignore-list a word.
+   */
   static async findPendingByUser(userId: string): Promise<PlaceLookup[]> {
     const rows = await queryMany<PlaceLookupRow>(
-      `SELECT * FROM hub.place_lookups
-       WHERE user_id = $1 AND status = 'pending'
-       ORDER BY created_at DESC`,
+      `SELECT pl.* FROM hub.place_lookups pl
+       JOIN hub.atomic_objects ao ON ao.id = pl.object_id
+       WHERE pl.user_id = $1 AND pl.status = 'pending'
+         AND ao.deleted_at IS NULL
+         AND ao.state IN ('open', 'active')
+       ORDER BY pl.created_at DESC`,
       [userId]
     );
     return rows.map(rowToLookup);

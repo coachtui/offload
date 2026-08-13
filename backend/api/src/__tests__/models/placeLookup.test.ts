@@ -75,9 +75,25 @@ describe('PlaceLookupModel.findPendingByUser', () => {
 
     const [sql, params] = mockQ.queryMany.mock.calls[0];
     expect(sql).toMatch(/status = 'pending'/);
-    expect(sql).toMatch(/ORDER BY created_at DESC/i);
+    expect(sql).toMatch(/ORDER BY pl\.created_at DESC/i);
     expect(params).toEqual(['u1']);
     expect(rows).toHaveLength(1);
+  });
+
+  it('a question dies with its note — soft-deleted and completed notes leave the queue', async () => {
+    // Field case 2026-08-13: a stale "Home Depot" row outlived its deleted
+    // note. Notes soft-delete (deleted_at), so the FK cascade never fires;
+    // the queue must filter on the note's liveness instead. Critically the
+    // row is NOT dismissed — dismissed rows are the ignore list, and a
+    // deleted note must never ignore-list a word.
+    mockQ.queryMany.mockResolvedValue([] as any);
+
+    await PlaceLookupModel.findPendingByUser('u1');
+
+    const [sql] = mockQ.queryMany.mock.calls[0];
+    expect(sql).toMatch(/JOIN hub\.atomic_objects/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+    expect(sql).toMatch(/state IN \('open', 'active'\)/);
   });
 });
 
