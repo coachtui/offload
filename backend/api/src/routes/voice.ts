@@ -7,6 +7,7 @@ import { Router, Request, Response, json } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
 import { Session } from '../models/Session';
+import { User } from '../models/User';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
 import { transcribeWithGpt4o } from '../services/transcriptionService';
 import { processSessionInBackground } from '../services/transcriptProcessingService';
@@ -117,6 +118,12 @@ router.post('/save-transcript', async (req: Request, res: Response) => {
       status: 'processing',
     });
     console.log('[Voice] session created:', session.id, '— processing in background');
+
+    // Remember the device's zone for local-time scheduling (weekly digest).
+    // Fire-and-forget: a timezone bookkeeping failure must never fail a save.
+    void User.touchTimezone(userId, metadata?.timezone).catch((err) =>
+      console.warn('[Voice] touchTimezone failed (non-fatal):', err)
+    );
 
     // Deliberately not awaited. setImmediate defers past the response flush so a
     // slow parse cannot delay the reply the client is waiting on.
