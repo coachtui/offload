@@ -532,6 +532,24 @@ class ApiService {
     );
   }
 
+  /** Reminders the device should schedule as local notifications. */
+  async getPendingReminders(): Promise<{
+    reminders: Array<{ objectId: string; body: string; remindAt: string }>;
+  }> {
+    return this.request('/api/v1/objects/pending-reminders');
+  }
+
+  /**
+   * Tell the server which reminders this device will fire locally so it stops
+   * pushing them. The list is the whole set — omitting one hands it back.
+   */
+  async claimLocalReminders(objectIds: string[]): Promise<{ claimed: number; changed: number }> {
+    return this.request('/api/v1/objects/pending-reminders/claim', {
+      method: 'POST',
+      body: JSON.stringify({ objectIds }),
+    });
+  }
+
   async getObject(objectId: string): Promise<{ object: AtomicObject }> {
     return this.request<{ object: AtomicObject }>(`/api/v1/objects/${objectId}`);
   }

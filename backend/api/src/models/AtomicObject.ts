@@ -577,6 +577,81 @@ export class AtomicObjectModel {
   }
 
   /**
+   * A user's reminders that haven't fired yet and are still due in the future —
+   * everything a device needs to schedule as local notifications. Deliberately
+   * not filtered by claim state: the device re-states its whole set every sync,
+   * so it has to see the rows it already owns.
+   */
+  static async findPendingTimeReminders(
+    userId: string,
+    now: Date
+  ): Promise<Array<{ id: string; title: string | null; content: string; remind_at: Date }>> {
+    return queryMany(
+      `SELECT id, title, content, remind_at
+         FROM hub.atomic_objects
+        WHERE user_id = $1
+          AND remind_at > $2
+          AND reminder_fired_at IS NULL
+          AND COALESCE(state, 'open') IN ('open', 'active')
+          AND object_type IN ('task', 'reminder', 'commitment')
+          AND deleted_at IS NULL
+        ORDER BY remind_at ASC`,
+      [userId, now]
+    );
+  }
+
+  /**
+   * Record exactly which pending reminders a device has scheduled locally, so
+   * the push job can skip them (see timeReminderJob). The set is authoritative:
+   * rows outside it are un-claimed in the same statement, which is what lets a
+   * device hand a reminder back — permission revoked, or dropped past iOS's
+   * pending-notification budget — instead of it silently never firing.
+   *
+   * Only *future* reminders change hands. A device-owned reminder whose time has
+   * passed is recorded as fired first, because the device delivered it and can't
+   * say so itself.
+   *
+   * Returns how many rows changed hands, so a no-op sync is visible as 0.
+   */
+  static async setLocalReminderClaims(
+    userId: string,
+    objectIds: string[],
+    now: Date
+  ): Promise<number> {
+    // A reminder this device owned whose time has passed was delivered by the
+    // OS — the device can't tell us at fire time (a local notification runs no
+    // JS), so this is where it gets recorded. Without it the row stays "unfired"
+    // forever and the release below would hand it back to the push job, which
+    // would re-send a reminder the user already got hours ago.
+    await query(
+      `UPDATE hub.atomic_objects
+          SET reminder_fired_at = remind_at
+        WHERE user_id = $1
+          AND reminder_local_claim_at IS NOT NULL
+          AND reminder_fired_at IS NULL
+          AND remind_at <= $2
+          AND deleted_at IS NULL`,
+      [userId, now]
+    );
+
+    const result = await query(
+      `UPDATE hub.atomic_objects
+          SET reminder_local_claim_at = CASE WHEN id = ANY($2::uuid[]) THEN $3 ELSE NULL END
+        WHERE user_id = $1
+          AND remind_at IS NOT NULL
+          AND reminder_fired_at IS NULL
+          AND deleted_at IS NULL
+          -- Ownership is only rearranged for reminders that haven't come due.
+          -- Past ones are settled: whoever owned it delivered it.
+          AND remind_at > $3
+          -- Only touch rows whose claim state actually changes.
+          AND (reminder_local_claim_at IS NULL) = (id = ANY($2::uuid[]))`,
+      [userId, objectIds, now]
+    );
+    return result.rowCount ?? 0;
+  }
+
+  /**
    * Objects the user resolved within [from, to] — by resolution time (state_updated_at),
    * independent of when they were created. Powers the weekly recap "Accomplished" section.
    */

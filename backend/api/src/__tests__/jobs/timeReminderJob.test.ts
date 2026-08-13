@@ -73,6 +73,8 @@ describe('processDueReminders', () => {
     expect(sql).toContain('remind_at <= $1');
     expect(sql).toContain('reminder_fired_at IS NULL');
     expect(sql).toContain('reminder_claimed_at IS NULL OR reminder_claimed_at <= $2');
+    // A reminder the device scheduled locally must not also be pushed.
+    expect(sql).toContain('reminder_local_claim_at IS NULL');
     expect(sql).toContain("IN ('open', 'active')");
     expect(sql).toContain("object_type IN ('task', 'reminder', 'commitment')");
     expect(sql).toContain('deleted_at IS NULL');

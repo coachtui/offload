@@ -10,6 +10,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { ThemeProvider, fontMap } from './src/theme';
 import { syncGeofencesWithOS } from './src/services/geofenceSync';
+import { syncTimeRemindersWithOS } from './src/services/timeReminderSync';
 import { registerBackgroundNotificationSync } from './src/services/backgroundNotificationSync';
 import { emitArrivalPromptCandidate } from './src/services/arrivalPromptBus';
 import { emitNotesChanged } from './src/services/notesBus';
@@ -49,6 +50,11 @@ function syncOnAppActive(): void {
   lastAppActiveSyncAt = now;
   syncGeofencesWithOS('app-active').catch((err) =>
     console.warn('[App] app-active geofence sync failed:', err)
+  );
+  // Same idea for dated reminders: this is where a reminder created on another
+  // device gets scheduled locally, and one resolved elsewhere gets cancelled.
+  syncTimeRemindersWithOS('app-active').catch((err) =>
+    console.warn('[App] app-active reminder sync failed:', err)
   );
 }
 

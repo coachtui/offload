@@ -4,6 +4,7 @@ import { apiService, AuthError } from '../services/api';
 import { registerPushTokenWithBackend } from '../services/pushRegistration';
 import { geofenceMonitoringService } from '../services/geofenceMonitoringService';
 import { resetPermissionOnboarding } from '../services/permissionService';
+import { releaseAll, syncTimeRemindersWithOS } from '../services/timeReminderSync';
 
 interface AuthState {
   user: AuthResponse['user'] | null;
@@ -60,6 +61,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     if (state.isAuthenticated) {
       void registerPushTokenWithBackend();
+      // The app-active sync already ran (and was throttled) before there was a
+      // session, so without this the device owns nothing until the throttle
+      // lapses — every reminder would go out as a push for the first 5 minutes.
+      void syncTimeRemindersWithOS('signed-in');
     }
   }, [state.isAuthenticated]);
 
@@ -110,6 +115,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       geofenceMonitoringService
         .teardownForSignOut()
         .catch(e => console.warn('[AuthContext] geofence teardown failed:', e))
+        // Dated reminders sit in the OS the same way regions do. Never throws;
+        // the hand-back POST will fail on an already-dead token, which is fine —
+        // the next sign-in re-syncs, and cancelling locally is the urgent half.
+        .then(() => releaseAll('forced-sign-out'))
         .then(() => resetPermissionOnboarding())
         .catch(e => console.warn('[AuthContext] permission reset failed:', e))
         .then(() => apiService.clearToken())
@@ -142,6 +151,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Tear down geofences BEFORE dropping the token: OS region registrations
     // outlive the session, so without this the next account inherits them.
     await geofenceMonitoringService.teardownForSignOut();
+    // Locally scheduled reminders outlive the session too, and this runs while
+    // the token is still valid so the server takes them back cleanly.
+    await releaseAll('sign-out');
     // Clear the "already onboarded" flags too — they're device-local, so without
     // this the next account to sign in on this phone silently skips the ladder.
     await resetPermissionOnboarding();

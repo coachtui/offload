@@ -18,6 +18,7 @@ import {
   type SemanticSearchResult,
 } from './vectorService';
 import { updateObjectRelationships } from './relationshipService';
+import { reminderBody } from './reminderContent';
 import { applySupersede } from './reinforcementService';
 import { query } from '../db/queries';
 
@@ -295,6 +296,39 @@ export async function deleteObject(userId: string, objectId: string): Promise<vo
 export async function listStaleActionables(userId: string): Promise<AtomicObject[]> {
   const objects = await AtomicObjectModel.findStaleActionables(userId);
   return objects.map((obj) => obj.toAtomicObject());
+}
+
+export interface PendingReminder {
+  objectId: string;
+  /** Pre-rendered so the device's local notification reads identically to the push. */
+  body: string;
+  remindAt: string;
+}
+
+/**
+ * The reminders a device should schedule as local notifications. Shaped for
+ * that job specifically — id, finished body text, fire time — rather than
+ * returning whole objects the caller would have to re-derive text from.
+ */
+export async function listPendingTimeReminders(
+  userId: string,
+  now: Date = new Date()
+): Promise<PendingReminder[]> {
+  const rows = await AtomicObjectModel.findPendingTimeReminders(userId, now);
+  return rows.map((row) => ({
+    objectId: row.id,
+    body: reminderBody(row.title, row.content),
+    remindAt: new Date(row.remind_at).toISOString(),
+  }));
+}
+
+/** Hand the named reminders to the device (and take back any it omitted). */
+export async function claimLocalReminders(
+  userId: string,
+  objectIds: string[]
+): Promise<{ changed: number }> {
+  const changed = await AtomicObjectModel.setLocalReminderClaims(userId, objectIds, new Date());
+  return { changed };
 }
 
 /**

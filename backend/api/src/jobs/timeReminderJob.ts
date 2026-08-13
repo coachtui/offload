@@ -24,6 +24,7 @@
  */
 import { queryMany, queryOne, query } from '../db/queries';
 import { sendToUser } from '../services/pushService';
+import { reminderBody, REMINDER_TITLE } from '../services/reminderContent';
 
 const MAX_SLEEP_MS = 15 * 60 * 1000; // blind-sleep ceiling; doubles as a self-heal heartbeat
 const MIN_SLEEP_MS = 250;            // floor, so a timer that fires early can't spin
@@ -32,12 +33,19 @@ const CLAIM_LEASE_MS = 5 * 60 * 1000; // a claim older than this is assumed cras
 const BATCH_LIMIT = 50;              // safety valve; a run never sends more than this
 
 /**
- * Rows a reminder can still fire for. Shared text so the claim query and the
+ * Rows the *server* still has to fire. Shared text so the claim query and the
  * wake-up scheduler can never disagree about what "pending" means — if they
  * drift, the scheduler wakes for rows the claim won't take and spins.
+ *
+ * reminder_local_claim_at excludes reminders a device has already scheduled as
+ * a local iOS notification: it will fire them without us, and both firing would
+ * mean two notifications for one reminder. The device only claims what it
+ * actually scheduled and re-states the set every sync, so anything it can't
+ * handle comes straight back here (see migration 021).
  */
 const PENDING_PREDICATE = `
        reminder_fired_at IS NULL
+       AND reminder_local_claim_at IS NULL
        AND COALESCE(state, 'open') IN ('open', 'active')
        AND object_type IN ('task', 'reminder', 'commitment')
        AND deleted_at IS NULL`;
@@ -73,10 +81,9 @@ export async function processDueReminders(now: Date): Promise<void> {
   );
 
   for (const row of rows) {
-    const body = (row.title || row.content).split('\n')[0].slice(0, 178);
     const delivered = await sendToUser(row.user_id, {
-      title: '⏰ Reminder',
-      body,
+      title: REMINDER_TITLE,
+      body: reminderBody(row.title, row.content),
       data: { screen: 'Objects', objectId: row.id },
       // A reminder is precisely what iOS means by time-sensitive: it must break
       // through Focus and never be held back for the scheduled summary.
