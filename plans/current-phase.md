@@ -1,7 +1,7 @@
 # Current Phase: App Store Launch Prep (Phase 7 queued behind it)
 
 ## Phase Overview
-**Phase**: Launch — TestFlight cohort live, build 5 submitted
+**Phase**: Launch — build 5 approved and live to external testers; launch checklist clear except the post-release URL swap
 **Status**: ✅ Build **4** (v1.1.0) **approved** (2026-08-12 night, ASC app `6799952861`). Build **5** built and submitted 2026-08-13 (commit `454e987`, submission `eebcc911`) — cut for a native change no OTA can carry: the iOS **time-sensitive notification entitlement**. Assigned to the external group. Both OTA channels now serve commit `454e987` — `preview` group `666e2a3f`, `production` group `345e3912`. Backend on Railway is main through PR #52.
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
@@ -10,8 +10,8 @@
 
 **Remaining launch actions**:
 - At public App Store release: set `APP_STORE_URL` in `frontend/web/lib/appStore.ts` to `https://apps.apple.com/app/id6799952861` (CTA goes live site-wide).
-- Physical arrival field-test at a taught place (590 Paiea St canonical) — the one unverified link; the cohort may hit it organically first.
-- Beta App Review for build 5 (external testers). Same version 1.1.0 with a new build number often clears without a full pass, but it's Apple's call.
+- ~~Physical arrival field-test at a taught place~~ — ✅ **confirmed good 2026-08-13**. The arrival ping was the last unverified link in the place-lookup chain (open since 08-12); the taught-place → geofence → arrival notification path is now end-to-end verified on a real device, not just inferred from logs.
+- ~~Beta App Review for build 5~~ — ✅ **approved**, build 5 live to external testers via the public link.
 - ~~Cut build 5 only for a native change~~ — done 2026-08-13 (the entitlement). Future JS-only deltas still ride OTA; **adding any entitlement or permission needs a build AND a regenerated provisioning profile per distribution type** (see Known Issues → EAS credentials).
 
 **Parked (not launch-blocking, revisit later)**:
@@ -1660,11 +1660,11 @@ reaped, Aug 9 architecture intact) · Home Depot chain-armed post-#44/45 · "Lon
   stale rows would have permanently muted words like "Home Depot".
 
 ### 🔭 Open
-Physical arrival at a taught place (last unverified link — 590 Paiea St canonical, cohort
-may hit one first) · `PlaceLookupModel.findRetryable` has no caller yet (pre-key pending
-rows don't self-re-geocode) · fan-out visibility chip (needs per-note armed-links endpoint)
-· teach-once → `vocabulary.json` ASR biasing · Google billing sanity-check after a few
-weeks of cohort usage (cache should keep it ≈ $0).
+~~Physical arrival at a taught place~~ — ✅ **confirmed 2026-08-13**, the chain is verified
+end to end · `PlaceLookupModel.findRetryable` has no caller yet (pre-key pending rows don't
+self-re-geocode) · fan-out visibility chip (needs per-note armed-links endpoint) ·
+teach-once → `vocabulary.json` ASR biasing · Google billing sanity-check after a few weeks
+of cohort usage (cache should keep it ≈ $0).
 
 ---
 
@@ -1766,5 +1766,7 @@ Build 4 (`preview`) + OTA `666e2a3f`; build 5 (`production`, submission `eebcc91
 ### 🔭 Open
 Record-and-pocket dated notes don't schedule locally until the next app open (see Known Issues
 → item 0, deliberately unfixed) · `mobile/` still has no test harness, so `timeReminderSync` is
-typecheck-and-hand-tested only · Do Not Disturb path untested on device · Beta App Review for
-build 5 · duplicate-reminder reports from the cohort are the claim-release failure signature.
+typecheck-and-hand-tested only · Do Not Disturb path untested on device · ~~Beta App Review
+for build 5~~ ✅ approved, live to external testers · no duplicate reminders observed on the
+author's device; **duplicate-reminder reports from the cohort remain the claim-release failure
+signature** and the cohort is now the only source of that signal.
