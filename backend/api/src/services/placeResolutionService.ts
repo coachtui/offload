@@ -11,7 +11,11 @@
  */
 
 import { osmProvider } from './placeProviders/osmProvider';
-import type { ProviderCandidate } from './placeProviders/types';
+import { googleProvider } from './placeProviders/googleProvider';
+import type { PlaceProviderSearchOptions, ProviderCandidate } from './placeProviders/types';
+// Type-only: placeAnchors imports haversineKm from this module at runtime, so a
+// value import here would be a cycle. Types are erased at compile time.
+import type { Anchor } from './placeAnchors';
 
 // Radius defaults by OSM place type
 const RADIUS_BY_TYPE: Record<string, number> = {
@@ -127,36 +131,81 @@ function toResolvedPlace(
   };
 }
 
-/**
- * Resolve a place name to a single best geographic match.
- *
- * @param placeName - Raw place name from the note (e.g. "Costco", "Longs Drugs")
- * @param userLocation - Optional user location for proximity bias and confidence calc
- * @returns Resolved place or null if no suitable match found
- */
-export async function resolvePlaceName(
-  placeName: string,
-  userLocation?: { lat: number; lng: number }
-): Promise<ResolvedPlace | null> {
-  const candidates = await osmProvider.search(placeName, userLocation);
-  if (candidates.length === 0) return null;
+// ─── Anchored provider chain ─────────────────────────────────────────────────
 
-  const resolved = toResolvedPlace(candidates[0], placeName, userLocation);
-  console.log(
-    `[PlaceResolution] Resolved "${placeName}" → "${resolved.normalizedName}" (confidence: ${resolved.confidence})`
-  );
-  return resolved;
+/** A candidate this far from EVERY anchor is the wrong place, whatever the bias said. */
+const MAX_KM_FROM_ANY_ANCHOR = 100;
+
+export interface AnchoredSearchResult {
+  /** Which provider answered, or null when every anchor missed. */
+  provider: 'osm' | 'google' | null;
+  /** The anchor that produced the answer, null when unanchored or empty. */
+  anchor: Anchor | null;
+  candidates: ProviderCandidate[];
+}
+
+/**
+ * Try each anchor in priority order; at each, OSM first (free, well-tuned for
+ * chains) and Google only on an OSM miss (business names OSM lacks — the
+ * Melaleuca case). First anchor that yields gated candidates wins.
+ *
+ * Short-circuiting, never merging: mixing two providers' results creates
+ * duplicate-branch problems the proximity dedupe was not designed for.
+ *
+ * The distance gate replaces the old hard 50 km bound. Google's locationBias
+ * is soft — it can return a match on another continent — and the gate is what
+ * makes that safe: a candidate must be within 100 km of at least ONE anchor
+ * (any anchor, not just the winning one, so a genuinely local errand while
+ * travelling survives the home anchor's pass). An anchor whose candidates are
+ * all gated out counts as a miss and the chain continues.
+ */
+export async function searchPlaceCandidates(
+  query: string,
+  anchors: Anchor[],
+  opts?: PlaceProviderSearchOptions
+): Promise<AnchoredSearchResult> {
+  const withinGate = (c: ProviderCandidate): boolean =>
+    anchors.length === 0 ||
+    anchors.some((a) => haversineKm(a.lat, a.lng, c.lat, c.lng) <= MAX_KM_FROM_ANY_ANCHOR);
+
+  // No anchors: single unanchored pass. The gate has nothing to measure from,
+  // so it stands down — scoring's own >100 km confidence clamp still applies
+  // downstream.
+  const anchorPasses: Array<Anchor | null> = anchors.length > 0 ? anchors : [null];
+
+  for (const anchor of anchorPasses) {
+    const near = anchor ? { lat: anchor.lat, lng: anchor.lng } : undefined;
+    for (const provider of [osmProvider, googleProvider]) {
+      const found = opts
+        ? await provider.search(query, near, opts)
+        : await provider.search(query, near);
+      const gated = found.filter(withinGate);
+      if (gated.length > 0) {
+        return { provider: provider.name, anchor, candidates: gated };
+      }
+    }
+  }
+
+  return { provider: null, anchor: null, candidates: [] };
 }
 
 /**
  * Resolve a place name to up to 3 geographic candidates.
  * Used when creating multiple geofences for the same named place (e.g. chain stores).
+ *
+ * Compatibility wrapper: existing callers pass a bare user location, which
+ * becomes a single current_location anchor — so they get the OSM→Google chain
+ * without signature churn. Task 5 moves the pipeline onto resolveAnchors +
+ * searchPlaceCandidates + arbitrate directly, at which point this thins out.
  */
 export async function resolvePlaceNameMulti(
   placeName: string,
   userLocation?: { lat: number; lng: number }
 ): Promise<ResolvedPlace[]> {
-  const candidates = await osmProvider.search(placeName, userLocation);
+  const anchors: Anchor[] = userLocation
+    ? [{ lat: userLocation.lat, lng: userLocation.lng, source: 'current_location' }]
+    : [];
+  const { candidates } = await searchPlaceCandidates(placeName, anchors);
   if (candidates.length === 0) return [];
 
   const resolved = candidates.map((c) => toResolvedPlace(c, placeName, userLocation));
