@@ -142,6 +142,18 @@ export function candidateToResolvedPlace(
 /** A candidate this far from EVERY anchor is the wrong place, whatever the bias said. */
 const MAX_KM_FROM_ANY_ANCHOR = 100;
 
+export interface AnchoredSearchOptions extends PlaceProviderSearchOptions {
+  /**
+   * Does this provider's (gated) answer actually answer the question?
+   * A provider that returns rows the caller's arbitration then filters to
+   * nothing has NOT answered — without this, OSM returning junk-shaped rows
+   * stopped the chain and Google was never consulted, which is how a Home
+   * Depot query died on the word "The" while Google would have matched any
+   * casual phrasing of it. Defaults to "any gated candidate counts".
+   */
+  accept?: (candidates: ProviderCandidate[]) => boolean;
+}
+
 export interface AnchoredSearchResult {
   /** Which provider answered, or null when every anchor missed. */
   provider: 'osm' | 'google' | null;
@@ -168,7 +180,7 @@ export interface AnchoredSearchResult {
 export async function searchPlaceCandidates(
   query: string,
   anchors: Anchor[],
-  opts?: PlaceProviderSearchOptions
+  opts?: AnchoredSearchOptions
 ): Promise<AnchoredSearchResult> {
   const withinGate = (c: ProviderCandidate): boolean =>
     anchors.length === 0 ||
@@ -191,7 +203,7 @@ export async function searchPlaceCandidates(
     near: { lat: number; lng: number } | undefined
   ): Promise<ProviderCandidate[]> => {
     if (!near || !cacheable) {
-      return opts ? provider.search(query, near, opts) : provider.search(query, near);
+      return opts?.withAddress ? provider.search(query, near, { withAddress: true }) : provider.search(query, near);
     }
     try {
       const cached = await PlaceProviderCacheModel.get(query, near.lat, near.lng, provider.name);
@@ -215,7 +227,7 @@ export async function searchPlaceCandidates(
     for (const provider of [osmProvider, googleProvider]) {
       const found = await fetchThroughCache(provider, near);
       const gated = found.filter(withinGate);
-      if (gated.length > 0) {
+      if (gated.length > 0 && (!opts?.accept || opts.accept(gated))) {
         return { provider: provider.name, anchor, candidates: gated };
       }
     }

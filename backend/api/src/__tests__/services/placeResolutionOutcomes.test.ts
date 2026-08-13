@@ -139,7 +139,9 @@ describe('verdict: ambiguous — the founding Melaleuca case', () => {
 
     // Second search call is the withAddress enrichment pass
     expect(mockSearch).toHaveBeenCalledTimes(2);
-    expect(mockSearch.mock.calls[1][2]).toEqual({ withAddress: true });
+    expect(mockSearch.mock.calls[1][2]).toEqual(
+      expect.objectContaining({ withAddress: true, accept: expect.any(Function) })
+    );
     const stored = mockLookup.create.mock.calls[0][0].candidates;
     expect(stored[0].address).toContain('590 Paiea St');
     expect(stored[1].address).toContain('500 Ala Moana Blvd');
@@ -274,6 +276,16 @@ describe('anchor plumbing', () => {
       placeName: 'Foodland',
       recorded: { lat: RECORDED.latitude, lng: RECORDED.longitude },
     });
+  });
+
+  it('the primary search carries the arbitration accept gate — junk answers cannot stop the chain', async () => {
+    await resolveObjectPlaces(USER, OBJ, ['Home Depot'], RECORDED);
+
+    const opts = mockSearch.mock.calls[0][2] as any;
+    expect(opts.accept).toEqual(expect.any(Function));
+    // The gate is arbitration itself: junk-named rows are refused, real ones pass.
+    expect(opts.accept([cand('Hardware City', 21.3, -157.9, 'junk')])).toBe(false);
+    expect(opts.accept([cand('The Home Depot', 21.3, -157.9, 'hd')])).toBe(true);
   });
 
   it('manual-geofence matches still short-circuit before any anchor or search work', async () => {

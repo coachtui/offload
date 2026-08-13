@@ -167,6 +167,13 @@ describe('arbitrate', () => {
     expect(result.verdict).toBe('none');
   });
 
+  it('speech normalisation: apostrophes, hyphens, and okina do not block a match', () => {
+    // People say names; databases store orthography. Both must meet.
+    expect(arbitrate('Longs', [cand("Long's Drugs", 21.30, -157.86, 'drugstore', 'a')]).verdict).toBe('single');
+    expect(arbitrate('Walmart', [cand('Wal-Mart', 21.44, -158.0, 'store', 'b')]).verdict).toBe('single');
+    expect(arbitrate('Puuhale Market', [cand('Puʻuhale Market', 21.32, -157.88, 'shop', 'c')]).verdict).toBe('single');
+  });
+
   it('name matching is case-insensitive', () => {
     const result = arbitrate('melaleuca', MELALEUCA);
     expect(result.verdict).toBe('ambiguous');

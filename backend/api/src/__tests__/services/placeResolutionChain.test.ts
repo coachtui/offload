@@ -137,6 +137,51 @@ describe('searchPlaceCandidates', () => {
   });
 });
 
+describe('searchPlaceCandidates — the accept gate', () => {
+  it("a provider whose answer the caller can't use is a MISS — the chain moves to Google", async () => {
+    // The Home Depot case, structurally: OSM answers with rows the name
+    // filter will reject; Google would match any casual phrasing. An answer
+    // only counts if it answers.
+    const junk = candidateAt(21.34, -157.90, 'Hardware City');
+    const real = candidateAt(21.44, -158.0, 'The Home Depot');
+    mockOsm.search.mockResolvedValue([junk]);
+    mockGoogle.search.mockResolvedValue([real]);
+
+    const result = await searchPlaceCandidates('Home Depot', [HOME], {
+      accept: (cands) => cands.some((c) => c.name.toLowerCase().includes('home depot')),
+    });
+
+    expect(result.provider).toBe('google');
+    expect(result.candidates).toEqual([real]);
+  });
+
+  it('an unusable answer at one anchor does not stop later anchors', async () => {
+    const junk = candidateAt(21.34, -157.90, 'Hardware City');
+    const real = candidateAt(36.16, -115.15, 'The Home Depot');
+    mockOsm.search
+      .mockResolvedValueOnce([junk]) // home anchor: unusable
+      .mockResolvedValueOnce([real]); // current anchor: real
+    mockGoogle.search.mockResolvedValue([]); // google misses at home anchor
+
+    const result = await searchPlaceCandidates('Home Depot', [HOME, CURRENT], {
+      accept: (cands) => cands.some((c) => c.name.toLowerCase().includes('home depot')),
+    });
+
+    expect(result.anchor).toEqual(CURRENT);
+    expect(result.candidates).toEqual([real]);
+  });
+
+  it('without an accept callback, any gated candidate still counts (default unchanged)', async () => {
+    const junk = candidateAt(21.34, -157.90, 'Hardware City');
+    mockOsm.search.mockResolvedValue([junk]);
+
+    const result = await searchPlaceCandidates('Home Depot', [HOME]);
+
+    expect(result.provider).toBe('osm');
+    expect(mockGoogle.search).not.toHaveBeenCalled();
+  });
+});
+
 describe('searchPlaceCandidates — provider cache', () => {
   it('a cache hit answers without any provider call — repeat lookups cost zero', async () => {
     const cached = [candidateAt(21.3366, -157.915)];

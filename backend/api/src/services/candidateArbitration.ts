@@ -39,25 +39,42 @@ export interface ArbitrationResult {
 const CO_LOCATION_METERS = 300;
 
 /**
- * A leading article carries no identity: "The Home Depot" IS "Home Depot".
- * Without this, a query of "Home Depot" failed the prefix test against every
- * OSM result (all named "The Home Depot") and a top-five chain arbitrated to
- * verdict NONE — field-found 2026-08-13, minutes after the wholesale bug.
+ * Speech-normalise a place name: what the mouth produces, not what the
+ * database stores. Lowercase; drop a leading article ("The Home Depot" IS
+ * "Home Depot" — field-found 2026-08-13 when a top-five chain arbitrated to
+ * NONE over the word "The"); strip diacritics (Puʻuhale ↔ Puuhale — ASR
+ * rarely produces the ʻokina); drop punctuation and collapse hyphens
+ * (Long's ↔ Longs, Wal-Mart ↔ Walmart); normalise whitespace.
+ *
+ * This is deliberately mechanical, not linguistic — the structural safety net
+ * for everything it can't foresee is the provider chain treating a
+ * filtered-to-nothing answer as a MISS and moving on to Google, whose entire
+ * business is matching casual speech to places.
  */
-function stripLeadingArticle(s: string): string {
-  return s.startsWith('the ') ? s.slice(4) : s;
+function speechNormalize(s: string): string {
+  let n = s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // combining diacritics
+    .replace(/[ʻ'’'`]/g, '')           // okina + apostrophe family
+    .toLowerCase();
+  n = n.replace(/[-–—]/g, '');          // wal-mart → walmart
+  n = n.replace(/[^a-z0-9 ]/g, ' ');    // remaining punctuation → space
+  n = n.replace(/\s+/g, ' ').trim();
+  if (n.startsWith('the ')) n = n.slice(4);
+  return n;
 }
 
 /**
  * Exact match, or query as a whole-word prefix ("Foodland" claims "Foodland
- * Farms" but "Long" does not claim "Longs Drugs"), articles ignored on both
- * sides. Deliberately NOT substring: "KAHALA MKT. by Foodland" is dropped,
- * and that is accepted — a missed branch costs one extra pending lookup,
- * while a false positive arms a geofence on a place the user never named.
+ * Farms" but "Long" does not claim "Longs Drugs"), both sides
+ * speech-normalised first. Deliberately NOT substring: "KAHALA MKT. by
+ * Foodland" is dropped, and that is accepted — a missed branch costs one
+ * extra pending lookup, while a false positive arms a geofence on a place
+ * the user never named.
  */
 function nameMatchesQuery(name: string, query: string): boolean {
-  const n = stripLeadingArticle(name.trim().toLowerCase());
-  const q = stripLeadingArticle(query.trim().toLowerCase());
+  const n = speechNormalize(name);
+  const q = speechNormalize(query);
   if (!q || !n.startsWith(q)) return false;
   if (n.length === q.length) return true;
   return !/[a-z0-9]/.test(n.charAt(q.length));
