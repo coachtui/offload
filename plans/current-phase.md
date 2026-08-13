@@ -1766,7 +1766,22 @@ Build 4 (`preview`) + OTA `666e2a3f`; build 5 (`production`, submission `eebcc91
 ### 🔭 Open
 Record-and-pocket dated notes don't schedule locally until the next app open (see Known Issues
 → item 0, deliberately unfixed) · `mobile/` still has no test harness, so `timeReminderSync` is
-typecheck-and-hand-tested only · Do Not Disturb path untested on device · ~~Beta App Review
-for build 5~~ ✅ approved, live to external testers · no duplicate reminders observed on the
-author's device; **duplicate-reminder reports from the cohort remain the claim-release failure
-signature** and the cohort is now the only source of that signal.
+typecheck-and-hand-tested only · ~~Do Not Disturb path untested~~ ✅ **verified on device
+2026-08-13** · ~~Beta App Review for build 5~~ ✅ approved, live to external testers · no
+duplicate reminders observed on the author's device; **duplicate-reminder reports from the
+cohort remain the claim-release failure signature** and the cohort is now the only source of
+that signal.
+
+### ✅ Focus / DND verified end to end (2026-08-13)
+All three layers confirmed on device, which matters because any one of them silently suppresses
+a reminder and they look identical from the outside:
+1. **Settings → Notifications → Offload → Time Sensitive Notifications** row is present. iOS only
+   renders that row for apps carrying the entitlement, so its existence is independent proof the
+   entitlement is live in the installed build — a second, user-visible check alongside `codesign`.
+2. The Focus's own time-sensitive allowance is enabled (off there suppresses correctly, and would
+   read as a bug).
+3. With Do Not Disturb on, a reminder arrived immediately rather than being held for the summary.
+
+This exercised the **local** notification path (`interruptionLevel: 'timeSensitive'`), which is
+what normally fires now that the device owns reminders. The push path sets the kebab-case
+equivalent and is unexercised by this test — it would need local scheduling suppressed to reach.
