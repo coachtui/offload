@@ -228,7 +228,13 @@ async function resolveAndLinkPlace(
     placeName: normalizedQuery,
     recorded: userLatLng,
   });
-  const search = await searchPlaceCandidates(normalizedQuery, anchors);
+  // accept: a provider's answer only counts if arbitration can use it. OSM
+  // returning rows the name filter rejects wholesale is a MISS, and the chain
+  // moves on to Google — whose matching of casual speech is the structural
+  // answer to "people don't pronounce canonical POI names".
+  const search = await searchPlaceCandidates(normalizedQuery, anchors, {
+    accept: (candidates) => arbitrate(normalizedQuery, candidates).verdict !== 'none',
+  });
 
   if (search.provider === 'google') {
     logLifecycle('PLACE_PROVIDER_FALLBACK', {
@@ -255,7 +261,10 @@ async function resolveAndLinkPlace(
     // usable question if this second pass fails.
     let pendingCandidates = locations;
     if (verdict === 'ambiguous') {
-      const enriched = await searchPlaceCandidates(normalizedQuery, anchors, { withAddress: true });
+      const enriched = await searchPlaceCandidates(normalizedQuery, anchors, {
+        withAddress: true,
+        accept: (candidates) => arbitrate(normalizedQuery, candidates).verdict !== 'none',
+      });
       const rearbitrated = arbitrate(normalizedQuery, enriched.candidates);
       if (rearbitrated.locations.length > 0) pendingCandidates = rearbitrated.locations;
     }

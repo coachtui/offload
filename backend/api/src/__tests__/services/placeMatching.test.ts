@@ -65,7 +65,7 @@ describe('resolveObjectPlaces — labeled geofence matching', () => {
     await resolveObjectPlaces('u1', 'obj1', ['home depot']);
 
     expect(mockGeo.addLinkedObject).not.toHaveBeenCalled();
-    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('home depot', []);
+    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('home depot', [], expect.objectContaining({ accept: expect.any(Function) }));
   });
 
   // Inferred geofences surface notes via the backing place, not geofence_objects.
@@ -75,7 +75,7 @@ describe('resolveObjectPlaces — labeled geofence matching', () => {
     await resolveObjectPlaces('u1', 'obj1', ['Safeway']);
 
     expect(mockGeo.addLinkedObject).not.toHaveBeenCalled();
-    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('Safeway', []);
+    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('Safeway', [], expect.objectContaining({ accept: expect.any(Function) }));
   });
 
   it('dedupes onto an existing inferred place by name', async () => {
@@ -94,6 +94,6 @@ describe('resolveObjectPlaces — labeled geofence matching', () => {
     await resolveObjectPlaces('u1', 'obj1', ['some ramen shop']);
 
     expect(mockGeo.addLinkedObject).not.toHaveBeenCalled();
-    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('some ramen shop', []);
+    expect(mockRes.searchPlaceCandidates).toHaveBeenCalledWith('some ramen shop', [], expect.objectContaining({ accept: expect.any(Function) }));
   });
 });
