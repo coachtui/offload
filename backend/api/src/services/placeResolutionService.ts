@@ -68,6 +68,11 @@ const NAMED_PLACE_TYPES = new Set([
   'shop', 'supermarket', 'amenity', 'building', 'pharmacy',
   'restaurant', 'cafe', 'cinema', 'mall', 'fuel', 'bank',
   'fast_food', 'convenience', 'department_store',
+  // Costco is shop=wholesale in OSM. Its absence here left every branch at
+  // ~0.35-0.40 — five hundredths under the geofence threshold — while Walmart
+  // (department_store) armed at 0.65. Field-found 2026-08-13, first day the
+  // lifecycle table had data.
+  'wholesale',
 ]);
 
 function computeConfidence(

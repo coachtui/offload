@@ -211,6 +211,47 @@ describe('verdict: chain — fan out to the nearest 3, never ask', () => {
   });
 });
 
+describe('chain confidence floor — the Costco case', () => {
+  it('arms every branch of a chain even when OSM importance leaves scores under the gate', async () => {
+    // Field capture 2026-08-13: Costco is shop=wholesale with importance
+    // ~0.001, so branches scored 0.35-0.40 against the 0.45 threshold —
+    // places created, zero regions, bell silently off. A chain verdict is
+    // arbitration ruling the name NOT vague, and must outrank the noisy
+    // per-candidate score. relevance 0.001 + category null reproduces the
+    // worst-case scoring.
+    mockSearch.mockResolvedValue({
+      provider: 'osm',
+      anchor: null,
+      candidates: [
+        { ...cand('Costco', 21.4266, -158.0001, 'osm:waipahu'), category: null, relevance: 0.001 },
+        { ...cand('Costco', 21.3267, -158.0875, 'osm:kapolei'), category: null, relevance: 0.001 },
+        { ...cand('Costco', 21.3186, -157.8712, 'osm:iwilei'), category: null, relevance: 0.001 },
+      ],
+    } as any);
+
+    await resolveObjectPlaces(USER, OBJ, ['Costco'], RECORDED);
+
+    expect(mockPlace.create).toHaveBeenCalledTimes(3);
+    for (const [input] of mockPlace.create.mock.calls as any[]) {
+      expect(input.userConfirmed).toBe(true); // confidence floored to threshold
+    }
+    expect(mockGeo.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('does NOT floor a single fuzzy result — the gate still guards non-chains', async () => {
+    mockSearch.mockResolvedValue({
+      provider: 'osm',
+      anchor: null,
+      // Name doesn't exactly match and importance is noise → genuinely weak.
+      candidates: [{ ...cand('Costco Business Center', 41.0, -95.0, 'osm:far'), category: null, relevance: 0.001 }],
+    } as any);
+
+    await resolveObjectPlaces(USER, OBJ, ['Costco'], RECORDED);
+
+    expect(mockGeo.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('the ignore list', () => {
   it('a dismissed word never reaches the geocoder again', async () => {
     mockLookup.isQueryIgnored.mockResolvedValue(true);
