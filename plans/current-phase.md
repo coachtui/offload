@@ -1,18 +1,17 @@
 # Current Phase: App Store Launch Prep (Phase 7 queued behind it)
 
 ## Phase Overview
-**Phase**: Launch — TestFlight → App Store submission
-**Status**: 🚀 Build **4** (v1.1.0) building + auto-submitting to App Store Connect (ASC app `6799952861`) — carries the Settings → Location & permissions fix (PR #39) in the binary. Build 2 is in ASC but its embedded bundle predates that fix; use build 4 for the reviewer script and screenshots. Nothing submitted for App Store review yet.
+**Phase**: Launch — TestFlight cohort live, build 4 approved
+**Status**: ✅ Build **4** (v1.1.0) **approved** (2026-08-12 night, ASC app `6799952861`). TestFlight cohort actively testing and surfacing fixes. First-ever `production`-channel OTA published 2026-08-13 (group `347778a1`, commit `39acc7f`) — carries the PR #41 record-screen fixes and the PR #42 place-lookup mobile UI to build 4 users. Backend on Railway is main through PR #46.
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
-**Current Date**: 2026-08-11
-**Last Updated**: 2026-08-11 — TestFlight beta **approved**; external testers signing up. Web is now marketing-only (PR #40).
+**Current Date**: 2026-08-13
+**Last Updated**: 2026-08-13 — Place-lookup fallback shipped end-to-end (PRs #42–#46, session log at bottom); production OTA out.
 
-**Remaining before submitting for review** (detail in the 2026-08-10 session logs at the bottom):
-field-test silent-push arming on device via TestFlight → walk the reviewer script on a clean
-install **of build 4** → retake screenshots (old ones say "Save Reminder") → ASC listing +
-Nutrition Label (Precise Location linked; transcript as User Content, NO Audio Data) → paste
-review notes. Do not publish a `production` OTA once build 4 is in review.
+**Remaining launch actions**:
+- At public App Store release: set `APP_STORE_URL` in `frontend/web/lib/appStore.ts` to `https://apps.apple.com/app/id6799952861` (CTA goes live site-wide).
+- Physical arrival field-test at a taught place (590 Paiea St canonical) — the one unverified link; the cohort may hit it organically first.
+- Cut build 5 only for a native change or ahead of public release (current mobile delta is JS-only and rides OTA).
 
 ## Executive Summary
 
@@ -1556,3 +1555,95 @@ A server-side schema change (`acceptedTerms`) is a **breaking API change for eve
 not just the one being edited alongside it. The web client silently 400-ing for five days was
 only surfaced by a human tester. When adding a required field to a shared endpoint, grep all
 clients (`mobile/`, `frontend/`) in the same change.
+
+
+## Session Update (2026-08-12 → 13) — Place-Lookup Fallback: From Silent Melaleuca Failure to a Cohort-Ready Pipeline (PRs #42–#46)
+
+### 🐛 The report
+A note about **Melaleuca** (health/beauty distributor, 590 Paiea St) produced *nothing* — no
+place, no geofence, no error. Production logs told the whole story in one line:
+`PLACE_UNRESOLVABLE {"query":"Melaleuca","reason":"nominatim_no_results"}`. Everything
+upstream (transcription, parse, errand gate, location attach) worked; the pipeline's only
+geocoder was OSM, whose volunteer mapping has the street and the building but **not the
+business name**. Verified by hand: bounded Nominatim → 0 results; Google Places → both
+locations, first try.
+
+### 🧭 Design (spec + plan in `docs/superpowers/{specs,plans}/2026-08-12-place-lookup-fallback*`)
+- **Provider chain**: OSM first (free, good at chains) → Google Places Text Search (New) on
+  miss. Key absent ⇒ OSM-only, everything degrades, nothing crashes. LLM-as-geocoder was
+  considered and rejected on evidence (word-sense ambiguity: bare "Melaleuca" reads as the
+  tree genus; unverifiable house numbers: OSM has no address points on Paiea St, so 50 vs
+  590 geocode identically).
+- **Anchors** replace the hard 50 km box: region named in the note → current location →
+  learned home centroid (`hub.users.home_*`, 7-day cache). "Grab poke at Foodland" now
+  resolves from a Vegas hotel.
+- **Arbitration**: name filter → 300 m co-location collapse → count. 1 arms, 2 **asks**,
+  ≥3 fans out (chain). `primaryType` deliberately unused — measured: Foodland spans 4
+  types, Costco 7 at one address; name+geometry is the real signal.
+- **Pending lookups** (`hub.place_lookups`, migration 018): one table = the "Needs a
+  location" queue + retry ledger + (via dismissed rows) the per-user ignore list. Resolving
+  any way (candidate tap / current location / map pick) creates a **manual** geofence under
+  the **spoken** name — teach once, never asked again.
+- **Honest push**: `arrivalArmed` vs `needsLocation` replace the "we tried" boolean that
+  showed the Always-permission sheet for reminders that didn't exist. `resolveObjectPlaces`
+  is now awaited (off request path; 202 already sent).
+- **Diagnostics finally real**: `logLifecycle` persists to `reminder_lifecycle_events` —
+  the table + endpoint had shipped in migration 010 and been read-only-empty ever since.
+
+### 🚀 Shipped
+- **PR #42** — the feature (9-task plan, all checked off; 65 suites / 475 tests, from a
+  56/362 baseline). GCP: project `offload-505401`, Places API (New), key
+  `offload-places-server` (Places-restricted, header-only), `GOOGLE_PLACES_API_KEY` on
+  Railway. Cost control: field masks (cheap SKU default, addresses only when about to ask),
+  provider cache keyed on (query, ~11 km cell, provider), 30-day TTL.
+- Then the TestFlight-cohort evening found three real bugs in ~90 minutes each, all
+  diagnosed from the new lifecycle trail:
+  - **PR #43** — Costco armed nothing: OSM `importance` ≈ 0.001 for branch POIs +
+    `shop=wholesale` missing from the type-boost list ⇒ 0.35–0.40 vs the 0.45 gate. Fix: a
+    **chain verdict floors confidence at the threshold** (arbitration has already ruled the
+    name not-vague — that was the threshold's only job) + rearm accepts ≥3 same-name
+    siblings as chain evidence, so stranded places self-heal on next mention.
+  - **PR #44** — "Home Depot" arbitrated to NONE: OSM names it "**The** Home Depot" and the
+    prefix filter had no article handling.
+  - **PR #45** — the structural version (per Tui: *users must be able to speak normally*):
+    `speechNormalize` (articles/diacritics/ʻokina/apostrophes/hyphens) + **a provider hasn't
+    answered until arbitration can use its answer** (`opts.accept`) — filtered-to-nothing
+    now falls through to Google, whose whole business is matching casual speech to places.
+    Third leg is teach-once: the user's own phrasing becomes the canonical name.
+  - **PR #46** — a pending question **dies with its note** (notes soft-delete, so the FK
+    cascade never fired; a stale "Home Depot" row outlived its deleted note). Read-time
+    liveness join; deliberately NOT auto-dismissed — dismissed rows are the ignore list,
+    and a deleted note must never ignore-list a word.
+- **Mobile** (all JS, OTA-able): "Needs a location" section first in Places; shared confirm
+  sheet (candidates + distances, use-my-location, pick-on-map via prefilled CreateGeofence
+  that also resolves the lookup, not-a-place); "set location" chip on note cards.
+- **OTAs**: `preview` (Tui's phone) then, after build 4's approval, the **first
+  `production` update** (group `347778a1`) carrying PRs #41+#42 mobile work to the cohort.
+
+### ✅ Field-verified (test@example.com, one evening)
+Melaleuca pending→sheet→resolve (both candidates with addresses/distances) · chain fan-out
+(Foodland/Walmart ×3) · Costco re-arm post-#43 (`GEOFENCE_REARMED` ×3) · reap-on-done (9
+reaped, Aug 9 architecture intact) · Home Depot chain-armed post-#44/45 · "Longs" matched
+"Long's Drugs" (normalizer) · stale pending row vanished post-#46 · errand gate observed
+("test note about Costco" correctly doesn't trigger — needs errand verb + from/at/to).
+
+### 📌 Lessons on record
+- **A diagnostics table pays for itself on day one.** Three silent-failure bugs became
+  one-line log queries. The `PLACE_NEEDS_USER` / `PLACE_USER_RESOLVED` ratio is the
+  feature's success metric going forward.
+- **Thresholds doing arbitration's job badly**: the 0.45 confidence gate existed to filter
+  vague names; once arbitration ruled explicitly, the gate had to defer to the verdict.
+- **Speech ≠ orthography**: normalize mechanically, delegate the long tail to Google,
+  personalize via teach-once. Do not enumerate linguistics per-bug.
+- **Soft deletes never fire FK cascades** — any "cleanup on delete" that relies on
+  `ON DELETE CASCADE` is dead code against `deleted_at`-style deletion. Filter on liveness
+  at read time instead.
+- **Dismiss ≠ delete**: dismissed pending rows double as the ignore list — auto-dismissing
+  stale rows would have permanently muted words like "Home Depot".
+
+### 🔭 Open
+Physical arrival at a taught place (last unverified link — 590 Paiea St canonical, cohort
+may hit one first) · `PlaceLookupModel.findRetryable` has no caller yet (pre-key pending
+rows don't self-re-geocode) · fan-out visibility chip (needs per-note armed-links endpoint)
+· teach-once → `vocabulary.json` ASR biasing · Google billing sanity-check after a few
+weeks of cohort usage (cache should keep it ≈ $0).
