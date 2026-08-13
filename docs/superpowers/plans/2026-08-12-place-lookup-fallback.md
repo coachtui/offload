@@ -88,11 +88,15 @@ X-Goog-FieldMask: places.id,places.displayName,places.location,places.primaryTyp
 }
 ```
 
-- [ ] **Step 1: Write the failing test** using the real captured payload for "Melaleuca" (two results: 590 Paiea St `store` 21.3366/‑157.9150; 500 Ala Moana Blvd #4480 `cosmetics_store` 21.3011/‑157.8623). Assert two `ProviderCandidate`s with `google:` -prefixed ids.
-- [ ] **Step 2: Assert the key-absent contract** — with `GOOGLE_PLACES_API_KEY` unset, `search()` returns `[]` and does **not** throw or fetch. The whole feature must degrade, never crash.
-- [ ] **Step 3: Implement**, with a 5 s `AbortSignal.timeout` matching the OSM call. Non-200 → log and return `[]`; a provider outage must never fail a note save.
-- [ ] **Step 4: Field mask discipline** — request `formattedAddress` **only** when the caller signals it is about to ask the user (Task 4). Address pushes the request into a costlier SKU and is needed only for the confirm sheet. Expose as `search(query, near, opts?: { withAddress?: boolean })`.
-- [ ] **Step 5: Verify** — `npx tsc --noEmit`, `npm test`.
+- [x] **Step 1: Write the failing test** using the real captured payload for "Melaleuca" (two results: 590 Paiea St `store` 21.3366/‑157.9150; 500 Ala Moana Blvd #4480 `cosmetics_store` 21.3011/‑157.8623). Assert two `ProviderCandidate`s with `google:` -prefixed ids.
+- [x] **Step 2: Assert the key-absent contract** — with `GOOGLE_PLACES_API_KEY` unset, `search()` returns `[]` and does **not** throw or fetch. The whole feature must degrade, never crash.
+- [x] **Step 3: Implement**, with a 5 s `AbortSignal.timeout` matching the OSM call. Non-200 → log and return `[]`; a provider outage must never fail a note save.
+- [x] **Step 4: Field mask discipline** — request `formattedAddress` **only** when the caller signals it is about to ask the user (Task 4). Address pushes the request into a costlier SKU and is needed only for the confirm sheet. Exposed as `search(query, near, opts?: { withAddress?: boolean })`.
+- [x] **Step 5: Verify** — `npx tsc --noEmit` clean; `npm test` 58 suites / 384 tests (was 57/371 — the 13 new ones).
+
+**Implementation notes for Task 3's author:**
+- The key is read at **call time**, not module scope — a key added to Railway takes effect on the next request, and tests can vary it per-case. Do not "optimise" it into a module constant; that reintroduces the restart-ordering hazard `test-setup.ts` documents for `OPENAI_API_KEY`.
+- Tests additionally pin: key travels in `X-Goog-Api-Key` (never the URL, where it would land in request logs); a zero-result search returns `{}` with **no `places` key** (live-verified shape); `rankPreference`/`locationBias` are omitted entirely when there is no anchor; `relevance` stays `undefined` so Google candidates score at the neutral 0.5.
 
 ---
 
