@@ -1,7 +1,8 @@
 /**
  * EditGeofenceScreen
- * Edit an existing geofence's name, type, radius, notifications, and quiet hours.
- * Location is immutable — delete and recreate to change it.
+ * Edit an existing geofence's name, location, type, radius, notifications,
+ * and quiet hours. The map up top moves the pin; saving re-arms OS regions
+ * through the useGeofences hook.
  */
 
 import React, { useState } from 'react';
@@ -20,6 +21,7 @@ import { RouteProp, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useGeofences } from '../hooks/useGeofences';
+import PlaceLocationMap from '../components/PlaceLocationMap';
 import { AppInput, ConfirmSheet, useToast, Spacing, Radius } from '../components/ui';
 import { Fonts, Elevation, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
@@ -43,9 +45,10 @@ export default function EditGeofenceScreen({ navigation }: Props) {
     notifyOnExit: initialNotifyOnExit,
     quietHoursStart: initialQHStart,
     quietHoursEnd: initialQHEnd,
-    location,
+    location: initialLocation,
   } = route.params;
 
+  const [location, setLocation] = useState(initialLocation);
   const [name, setName] = useState(geofenceName);
   const [nameError, setNameError] = useState<string | null>(null);
   const [type, setType] = useState<'home' | 'work' | 'gym' | 'store' | 'custom'>(initialType);
@@ -74,6 +77,7 @@ export default function EditGeofenceScreen({ navigation }: Props) {
     try {
       const updated = await updateGeofence(geofenceId, {
         name: name.trim(),
+        location,
         type,
         radius,
         notifyOnEnter,
@@ -106,10 +110,11 @@ export default function EditGeofenceScreen({ navigation }: Props) {
       const deleted = await deleteGeofence(geofenceId);
       if (deleted) {
         toast.show({ message: `${geofenceName} deleted`, tone: 'success' });
-        // Not goBack(): that lands on the place's summary screen, which is now
-        // showing a geofence that no longer exists. Places is the honest
-        // destination — it pops back to it if it's already in the stack.
-        navigation.navigate('Places');
+        // popTo, not navigate: under React Navigation 7, navigate() PUSHES a
+        // fresh Places on top (each delete grew the stack by two screens, so
+        // back walked through every stale edit screen). popTo rewinds to the
+        // existing Places frame and drops everything above it.
+        navigation.popTo('Places');
       } else {
         toast.show({
           message: "Couldn't delete this place",
@@ -152,13 +157,12 @@ export default function EditGeofenceScreen({ navigation }: Props) {
       </View>
 
       <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
-        {/* Location (read-only) */}
-        <View style={styles.locationBanner}>
-          <Ionicons name="location" size={16} color={colors.textMuted} />
-          <Text style={styles.locationText}>
-            {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-            {'  ·  '}To change location, delete and recreate.
-          </Text>
+        {/* Location — tap the map or drag the pin to move this place */}
+        <View style={styles.formGroup}>
+          <View style={styles.mapContainer}>
+            <PlaceLocationMap location={location} radius={radius} onLocationChange={setLocation} />
+          </View>
+          <Text style={styles.mapHint}>Tap the map or drag the pin to move this place.</Text>
         </View>
 
         {/* Name */}
@@ -346,23 +350,19 @@ const createStyles = (c: ThemeColors) =>
       fontFamily: Fonts.bold,
       color: c.accent,
     },
-    locationBanner: {
-      flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: 6,
-      backgroundColor: c.bgMuted,
-      padding: Spacing.md,
-      borderRadius: Radius.sm,
+    mapContainer: {
+      height: 220,
+      borderRadius: Radius.md,
+      overflow: 'hidden',
       borderWidth: 1,
       borderColor: c.border,
-      marginBottom: Spacing.xxl,
+      backgroundColor: c.bgMuted,
     },
-    locationText: {
-      flex: 1,
+    mapHint: {
       fontSize: 12,
       fontFamily: Fonts.regular,
       color: c.textMuted,
-      lineHeight: 18,
+      marginTop: Spacing.sm,
     },
     form: {
       flex: 1,

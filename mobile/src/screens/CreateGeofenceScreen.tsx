@@ -19,8 +19,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { RouteProp, useRoute } from '@react-navigation/native';
-import MapView, { Marker, Circle } from 'react-native-maps';
 import { locationService, LocationUsageReason } from '../services/locationService';
+import PlaceLocationMap from '../components/PlaceLocationMap';
 import { useGeofences } from '../hooks/useGeofences';
 import { apiService } from '../services/api';
 import { AtomicObject } from '../types';
@@ -39,7 +39,7 @@ interface CreateGeofenceScreenProps {
 }
 
 export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScreenProps) {
-  const { colors, scheme } = useTheme();
+  const { colors } = useTheme();
   const styles = useThemedStyles(createStyles);
   // Arriving from a pending lookup's "Pick on the map": the spoken name is
   // pre-filled, and saving also resolves the lookup (linking the note).
@@ -180,11 +180,9 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
     }
   };
 
-  const handleMapPress = (event: any) => {
-    const { latitude, longitude } = event.nativeEvent.coordinate;
-    setLocation({ latitude, longitude });
+  const handleLocationChange = (coordinate: { latitude: number; longitude: number }) => {
+    setLocation(coordinate);
     setLocationError(null);
-    console.log('[CreateGeofence] Location set via map:', latitude, longitude);
   };
 
   // ─── Create ──────────────────────────────────────────────────────────────────
@@ -346,25 +344,7 @@ export default function CreateGeofenceScreen({ navigation }: CreateGeofenceScree
       {/* Map */}
       <View style={styles.mapContainer}>
         {location ? (
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            onPress={handleMapPress}
-          >
-            <Marker coordinate={location} title="Geofence Center" />
-            <Circle
-              center={location}
-              radius={radius}
-              fillColor={scheme === 'dark' ? 'rgba(83, 184, 165, 0.18)' : 'rgba(15, 107, 95, 0.15)'}
-              strokeColor={colors.accent}
-              strokeWidth={2}
-            />
-          </MapView>
+          <PlaceLocationMap location={location} radius={radius} onLocationChange={handleLocationChange} />
         ) : (
           <View style={styles.mapPlaceholder}>
             {locationLoading ? (
@@ -741,9 +721,6 @@ const createStyles = (c: ThemeColors) =>
     mapContainer: {
       height: 250,
       backgroundColor: c.bgMuted,
-    },
-    map: {
-      flex: 1,
     },
     mapPlaceholder: {
       flex: 1,

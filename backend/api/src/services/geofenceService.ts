@@ -344,6 +344,17 @@ export async function updateGeofence(
   }
 
   const updated = await geofence.update(updates);
+
+  // A moved pin must also move the backing place row — findNearby resolves
+  // future spoken place names against hub.places, not the geofence row.
+  if (updates.center && geofence.placeId) {
+    await PlaceModel.updateCoordinates(
+      geofence.placeId,
+      updates.center.latitude,
+      updates.center.longitude
+    );
+  }
+
   return updated.toGeofence();
 }
 
