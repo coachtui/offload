@@ -143,6 +143,30 @@ describe('arbitrate', () => {
     expect(result.verdict).toBe('none');
   });
 
+  it('"Home Depot" claims "The Home Depot" — leading articles carry no identity', () => {
+    // Field case 2026-08-13: OSM names every branch "The Home Depot"; the
+    // prefix test without article-stripping arbitrated the query to NONE.
+    const branches = [
+      cand('The Home Depot', 21.4390, -158.0010, 'shop', 'waipio'),
+      cand('The Home Depot', 21.3320, -158.0910, 'shop', 'kapolei'),
+      cand('The Home Depot', 21.3220, -157.8650, 'shop', 'iwilei'),
+    ];
+    const result = arbitrate('Home Depot', branches);
+    expect(result.verdict).toBe('chain');
+    expect(result.locations).toHaveLength(3);
+  });
+
+  it('works in the other direction too — "The Home Depot" claims "Home Depot"', () => {
+    const result = arbitrate('The Home Depot', [cand('Home Depot', 21.44, -158.0, 'shop', 'x')]);
+    expect(result.verdict).toBe('single');
+  });
+
+  it('article stripping does not weaken the word-boundary rule', () => {
+    // A mid-word prefix must still be rejected after articles are stripped.
+    const result = arbitrate('The Hom', [cand('The Home Depot', 21.44, -158.0, 'shop', 'x')]);
+    expect(result.verdict).toBe('none');
+  });
+
   it('name matching is case-insensitive', () => {
     const result = arbitrate('melaleuca', MELALEUCA);
     expect(result.verdict).toBe('ambiguous');

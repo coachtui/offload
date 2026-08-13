@@ -39,15 +39,25 @@ export interface ArbitrationResult {
 const CO_LOCATION_METERS = 300;
 
 /**
+ * A leading article carries no identity: "The Home Depot" IS "Home Depot".
+ * Without this, a query of "Home Depot" failed the prefix test against every
+ * OSM result (all named "The Home Depot") and a top-five chain arbitrated to
+ * verdict NONE — field-found 2026-08-13, minutes after the wholesale bug.
+ */
+function stripLeadingArticle(s: string): string {
+  return s.startsWith('the ') ? s.slice(4) : s;
+}
+
+/**
  * Exact match, or query as a whole-word prefix ("Foodland" claims "Foodland
- * Farms" but "Long" does not claim "Longs Drugs"). Deliberately NOT substring:
- * "KAHALA MKT. by Foodland" is dropped, and that is accepted — a missed branch
- * costs one extra pending lookup, while a false positive arms a geofence on a
- * place the user never named.
+ * Farms" but "Long" does not claim "Longs Drugs"), articles ignored on both
+ * sides. Deliberately NOT substring: "KAHALA MKT. by Foodland" is dropped,
+ * and that is accepted — a missed branch costs one extra pending lookup,
+ * while a false positive arms a geofence on a place the user never named.
  */
 function nameMatchesQuery(name: string, query: string): boolean {
-  const n = name.trim().toLowerCase();
-  const q = query.trim().toLowerCase();
+  const n = stripLeadingArticle(name.trim().toLowerCase());
+  const q = stripLeadingArticle(query.trim().toLowerCase());
   if (!q || !n.startsWith(q)) return false;
   if (n.length === q.length) return true;
   return !/[a-z0-9]/.test(n.charAt(q.length));
