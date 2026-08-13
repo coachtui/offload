@@ -320,6 +320,7 @@ export class AtomicObjectModel {
       dateText: input.temporalHints?.dateText,
       objectType: input.objectType,
       createdAt: new Date(),
+      timezone: input.timezone,
     });
 
     const row = await queryOne<AtomicObjectRow>(
@@ -346,7 +347,7 @@ export class AtomicObjectModel {
         userId,                                                           // $1
         input.content,                                                    // $2
         input.category || [],                                             // $3
-        input.metadata?.entities ? 0.5 : 0.5,                            // $4 confidence default
+        input.confidence ?? 0.5,                                          // $4 parser's score; 0.5 = honest unknown (manual/text notes)
         input.source.type,                                                // $5
         input.source.recordingId || null,                                 // $6
         input.source.location?.timestamp

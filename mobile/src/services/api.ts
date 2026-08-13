@@ -785,7 +785,15 @@ class ApiService {
   }> {
     return this.request('/api/v1/voice/save-transcript', {
       method: 'POST',
-      body: JSON.stringify(data),
+      // Device timezone rides in metadata so the server can derive time-based
+      // reminders ("in 2 days") in the user's zone instead of a fixed default.
+      body: JSON.stringify({
+        ...data,
+        metadata: {
+          ...data.metadata,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+      }),
     },
     // The server now stores the transcript and returns 202 immediately, parsing
     // in the background and pushing when it finishes. So this is a single write

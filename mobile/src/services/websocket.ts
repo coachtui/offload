@@ -165,7 +165,12 @@ class WebSocketService {
     this.send({
       type: 'start_session',
       deviceId,
-      metadata,
+      // Device timezone rides in metadata so the server can derive time-based
+      // reminders ("in 2 days") in the user's zone instead of a fixed default.
+      metadata: {
+        ...metadata,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
     });
   }
 

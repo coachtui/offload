@@ -244,6 +244,11 @@ export async function stopSession(
               locationHints: parsedObject.locationHints,
               actionability: parsedObject.actionability,
               sequenceIndex: parsedObject.sequenceIndex,
+              confidence: parsedObject.confidence,
+              timezone:
+                typeof activeSession.session.metadata?.timezone === 'string'
+                  ? activeSession.session.metadata.timezone
+                  : undefined,
             });
             objectIds.push(object.id);
           }
