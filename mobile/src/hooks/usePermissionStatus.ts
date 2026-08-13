@@ -16,6 +16,7 @@ import {
   getPermissionSnapshot,
 } from '../services/permissionService';
 import { syncGeofencesWithOS } from '../services/geofenceSync';
+import { syncTimeRemindersWithOS } from '../services/timeReminderSync';
 
 export interface UsePermissionStatusResult {
   status: PermissionSnapshot;
@@ -30,6 +31,7 @@ export function usePermissionStatus(): UsePermissionStatusResult {
   // Tracks the previous value so we only sync on the false → true edge rather
   // than on every foreground.
   const hadAlwaysRef = useRef(false);
+  const hadNotificationsRef = useRef(false);
   const mountedRef = useRef(true);
 
   const refresh = useCallback(async (): Promise<PermissionSnapshot> => {
@@ -44,6 +46,15 @@ export function usePermissionStatus(): UsePermissionStatusResult {
       void syncGeofencesWithOS('permission-granted');
     }
     hadAlwaysRef.current = next.locationAlways;
+
+    // Local reminders can only be scheduled once notifications are granted, and
+    // every reminder that existed before the grant is currently unscheduled and
+    // owned by the server. This edge is where the device takes them over.
+    if (next.notifications && !hadNotificationsRef.current) {
+      console.log('[usePermissionStatus] notifications newly granted — scheduling reminders');
+      void syncTimeRemindersWithOS('notifications-granted');
+    }
+    hadNotificationsRef.current = next.notifications;
 
     return next;
   }, []);

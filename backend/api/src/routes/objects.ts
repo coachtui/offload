@@ -8,6 +8,8 @@ import {
   getObjectById,
   listObjects,
   listStaleActionables,
+  listPendingTimeReminders,
+  claimLocalReminders,
   updateObject,
   deleteObject,
   findSimilarObjects,
@@ -114,6 +116,61 @@ router.get('/stale-actionables', async (req: Request, res: Response) => {
     res.status(500).json({
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to fetch stale actionables',
+    });
+  }
+});
+
+/**
+ * GET /api/v1/objects/pending-reminders
+ * Time reminders the device should schedule as local notifications.
+ * Must stay above /:id — Express matches in registration order.
+ */
+router.get('/pending-reminders', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const reminders = await listPendingTimeReminders(req.user.id);
+    res.json({ reminders });
+  } catch (error) {
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to fetch pending reminders',
+    });
+  }
+});
+
+const claimRemindersSchema = z.object({
+  /** Every reminder this device currently has scheduled — the set is authoritative. */
+  objectIds: z.array(z.string().uuid()).max(200),
+});
+
+/**
+ * POST /api/v1/objects/pending-reminders/claim
+ * Device says which reminders it will fire locally, so the push job skips them.
+ * Sending [] hands them all back.
+ */
+router.post('/pending-reminders/claim', async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
+      return;
+    }
+
+    const parsed = claimRemindersSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_ERROR', message: parsed.error.message });
+      return;
+    }
+
+    const { changed } = await claimLocalReminders(req.user.id, parsed.data.objectIds);
+    res.json({ claimed: parsed.data.objectIds.length, changed });
+  } catch (error) {
+    res.status(500).json({
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to claim reminders',
     });
   }
 });

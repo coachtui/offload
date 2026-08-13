@@ -4,6 +4,7 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
 import { notifySaveResult } from '../services/saveNotification';
 import { syncGeofencesWithOS } from '../services/geofenceSync';
+import { syncTimeRemindersWithOS } from '../services/timeReminderSync';
 import { emitNotesChanged, emitNotesChangedAfterSort } from '../services/notesBus';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
@@ -539,12 +540,18 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         // ~20s, hence two staggered attempts; if the app is backgrounded before
         // they fire, RN defers the timers to the next foreground, which is
         // still the earliest possible moment to sync.
-        if (result.hasGeofenceCandidates) {
-          for (const delayMs of [12_000, 35_000]) {
-            setTimeout(() => {
+        // Dated reminders need the same treatment for the same reason — the note
+        // is what carries the date, so its local notification can only be
+        // scheduled once the server has sorted it. Unconditional because the
+        // save response carries no temporal signal to gate on, and the sync
+        // diffs (a save with no reminder in it costs one small GET).
+        for (const delayMs of [12_000, 35_000]) {
+          setTimeout(() => {
+            if (result.hasGeofenceCandidates) {
               syncGeofencesWithOS('post-save').catch(() => {});
-            }, delayMs);
-          }
+            }
+            syncTimeRemindersWithOS('post-save').catch(() => {});
+          }, delayMs);
         }
 
         // Only reachable against a server still running the old synchronous
