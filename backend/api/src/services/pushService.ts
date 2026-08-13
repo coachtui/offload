@@ -11,6 +11,15 @@ interface PushMessage {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  /**
+   * iOS delivery class (UNNotificationInterruptionLevel). Unset means `active`,
+   * which Focus modes and the scheduled notification summary are allowed to
+   * hold for hours — right for a digest, wrong for a reminder, which should
+   * pass 'time-sensitive'. Needs the time-sensitive entitlement in the build;
+   * iOS quietly downgrades it to `active` in builds without one, and Android
+   * ignores the field, so it is always safe to send.
+   */
+  interruptionLevel?: 'active' | 'critical' | 'passive' | 'time-sensitive';
 }
 
 /**
@@ -67,6 +76,9 @@ export async function sendToUser(userId: string, msg: PushMessage): Promise<bool
       body: msg.body,
       data: msg.data ?? {},
       sound: 'default',
+      // Omitted rather than defaulted, so callers that don't care send exactly
+      // the payload they always have.
+      ...(msg.interruptionLevel ? { interruptionLevel: msg.interruptionLevel } : {}),
     }));
 
     const response = await fetch(EXPO_PUSH_URL, {

@@ -6,6 +6,7 @@ import { query, queryOne, queryMany } from '../db/queries';
 import { deleteFromVector } from '../services/vectorService';
 import { retentionPolicyFor, triggerContextFor } from '../services/memoryIntent';
 import { deriveRemindAt } from '../services/temporalTrigger';
+import { rearmTimeReminderJob } from '../jobs/timeReminderJob';
 import type {
   AtomicObject,
   Category,
@@ -389,6 +390,11 @@ export class AtomicObjectModel {
     if (!row) {
       throw new Error('Failed to create atomic object');
     }
+
+    // The reminder scheduler is asleep until its next known due time; a note
+    // due before that has to move the wake-up or it fires late. Fire-and-forget
+    // — the save is already committed and must not depend on this.
+    if (remindAt) rearmTimeReminderJob();
 
     return new AtomicObjectModel(row);
   }
