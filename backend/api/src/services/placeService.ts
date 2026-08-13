@@ -183,12 +183,17 @@ async function resolveAndLinkPlace(
   );
   let geofencesChanged = false;
   if (matchedPlaces.length > 0) {
+    // Three or more stored places sharing this name are the fossil of a chain
+    // fan-out — the same evidence a live 'chain' verdict rests on. Their
+    // per-row confidences may predate the chain floor (the stranded-Costco
+    // case), so the rearm gate accepts the sibling count as chain evidence.
+    const chainEvidence = matchedPlaces.length >= 3;
     for (const existing of matchedPlaces) {
       const match = matchPlaceName(normalizedQuery, [existing], x => x.normalizedName)!;
       console.log(`[placeService] Found existing place by name: ${existing.id} (${existing.normalizedName}) via ${match.reason}`);
       logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: existing.id, name: existing.normalizedName, reason: `name_${match.reason}` });
       await PlaceModel.linkObject(existing.id, objectId, 'mentioned_in_note');
-      geofencesChanged = (await rearmInferredGeofence(userId, existing)) || geofencesChanged;
+      geofencesChanged = (await rearmInferredGeofence(userId, existing, chainEvidence)) || geofencesChanged;
     }
 
     // If every known branch is far from where the note was recorded, the local
@@ -284,8 +289,20 @@ async function resolveAndLinkPlace(
   }
 
   // ─── 2c. single arms as-is; chain fans out to the nearest 3 ────────────────
+  // A chain verdict floors confidence at the geofence threshold. The threshold
+  // exists to filter VAGUE names, and arbitration has already adjudicated
+  // that: >=3 same-name branches surviving the name filter is definitionally
+  // a real chain. Without this floor, the per-candidate base signal — OSM
+  // importance, ~0.001 for branch POIs — left every Costco branch at
+  // 0.35-0.40 against the 0.45 gate: places created, no regions, bell
+  // silently off (field-found 2026-08-13).
   const resolvedList = selectNearestResolved(
-    locations.map((c) => candidateToResolvedPlace(c, normalizedQuery, userLatLng)),
+    locations.map((c) => {
+      const resolved = candidateToResolvedPlace(c, normalizedQuery, userLatLng);
+      return verdict === 'chain' && resolved.confidence < GEOFENCE_CONFIDENCE_THRESHOLD
+        ? { ...resolved, confidence: GEOFENCE_CONFIDENCE_THRESHOLD }
+        : resolved;
+    }),
     userLatLng
   );
   console.log(`[placeService] "${normalizedQuery}" → ${verdict} (${locations.length} location(s), arming ${resolvedList.length}) via ${search.provider}`);
@@ -302,7 +319,7 @@ async function resolveAndLinkPlace(
       console.log(`[placeService] Deduped to nearby place: ${sameNameNearby.id} (${sameNameNearby.normalizedName})`);
       logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: sameNameNearby.id, name: sameNameNearby.normalizedName, reason: 'proximity' });
       await PlaceModel.linkObject(sameNameNearby.id, objectId, 'mentioned_in_note');
-      geofencesChanged = (await rearmInferredGeofence(userId, sameNameNearby)) || geofencesChanged;
+      geofencesChanged = (await rearmInferredGeofence(userId, sameNameNearby, verdict === 'chain')) || geofencesChanged;
       continue;
     }
 
@@ -377,7 +394,8 @@ async function resolveAndLinkPlace(
  */
 async function rearmInferredGeofence(
   userId: string,
-  place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null; confidence?: number }
+  place: { id: string; normalizedName: string; lat: number; lng: number; radiusMeters: number; category: string | null; confidence?: number },
+  chainEvidence = false
 ): Promise<boolean> {
   try {
     const existingRegions = await GeofenceModel.findByPlaceId(userId, place.id);
@@ -385,7 +403,14 @@ async function rearmInferredGeofence(
 
     // Same bar as first-time creation — a place we were never confident enough
     // to monitor doesn't become monitorable just by being mentioned again.
-    if (typeof place.confidence === 'number' && place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD) {
+    // EXCEPT under chain evidence (a live chain verdict, or >=3 stored
+    // same-name siblings): the stored confidence predates the chain floor and
+    // reflects OSM's near-zero importance for branch POIs, not vagueness.
+    if (
+      !chainEvidence &&
+      typeof place.confidence === 'number' &&
+      place.confidence < GEOFENCE_CONFIDENCE_THRESHOLD
+    ) {
       console.log(`[placeService] Place ${place.id} "${place.normalizedName}" below confidence threshold (${place.confidence}) — not re-arming`);
       return false;
     }

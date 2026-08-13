@@ -210,6 +210,23 @@ describe('re-arming a place that lost its geofence', () => {
     expect(mockGeo.create).not.toHaveBeenCalled();
   });
 
+  it('re-arms below-threshold places when >=3 siblings share the name — chain evidence outranks stale scores', async () => {
+    // The stranded-Costco case: three branch places written before the chain
+    // floor existed, all at 0.35. The sibling count IS the chain verdict's
+    // evidence, so the next mention re-arms them.
+    const branches = [
+      { ...reapedPlace, id: 'pl-1', confidence: 0.35 },
+      { ...reapedPlace, id: 'pl-2', confidence: 0.35, lat: 21.33, lng: -158.09 },
+      { ...reapedPlace, id: 'pl-3', confidence: 0.35, lat: 21.32, lng: -157.87 },
+    ];
+    mockPlace.findByUserId.mockResolvedValue(branches);
+    mockGeo.findByPlaceId.mockResolvedValue([]);
+
+    await resolveObjectPlaces(USER_ID, 'obj-2', ['Costco']);
+
+    expect(mockGeo.create).toHaveBeenCalledTimes(3);
+  });
+
   it('still respects the inferred cap when re-arming', async () => {
     mockPlace.findByUserId.mockResolvedValue([reapedPlace]);
     mockGeo.findByPlaceId.mockResolvedValue([]);
