@@ -98,8 +98,10 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
           />
         </Section>
 
-        <AppText variant="secondary" color="faint" align="center" style={styles.build}>
-          {buildInfo.label}
+        {/* Build identity intentionally not shown here — it still appears as the
+            log-out sheet's footnote, which is enough to verify an OTA applied. */}
+        <AppText variant="secondary" color="faint" align="center" style={styles.copyright}>
+          © {new Date().getFullYear()} Offload
         </AppText>
       </ScrollView>
 
@@ -141,5 +143,5 @@ const createStyles = (c: ThemeColors) =>
       fontSize: 11,
     },
     destructiveRow: { backgroundColor: c.bg },
-    build: { marginTop: Spacing.xxl },
+    copyright: { marginTop: Spacing.xxl },
   });
