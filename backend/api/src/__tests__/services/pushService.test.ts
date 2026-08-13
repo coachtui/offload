@@ -63,6 +63,32 @@ describe('pushService.sendToUser delivery behavior', () => {
     ]);
   });
 
+  it('passes interruptionLevel through when a caller sets it', async () => {
+    mockTokens.findTokensByUser.mockResolvedValue(['TokA']);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ status: 'ok' }] }),
+    }) as any;
+
+    await sendToUser('u1', { title: 'T', body: 'B', interruptionLevel: 'time-sensitive' });
+
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(sent[0].interruptionLevel).toBe('time-sensitive');
+  });
+
+  it('omits interruptionLevel entirely when unset, so digests are unchanged', async () => {
+    mockTokens.findTokensByUser.mockResolvedValue(['TokA']);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ status: 'ok' }] }),
+    }) as any;
+
+    await sendToUser('u1', { title: 'T', body: 'B' });
+
+    const sent = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(sent[0]).not.toHaveProperty('interruptionLevel');
+  });
+
   it('deletes a token that Expo reports as DeviceNotRegistered', async () => {
     mockTokens.findTokensByUser.mockResolvedValue(['GoodTok', 'DeadTok']);
     global.fetch = jest.fn().mockResolvedValue({
