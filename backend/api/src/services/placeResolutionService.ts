@@ -2,16 +2,16 @@
  * Place Resolution Service
  *
  * Resolves human-readable place names (e.g. "Costco", "Longs") to real
- * geographic coordinates using the OpenStreetMap Nominatim API.
+ * geographic coordinates.
  *
- * No API key required. Must include a User-Agent header per OSM usage policy.
+ * The geocoding itself lives in `placeProviders/` — this module owns what is
+ * shared across providers: confidence scoring, radius selection, and picking
+ * which candidates to return. Keeping the scoring here is deliberate, so that
+ * adding a provider cannot quietly change how candidates are judged.
  */
 
-const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
-// Nominatim's usage policy requires a genuine, identifiable User-Agent with a real
-// contact. Placeholder domains (e.g. example.com) are on their blocklist and get a
-// 403 — which silently broke ALL place resolution in production (see git history).
-const USER_AGENT = 'Offload/1.0 (https://tuialailima.com; tui@tuialailima.com)';
+import { osmProvider } from './placeProviders/osmProvider';
+import type { ProviderCandidate } from './placeProviders/types';
 
 // Radius defaults by OSM place type
 const RADIUS_BY_TYPE: Record<string, number> = {
@@ -41,23 +41,6 @@ export interface ResolvedPlace {
   confidence: number;
 }
 
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  name: string;
-  lat: string;
-  lon: string;
-  type: string;
-  class: string;
-  importance: number;
-  address?: {
-    city?: string;
-    state?: string;
-    country?: string;
-    country_code?: string;
-  };
-}
-
 export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -70,12 +53,12 @@ export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function pickRadius(result: NominatimResult): number {
-  const key = result.type?.toLowerCase() || result.class?.toLowerCase() || 'default';
+function pickRadius(category: string | null): number {
+  const key = category?.toLowerCase() || 'default';
   return RADIUS_BY_TYPE[key] ?? RADIUS_BY_TYPE.default;
 }
 
-// OSM types that represent named commercial/amenity locations — reliably geocoded
+// Place types that represent named commercial/amenity locations — reliably geocoded
 const NAMED_PLACE_TYPES = new Set([
   'shop', 'supermarket', 'amenity', 'building', 'pharmacy',
   'restaurant', 'cafe', 'cinema', 'mall', 'fuel', 'bank',
@@ -83,30 +66,32 @@ const NAMED_PLACE_TYPES = new Set([
 ]);
 
 function computeConfidence(
-  result: NominatimResult,
+  candidate: ProviderCandidate,
   userLat?: number,
   userLng?: number,
   queryName?: string
 ): number {
-  // Base confidence from OSM importance score (0–1)
-  let confidence = Math.min(result.importance ?? 0.5, 1.0) * 0.6 + 0.2;
+  // Base confidence from the provider's own ranking signal (0–1). Providers
+  // without one land on the neutral 0.5, which the boosts below then move.
+  let confidence = Math.min(candidate.relevance ?? 0.5, 1.0) * 0.6 + 0.2;
 
-  // Boost for named commercial/amenity types — these are reliably identified by Nominatim
-  // and directly correspond to what the user said. Without this, Costco (importance ~0.3)
-  // would score only ~0.38, silently failing the geofence creation threshold.
-  const placeType = (result.type || result.class || '').toLowerCase();
+  // Boost for named commercial/amenity types — these are reliably identified by the
+  // geocoder and directly correspond to what the user said. Without this, Costco
+  // (OSM importance ~0.3) would score only ~0.38, silently failing the geofence
+  // creation threshold.
+  const placeType = (candidate.category || '').toLowerCase();
   if (NAMED_PLACE_TYPES.has(placeType)) {
     confidence = Math.min(confidence + 0.25, 0.90);
   }
 
   // Boost if the result name exactly matches the query (case-insensitive) — strong signal
-  if (queryName && result.name && result.name.toLowerCase() === queryName.toLowerCase()) {
+  if (queryName && candidate.name && candidate.name.toLowerCase() === queryName.toLowerCase()) {
     confidence = Math.min(confidence + 0.15, 0.95);
   }
 
   // Boost if user location is available and result is nearby
   if (userLat !== undefined && userLng !== undefined) {
-    const distKm = haversineKm(userLat, userLng, parseFloat(result.lat), parseFloat(result.lon));
+    const distKm = haversineKm(userLat, userLng, candidate.lat, candidate.lng);
     if (distKm < 0.5) {
       confidence = Math.min(confidence + 0.3, 0.95);
     } else if (distKm < 5) {
@@ -125,14 +110,25 @@ function computeConfidence(
   return Math.round(confidence * 100) / 100;
 }
 
-function buildNormalizedName(result: NominatimResult): string {
-  // Use the result's `name` field if present, else the first part of display_name
-  const base = result.name?.trim() || result.display_name.split(',')[0].trim();
-  return base;
+function toResolvedPlace(
+  candidate: ProviderCandidate,
+  rawName: string,
+  userLocation?: { lat: number; lng: number }
+): ResolvedPlace {
+  return {
+    rawName,
+    normalizedName: candidate.name,
+    providerPlaceId: candidate.providerPlaceId,
+    lat: candidate.lat,
+    lng: candidate.lng,
+    radiusMeters: pickRadius(candidate.category),
+    category: candidate.category || 'place',
+    confidence: computeConfidence(candidate, userLocation?.lat, userLocation?.lng, rawName),
+  };
 }
 
 /**
- * Resolve a place name to geographic coordinates.
+ * Resolve a place name to a single best geographic match.
  *
  * @param placeName - Raw place name from the note (e.g. "Costco", "Longs Drugs")
  * @param userLocation - Optional user location for proximity bias and confidence calc
@@ -142,71 +138,14 @@ export async function resolvePlaceName(
   placeName: string,
   userLocation?: { lat: number; lng: number }
 ): Promise<ResolvedPlace | null> {
-  try {
-    const params = new URLSearchParams({
-      q: placeName,
-      format: 'json',
-      limit: '3',
-      addressdetails: '1',
-    });
+  const candidates = await osmProvider.search(placeName, userLocation);
+  if (candidates.length === 0) return null;
 
-    // Bias results toward user location if available
-    if (userLocation) {
-      const delta = 0.2; // ~22km bbox
-      params.set(
-        'viewbox',
-        `${userLocation.lng - delta},${userLocation.lat + delta},${userLocation.lng + delta},${userLocation.lat - delta}`
-      );
-      params.set('bounded', '0'); // Allow results outside viewbox (just bias)
-    }
-
-    const url = `${NOMINATIM_SEARCH}?${params.toString()}`;
-    console.log(`[PlaceResolution] Resolving "${placeName}" via Nominatim...`);
-
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        Accept: 'application/json',
-      },
-      signal: AbortSignal.timeout(5000), // 5s timeout
-    });
-
-    if (!response.ok) {
-      console.warn(`[PlaceResolution] Nominatim responded with ${response.status}`);
-      return null;
-    }
-
-    const results = (await response.json()) as NominatimResult[];
-
-    if (!results || results.length === 0) {
-      console.log(`[PlaceResolution] No results for "${placeName}"`);
-      return null;
-    }
-
-    // Take the top result
-    const top = results[0];
-    const confidence = computeConfidence(top, userLocation?.lat, userLocation?.lng, placeName);
-
-    const resolved: ResolvedPlace = {
-      rawName: placeName,
-      normalizedName: buildNormalizedName(top),
-      providerPlaceId: `osm:${top.place_id}`,
-      lat: parseFloat(top.lat),
-      lng: parseFloat(top.lon),
-      radiusMeters: pickRadius(top),
-      category: top.type || top.class || 'place',
-      confidence,
-    };
-
-    console.log(
-      `[PlaceResolution] Resolved "${placeName}" → "${resolved.normalizedName}" (confidence: ${confidence})`
-    );
-
-    return resolved;
-  } catch (error) {
-    console.warn(`[PlaceResolution] Error resolving "${placeName}":`, error);
-    return null;
-  }
+  const resolved = toResolvedPlace(candidates[0], placeName, userLocation);
+  console.log(
+    `[PlaceResolution] Resolved "${placeName}" → "${resolved.normalizedName}" (confidence: ${resolved.confidence})`
+  );
+  return resolved;
 }
 
 /**
@@ -217,86 +156,26 @@ export async function resolvePlaceNameMulti(
   placeName: string,
   userLocation?: { lat: number; lng: number }
 ): Promise<ResolvedPlace[]> {
-  try {
-    const params = new URLSearchParams({
-      q: placeName,
-      format: 'json',
-      // Fetch a BROAD candidate pool (Nominatim's max) so we can pick the
-      // geographically nearest few ourselves. Nominatim orders by importance,
-      // not distance, and a user's closest branch of a chain often has LOWER
-      // importance than busier branches in town — with a small limit it never
-      // enters the pool, so the distance sort below would pick a far branch
-      // (e.g. a McDon's 15km away instead of the one 0.6km away). 40 is the
-      // Nominatim /search maximum and comfortably covers all branches in the
-      // ~50km viewbox.
-      limit: '40',
-      addressdetails: '1',
-    });
+  const candidates = await osmProvider.search(placeName, userLocation);
+  if (candidates.length === 0) return [];
 
-    if (userLocation) {
-      // ~0.45° ≈ 50km half-width box around the user.
-      const delta = 0.45;
-      params.set(
-        'viewbox',
-        `${userLocation.lng - delta},${userLocation.lat + delta},${userLocation.lng + delta},${userLocation.lat - delta}`
-      );
-      // bounded=1 HARD-restricts results to the viewbox. With bounded=0 a generic
-      // chain name like "McDonald's" returns the globally "most important" matches
-      // (Spain, Australia, Mexico…) and ignores the box entirely — producing
-      // geofences thousands of km away that never fire. Hard-bounding to the user's
-      // region returns the actual nearby locations.
-      params.set('bounded', '1');
-    }
+  const resolved = candidates.map((c) => toResolvedPlace(c, placeName, userLocation));
 
-    const url = `${NOMINATIM_SEARCH}?${params.toString()}`;
-    console.log(`[PlaceResolution] Multi-resolving "${placeName}" via Nominatim...`);
+  // For a chain name we create a geofence per candidate, so return the 3
+  // NEAREST to the user (provider order is by prominence, not distance).
+  // Without a user location, fall back to the provider's own order.
+  const NEAREST_N = 3;
+  const selected = (userLocation
+    ? resolved
+        .slice()
+        .sort(
+          (a, b) =>
+            haversineKm(userLocation.lat, userLocation.lng, a.lat, a.lng) -
+            haversineKm(userLocation.lat, userLocation.lng, b.lat, b.lng)
+        )
+    : resolved
+  ).slice(0, NEAREST_N);
 
-    const response = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-
-    if (!response.ok) {
-      console.warn(`[PlaceResolution] Nominatim responded with ${response.status}`);
-      return [];
-    }
-
-    const results = (await response.json()) as NominatimResult[];
-    if (!results || results.length === 0) {
-      console.log(`[PlaceResolution] No results for "${placeName}"`);
-      return [];
-    }
-
-    const resolved = results.map(r => ({
-      rawName: placeName,
-      normalizedName: buildNormalizedName(r),
-      providerPlaceId: `osm:${r.place_id}`,
-      lat: parseFloat(r.lat),
-      lng: parseFloat(r.lon),
-      radiusMeters: pickRadius(r),
-      category: r.type || r.class || 'place',
-      confidence: computeConfidence(r, userLocation?.lat, userLocation?.lng, placeName),
-    }));
-
-    // For a chain name we create a geofence per candidate, so return the 3
-    // NEAREST to the user (Nominatim's order is by importance, not distance).
-    // Without a user location, fall back to importance order.
-    const NEAREST_N = 3;
-    const selected = (userLocation
-      ? resolved
-          .slice()
-          .sort(
-            (a, b) =>
-              haversineKm(userLocation.lat, userLocation.lng, a.lat, a.lng) -
-              haversineKm(userLocation.lat, userLocation.lng, b.lat, b.lng)
-          )
-      : resolved
-    ).slice(0, NEAREST_N);
-
-    console.log(`[PlaceResolution] Multi-resolved "${placeName}" → ${selected.length} of ${resolved.length} candidate(s) (nearest): ${selected.map(r => r.normalizedName).join(', ')}`);
-    return selected;
-  } catch (error) {
-    console.warn(`[PlaceResolution] Error multi-resolving "${placeName}":`, error);
-    return [];
-  }
+  console.log(`[PlaceResolution] Resolved "${placeName}" → ${selected.length} of ${resolved.length} candidate(s) (nearest): ${selected.map(r => r.normalizedName).join(', ')}`);
+  return selected;
 }
