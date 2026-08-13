@@ -13,6 +13,9 @@
 - Physical arrival field-test at a taught place (590 Paiea St canonical) — the one unverified link; the cohort may hit it organically first.
 - Cut build 5 only for a native change or ahead of public release (current mobile delta is JS-only and rides OTA).
 
+**Parked (not launch-blocking, revisit later)**:
+- **Onboarding / "what is Offload" content** (noted 2026-08-13): Settings has no About section and the app never explains itself outside the one-shot permission ladder. Idea: an "About" section in Settings with a "How Offload works" row → short scrollable explainer (what to say, what happens to a note, how places/arrivals work), reusable later as a post-permissions carousel for new users. Existing product copy to draw from: LoginScreen tagline ("Say it once. It's handled."), RegisterScreen ("Get it out of your head — Offload keeps it"), PermissionsScreen `ROWS` copy.
+
 ## Executive Summary
 
 🎉 **Major Achievement**: Phase 5 and Phase 6 are **COMPLETE**! All backend services, mobile screens, infrastructure, and integration have been implemented and tested successfully.
