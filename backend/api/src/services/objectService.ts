@@ -79,6 +79,8 @@ export const createObjectSchema = z.object({
     })
     .optional(),
   sequenceIndex: z.number().int().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  timezone: z.string().max(64).nullable().optional(),
 });
 
 export interface ListObjectsOptions {

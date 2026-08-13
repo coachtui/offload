@@ -201,6 +201,10 @@ export interface AtomicObjectCreateRequest {
   locationHints?: LocationHints;
   actionability?: Actionability;
   sequenceIndex?: number;
+  /** Parser's 0-1 confidence. Omitted for manual/text notes (stored as 0.5). */
+  confidence?: number;
+  /** Device IANA timezone at recording time — remind_at derives in this zone. */
+  timezone?: string | null;
 }
 
 export interface AtomicObjectResponse {

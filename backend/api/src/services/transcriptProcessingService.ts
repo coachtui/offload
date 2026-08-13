@@ -84,8 +84,10 @@ export async function processTranscript(params: {
   sessionId: string;
   transcript: string;
   geoLocation?: GeoPoint;
+  /** Device IANA timezone at recording time — remind_at derives in this zone. */
+  timezone?: string;
 }): Promise<ProcessResult> {
-  const { userId, sessionId, transcript, geoLocation } = params;
+  const { userId, sessionId, transcript, geoLocation, timezone } = params;
 
   const objectIds: string[] = [];
   const candidatePlaceNames: string[] = [];
@@ -204,6 +206,8 @@ export async function processTranscript(params: {
         locationHints: parsedObject.locationHints,
         actionability: parsedObject.actionability,
         sequenceIndex: parsedObject.sequenceIndex,
+        confidence: parsedObject.confidence,
+        timezone,
       });
 
       return { object, effectiveGeofenceCandidate, parsedPlaces, textContent };
@@ -307,6 +311,12 @@ export async function processSessionInBackground(session: Session): Promise<void
       sessionId: session.id,
       transcript,
       geoLocation: session.location,
+      // Old builds don't send one, and metadata is client-controlled — anything
+      // non-string must degrade to the HST fallback, never fail the save.
+      timezone:
+        typeof session.metadata?.timezone === 'string'
+          ? session.metadata.timezone
+          : undefined,
     });
 
     await session.update({
