@@ -6,7 +6,9 @@ export default function Footer() {
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
         <div className="text-center sm:text-left">
           <p className="text-sm font-semibold text-ink tracking-tight">Offload</p>
-          <p className="text-xs text-ink-faint mt-0.5">Built by AIGA LLC</p>
+          <p className="text-xs text-ink-faint mt-0.5">
+            © {new Date().getFullYear()} AIGA LLC
+          </p>
         </div>
 
         <nav className="flex items-center gap-6" aria-label="Footer navigation">
