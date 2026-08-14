@@ -1,18 +1,20 @@
-# Master Plan: The Hub - Proactive Cognitive Inbox
+# Master Plan: Offload — Proactive Cognitive Inbox
+
+> **Note:** this is the long-range phase plan. The per-phase status lines below
+> are not maintained in real time — for actual current state, see
+> [`current-phase.md`](./current-phase.md).
 
 ## Vision
 Build a "Zero-Friction" offload application that moves beyond passive note-taking. The goal is a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
 
-## Current Status: Phase 4 Complete ✅
+## Current Status: Phases 1–6 Complete ✅ · shipped to TestFlight
 
-We have a **fully functional MVP** with:
-- Working mobile app with voice recording and real-time transcription
-- Backend API with authentication, database, and WebSocket support
-- Voice processing pipeline integrated with OpenAI Whisper
-- Session history with audio playback
-- Basic atomic object management
+Live to external testers (ASC app `6799952861`), pending public App Store
+release. Voice intake, atomic parsing, semantic search, RAG, arrival triggers,
+and time reminders are all shipped and field-verified.
 
-**Next Focus**: Advanced AI features (semantic search, RAG, atomic parsing)
+**Next Focus**: Phase 7 — Cross-Domain Synthesis & AI Insights (weekly and
+monthly synthesis jobs are running; the surfacing layer is the remaining work).
 
 ---
 
