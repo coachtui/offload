@@ -72,8 +72,6 @@ async def root():
         "endpoints": {
             "health": "/health",
             "parse": "/api/v1/parse-transcript",
-            "corrections": "/api/v1/corrections",
-            "corrections_summary": "/api/v1/corrections/summary",
             "transcribe": "/api/v1/transcribe",
             "embed": "/api/v1/embed"
         }
@@ -82,11 +80,9 @@ async def root():
 
 # Import routers
 from app.routes.parse import router as parse_router
-from app.routes.corrections import router as corrections_router
 
 # Register routers
 app.include_router(parse_router)
-app.include_router(corrections_router)
 
 
 # Placeholder endpoints (to be implemented later)
