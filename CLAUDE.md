@@ -1,6 +1,6 @@
 # Offload
 
-Voice-first "second brain" for iOS. You talk; the app splits what you said into
+Voice-first proactive personal memory layer for iOS. You talk; the app splits what you said into
 separate notes, files them, and gives each one back to you at the moment it's
 useful — when you arrive somewhere, or when the time you mentioned comes.
 

@@ -2,7 +2,8 @@
 
 **Say it once. It's handled.**
 
-Offload is a voice-first second brain for iOS. You hold a button and talk — a
+Offload is a voice-first proactive personal memory layer for iOS. You hold a
+button and talk — a
 rambling stream of unrelated things — and Offload splits it into separate notes,
 files each one, and then gives it back to you at the moment it's actually
 useful: when you walk into the store, or when the time you mentioned arrives.

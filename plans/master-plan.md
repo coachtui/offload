@@ -5,7 +5,7 @@
 > [`current-phase.md`](./current-phase.md).
 
 ## Vision
-Build a "Zero-Friction" offload application that moves beyond passive note-taking. The goal is a "Proactive Second Brain" that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
+Build a "Zero-Friction" offload application that moves beyond passive note-taking. The goal is a **proactive personal memory layer** that automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior).
 
 ## Current Status: Phases 1–6 Complete ✅ · shipped to TestFlight
 
