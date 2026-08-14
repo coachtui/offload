@@ -209,10 +209,13 @@ export default function AIQueryScreen({ navigation, route }: any) {
       )}
 
       {/* Messages List */}
+      {/* No keyboardVerticalOffset: the header is part of this screen's own
+          layout (headerShown: false), so there's no navigation bar to offset
+          for — a non-zero value here floats the input bar that far above the
+          keyboard. */}
       <KeyboardAvoidingView
         style={styles.messagesContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={90}
       >
         <FlatList
           ref={flatListRef}
