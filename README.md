@@ -69,8 +69,11 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit and why.
 
 ## Development
 
-Setup, commands, and the deploy loop are in [CLAUDE.md](./CLAUDE.md) and
-[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+Setup, commands, and the deploy loop are in [CLAUDE.md](./CLAUDE.md).
+
+There is **no local Docker stack** — both services build on Railway with
+nixpacks, and the app is developed against the deployed API. See
+[CLAUDE.md](./CLAUDE.md#there-is-no-local-stack--and-no-docker).
 
 Quick version:
 
@@ -97,7 +100,6 @@ using an EAS internal build.
 - [CLAUDE.md](./CLAUDE.md) — how the system works, and the rules that are easy to break
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — components, data model, trigger design
 - [plans/current-phase.md](./plans/current-phase.md) — living project state
-- [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) — local setup
 - [docs/IOS_LOCATION_PRIVACY.md](./docs/IOS_LOCATION_PRIVACY.md) — location handling and privacy posture
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow and conventions
 - [docs/archive/](./docs/archive/) — superseded planning docs, kept for history

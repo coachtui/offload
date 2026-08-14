@@ -99,6 +99,26 @@ npm run update         # eas update --auto  (OTA)
 cd frontend/web && npm run dev
 ```
 
+## There is no local stack — and no Docker
+
+Don't look for one, and don't add one casually. Both services build on Railway
+with **nixpacks**; there is no Dockerfile in the repo. A `docker-compose.dev.yml`
+existed from the first commit but was never used: `.railwayignore` excluded it
+from every deploy, no `backend/api/.env` was ever created, and it went untouched
+for the project's whole life. It was deleted rather than repaired.
+
+The real loop is:
+
+1. Push to `main` → Railway auto-deploys the API and, when
+   `backend/ml-service/**` changed, the ML service.
+2. `eas update` or an EAS build → the app on a real iPhone.
+3. The app talks to the deployed Railway API. **Every** EAS profile, including
+   `development`, points `EXPO_PUBLIC_API_URL` at the Railway URL.
+
+If you do want to run the API on your machine, it needs a reachable Postgres and
+Weaviate plus the keys in `.env.example` — point it at the Railway instances
+rather than standing up local containers.
+
 ## Deploy loop
 
 - **Backend** — Railway auto-deploys on merge to `main`.

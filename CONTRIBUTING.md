@@ -13,17 +13,17 @@ Thank you for your interest in contributing to The Hub! This document provides g
 
 1. **Read the documentation**
    - [README.md](./README.md) - Project overview
+   - [CLAUDE.md](./CLAUDE.md) - How the system works, commands, deploy loop
    - [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture
-   - [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) - Development setup
 
 2. **Set up your development environment**
    ```bash
-   # Clone the repository
    git clone <repository-url>
-   cd brain_dump
-   
-   # Follow setup instructions in docs/DEVELOPMENT.md
+   cd Offload
    ```
+   There is no local Docker stack — see
+   [CLAUDE.md](./CLAUDE.md#there-is-no-local-stack--and-no-docker) for how
+   development actually works.
 
 3. **Check current phase**
    - Review [plans/current-phase.md](./plans/current-phase.md) for current tasks
@@ -211,17 +211,19 @@ pytest --cov=app  # With coverage
 ## Project Structure
 
 ```
-brain_dump/
+Offload/
 ├── backend/
-│   ├── api/          # Node.js API service
-│   └── ml-service/   # Python ML service
-├── frontend/
-│   ├── mobile/       # React Native app
-│   └── web/          # Next.js dashboard
-├── shared/           # Shared types and utilities
-├── infrastructure/   # Docker, K8s configs
-└── docs/            # Documentation
+│   ├── api/          # Node.js API service      → Railway
+│   └── ml-service/   # Python FastAPI service   → Railway
+├── mobile/           # React Native (Expo), iOS → EAS/TestFlight
+├── frontend/web/     # Next.js marketing site   → Vercel
+├── shared/types/     # Types shared by api + mobile
+├── plans/            # Living project state
+└── docs/             # Reference docs; docs/archive/ is history
 ```
+
+Note the mobile app lives at `mobile/`, not `frontend/mobile/`, and
+`frontend/web` is marketing only — it has no product functionality.
 
 ## Areas for Contribution
 
