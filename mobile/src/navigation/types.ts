@@ -1,6 +1,8 @@
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
+  /** First-run intro cards — new signups only, shown once before `Permissions`. */
+  Intro: undefined;
   Permissions: undefined;
   Home: undefined;
   Record: undefined;
@@ -39,6 +41,8 @@ export type RootStackParamList = {
   Settings: undefined;
   /** Settings → Location & permissions. Distinct from `Permissions`, the one-shot onboarding ladder. */
   PermissionSettings: undefined;
+  /** Permanent, revisitable guide. Distinct from `Intro`, the one-shot first-run cards. */
+  HowOffloadWorks: undefined;
   DeleteAccount: undefined;
 };
 

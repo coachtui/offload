@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { RootStackParamList } from '../navigation/types';
-import { RagSearchResult } from '../services/api';
+import { apiService, RagSearchResult } from '../services/api';
 import { useSearch } from '../hooks/useSearch';
 import { useForYou } from '../hooks/useForYou';
 import { useProximityAlerts } from '../hooks/useProximityAlerts';
@@ -19,7 +19,14 @@ import { usePermissionStatus } from '../hooks/usePermissionStatus';
 import { AtomicObject } from '../types';
 import { PermissionBanner } from '../components/PermissionBanner';
 import { ArrivalPermissionSheet } from '../components/ArrivalPermissionSheet';
+import { FirstRecordingSheet } from '../components/FirstRecordingSheet';
 import { subscribeArrivalPrompt } from '../services/arrivalPromptBus';
+import { subscribeFirstRecording } from '../services/firstRecordingBus';
+import {
+  setFirstRecordingEducationSeen,
+  shouldOfferGuideDiscovery,
+  setGuideDiscoveryShown,
+} from '../services/educationService';
 import { hasSeenArrivalPrompt, canDeliverArrivalReminders } from '../services/permissionService';
 import {
   AppSearchBar,
@@ -28,6 +35,7 @@ import {
   AppBadge,
   AppButton,
   SkeletonCard,
+  useToast,
   Spacing,
   Radius,
 } from '../components/ui';
@@ -162,6 +170,67 @@ export function HomeScreen({ navigation }: Props) {
       setArrivalPrompt({ placeName: placeNames[0] });
     });
   }, [refreshPermissions]);
+
+  // ── First-recording education ─────────────────────────────────────────────
+  // The save pipeline signals a new signup's first recording (gated in
+  // educationService); the server sorts it in the background over ~10–30s, so
+  // poll the session's notes until they exist, then show what Offload did with
+  // the user's actual words. Gives up quietly — a parse that never lands must
+  // not strand a spinner or an empty sheet.
+  const [firstRecording, setFirstRecording] = useState<AtomicObject[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeFirstRecording(async (sessionId) => {
+      // Cumulative waits — checks land at ~7s / 15s / 30s / 55s after save.
+      for (const delayMs of [7_000, 8_000, 15_000, 25_000]) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (cancelled) return;
+        try {
+          const { objects } = await apiService.getObjects({ sessionId, limit: 8 });
+          if (objects.length > 0) {
+            if (cancelled) return;
+            console.log('[Education] first recording sorted — showing explanation');
+            setFirstRecording(objects);
+            // Marked as soon as we commit to showing it: a re-show after an
+            // interrupted first look is fine, nagging on every recording isn't.
+            await setFirstRecordingEducationSeen();
+            return;
+          }
+        } catch {
+          // transient — the next attempt covers it
+        }
+      }
+      console.log('[Education] first recording never sorted within the window — skipping');
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  // ── Guide discovery for pre-education accounts ────────────────────────────
+  // Existing users never see the intro; a single toast pointing at the
+  // permanent guide is the whole of their onboarding. Marked shown immediately
+  // so it can never become a recurring nag.
+  const toast = useToast();
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (!(await shouldOfferGuideDiscovery()) || cancelled) return;
+      await setGuideDiscoveryShown();
+      console.log('[Education] offering How Offload works discovery toast');
+      toast.show({
+        message: 'New: How Offload works',
+        description: 'A short guide to getting the most out of Offload',
+        action: { label: 'Open', onPress: () => navigation.navigate('HowOffloadWorks') },
+      });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const dateLine = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -458,6 +527,18 @@ export function HomeScreen({ navigation }: Props) {
         onClose={() => {
           setArrivalPrompt(null);
           void refreshPermissions();
+        }}
+      />
+
+      {/* Held back while the arrival permission sheet is up — that ask is a
+          one-shot iOS dialog and must not compete with education. */}
+      <FirstRecordingSheet
+        visible={firstRecording !== null && arrivalPrompt === null}
+        objects={firstRecording ?? []}
+        onClose={() => setFirstRecording(null)}
+        onViewNotes={() => {
+          setFirstRecording(null);
+          navigation.navigate('Objects');
         }}
       />
     </SafeAreaView>

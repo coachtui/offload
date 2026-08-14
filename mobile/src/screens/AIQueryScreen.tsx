@@ -22,6 +22,13 @@ export default function AIQueryScreen({ navigation, route }: any) {
   const { colors } = useTheme();
   const initialQuery: string | undefined = route?.params?.initialQuery;
   const [inputText, setInputText] = useState(initialQuery ?? '');
+
+  // navigate() to an already-mounted AskOffload updates params without
+  // remounting, so the useState seed above never re-runs — re-seed on change
+  // (e.g. tapping a second example in How Offload works).
+  useEffect(() => {
+    if (initialQuery) setInputText(initialQuery);
+  }, [initialQuery]);
   const { messages, loading, error, askQuestion, clearConversation } = useAI();
   const {
     isDictating,
