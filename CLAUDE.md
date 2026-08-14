@@ -18,6 +18,8 @@ document, keep it updated.
 ```
 backend/api/         Node + TypeScript + Express  → Railway   (the main API)
 backend/ml-service/  Python + FastAPI             → Railway   (transcript → objects)
+                     ^ does NO machine learning despite the name — it prompts
+                       an LLM over HTTP. See backend/ml-service/README.md.
 mobile/              React Native + Expo, iOS     → EAS/TestFlight
 frontend/web/        Next.js                      → Vercel    (marketing only)
 shared/types/        TypeScript types shared by api + mobile

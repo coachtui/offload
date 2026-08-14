@@ -159,7 +159,12 @@ async function resolveAndLinkPlace(
   if (geofenceMatch) {
     const geofence = geofenceMatch.candidate;
     console.log(`[placeService] Matched labeled geofence "${geofence.name}" (${geofence.id}) via ${geofenceMatch.reason} — linking object ${objectId}`);
-    logLifecycle('PLACE_DEDUPED', { userId, objectId, placeId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
+    // geofenceId, NOT placeId: this branch matched a manual geofence, and a
+    // geofence id is not in hub.places. Writing it as placeId violates
+    // reminder_lifecycle_events_place_id_fkey, so the row is rejected and the
+    // trail loses its first event for exactly the places that matter most —
+    // the ones the user taught by hand.
+    logLifecycle('PLACE_DEDUPED', { userId, objectId, geofenceId: geofence.id, name: geofence.name, reason: `manual_geofence_${geofenceMatch.reason}` });
     await GeofenceModel.addLinkedObject(geofence.id, objectId);
     // Labeled place is authoritative — do not geocode or create an inferred place.
     return { changed: false, outcome: 'armed' };
