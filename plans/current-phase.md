@@ -6,7 +6,7 @@
 **Up Next After Launch**: Phase 7 (Cross-Domain Synthesis & AI Insights)
 **Previous Phase**: 5 & 6 (Semantic Intelligence + Geofencing) - ✅ Complete
 **Current Date**: 2026-08-13
-**Last Updated**: 2026-08-13 — Time reminders rebuilt: accurate to the second, fire from the device, break through Focus (PRs #51–#52, session log at bottom). Build 5 submitted.
+**Last Updated**: 2026-08-13 (late) — Progressive onboarding + How Offload Works shipped and device-verified (PRs #59–#61: education system, Ask Offload keyboard fix + notes-lifecycle module, "© AIGA LLC" in mobile Settings and web footer; both OTA channels serve merge `26c8d8b`, Vercel redeployed). Also re-verified: the weekly-digest HST gap is **closed** — PR #50 (`e1f2c44`) fires it Sunday 18:00 in each user's `last_seen_timezone`, HST fallback only for pre-capture accounts; CLAUDE.md's "still HST-fixed" claim was stale and has been corrected. Monthly synthesis still runs on server-time "1st of the month" (month-granularity, accepted). Earlier same day: time reminders rebuilt — accurate to the second, fire from the device, break through Focus (PRs #51–#52, session log at bottom). Build 5 submitted.
 
 **Remaining launch actions**:
 - At public App Store release: set `APP_STORE_URL` in `frontend/web/lib/appStore.ts` to `https://apps.apple.com/app/id6799952861` (CTA goes live site-wide).
