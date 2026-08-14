@@ -74,18 +74,10 @@ class TranscriptParseRequest(BaseModel):
     )
 
 
-class CorrectionFeedback(BaseModel):
-    """User correction for a parsed atomic object"""
-    session_id: str = Field(..., description="Voice session ID the object came from")
-    sequence_index: int = Field(..., description="sequence_index of the object being corrected")
-    field: Literal["type", "domain", "cleaned_text", "title", "tags", "actionability", "other"] = Field(
-        ..., description="Which field was wrong"
-    )
-    original_value: str = Field(..., description="What the parser produced")
-    corrected_value: str = Field(..., description="What the user says it should be")
-    note: Optional[str] = Field(None, description="Optional free-text comment from user")
-    user_id: str = Field(..., description="User who submitted the correction")
-    submitted_at: datetime = Field(default_factory=datetime.utcnow)
+# Correction feedback moved to the Node API (POST /api/v1/corrections,
+# migration 022). It is user data about atomic objects and belongs with the
+# service that owns them, their per-user auth, and a durable database — this
+# one is deliberately stateless.
 
 
 class TranscriptParseResponse(BaseModel):

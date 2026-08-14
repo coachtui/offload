@@ -94,9 +94,18 @@ The `type` literal must stay in sync with the TypeScript `ObjectType` union in
 | Endpoint | Does |
 |---|---|
 | `POST /api/v1/parse-transcript` | The real one. Transcript → atomic objects. |
-| `POST /api/v1/corrections` | Logs a user's correction of a parsed field to JSONL |
 | `GET /health` | Railway healthcheck |
 | `GET /` | Service info |
+
+All non-health routes require an `X-Service-Key` header matching
+`ML_SERVICE_API_KEY`. The service has a public Railway domain, so that
+middleware is the only thing in front of it.
+
+Correction feedback used to live here too, appending JSONL to
+`CORRECTIONS_LOG_PATH`. It moved to the Node API (`POST /api/v1/corrections`,
+migration 022): corrections are user data about atomic objects, so they belong
+with the service that owns those objects, their per-user auth, and a durable
+database. This one stays stateless.
 
 ## Running it
 
@@ -111,10 +120,9 @@ Deploys to Railway on push to `main` when `backend/ml-service/**` changes
 Dockerfile.
 
 **Environment:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `LLM_MODEL`,
-`ML_SERVICE_API_KEY` (checked as `X-Service-Key`), `ALLOWED_ORIGINS`, `PORT`,
-`CORRECTIONS_LOG_PATH`.
+`ML_SERVICE_API_KEY` (checked as `X-Service-Key`), `ALLOWED_ORIGINS`, `PORT`.
 
-## Two things to know
+## One thing to know
 
 **Keep `requirements.txt` honest.** Everything in it should be imported. The
 whole local-inference stack sat here unused for months, costing a 6.3GB image
@@ -122,15 +130,10 @@ and ~20-minute deploys. Current imports: `fastapi`, `uvicorn`, `pydantic`,
 `httpx`, `python-dotenv`, and stdlib. The `httpx<0.28` cap is load-bearing —
 see the comment above it before raising it.
 
-**The corrections log is probably going nowhere.** `CORRECTIONS_LOG_PATH`
-defaults to `/tmp/offload_corrections.jsonl`, and `/tmp` on Railway is ephemeral
-— wiped on every deploy and every restart. If those corrections are meant to
-accumulate into training or prompt-tuning data, they need a mounted volume or a
-database table. Worth checking whether that variable is set in Railway before
-assuming any of it has survived.
-
 ## If you ever want real ML here
 
-This is the natural home for it, and the corrections endpoint is the seed: it's
-already collecting `(original_value, corrected_value)` pairs per field. That is
-training data for exactly the thing this service does. Nothing consumes it yet.
+This is the natural home for it, and the training data now has somewhere to
+land: `hub.object_corrections` in the API stores `(original_value,
+corrected_value)` pairs per field, durably. Nothing produces them yet — the app
+has no correction UI — and nothing consumes them. Build the UI first; the
+labelled pairs will accumulate on their own after that.
