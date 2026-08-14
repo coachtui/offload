@@ -396,8 +396,8 @@ WEAVIATE_API_KEY=<configured>
   and per-place deletion by EditGeofenceScreen.
 
 **Documentation**:
-- ✅ [PHASE_6_QUICKSTART.md](PHASE_6_QUICKSTART.md) - Setup guide
-- ✅ [PHASE_6_HANDOFF.md](PHASE_6_HANDOFF.md) - Implementation details
+- ✅ [PHASE_6_QUICKSTART.md](../docs/archive/PHASE_6_QUICKSTART.md) - Setup guide
+- ✅ [PHASE_6_HANDOFF.md](../docs/archive/PHASE_6_HANDOFF.md) - Implementation details
 
 ---
 
@@ -479,25 +479,25 @@ WEAVIATE_API_KEY=<configured>
 ### ✅ Comprehensive Documentation
 
 **Phase 5 Documentation**:
-- ✅ [PHASE5_SETUP.md](PHASE5_SETUP.md) (440 lines)
+- ✅ [PHASE5_SETUP.md](../docs/archive/PHASE5_SETUP.md) (440 lines)
   - Weaviate Cloud setup instructions
   - Batch embedding script guide
   - Testing procedures
   - Troubleshooting guide
   - Cost estimates
-- ✅ [PHASE5_IMPLEMENTATION_SUMMARY.md](PHASE5_IMPLEMENTATION_SUMMARY.md)
+- ✅ [PHASE5_IMPLEMENTATION_SUMMARY.md](../docs/archive/PHASE5_IMPLEMENTATION_SUMMARY.md)
   - Backend implementation overview
   - Mobile UI features
   - Integration points
   - Testing checklist
 
 **Phase 6 Documentation**:
-- ✅ [PHASE_6_QUICKSTART.md](PHASE_6_QUICKSTART.md) (290 lines)
-- ✅ [PHASE_6_HANDOFF.md](PHASE_6_HANDOFF.md) (150+ lines)
+- ✅ [PHASE_6_QUICKSTART.md](../docs/archive/PHASE_6_QUICKSTART.md) (290 lines)
+- ✅ [PHASE_6_HANDOFF.md](../docs/archive/PHASE_6_HANDOFF.md) (150+ lines)
 
 **General Documentation**:
-- ✅ [plans/handoff.md](plans/handoff.md) - Current project status and deployment guide
-- ✅ [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+- ✅ [plans/handoff.md](../docs/archive/plans-handoff.md) - Project status and deployment guide (archived)
+- ✅ [ARCHITECTURE.md](../ARCHITECTURE.md) - System architecture
 - ✅ [README.md](README.md) - Project overview
 
 ---

@@ -1,143 +1,115 @@
-# Offload - Proactive Cognitive Inbox
+# Offload
 
-> A Zero-Friction offload application that transforms passive note-taking into an active, context-aware second brain.
+**Say it once. It's handled.**
 
-## 🎯 Vision
+Offload is a voice-first second brain for iOS. You hold a button and talk — a
+rambling stream of unrelated things — and Offload splits it into separate notes,
+files each one, and then gives it back to you at the moment it's actually
+useful: when you walk into the store, or when the time you mentioned arrives.
 
-"Offload" automatically categorizes, cross-references, and surfaces information based on user context (GPS, Time, and Past Behavior). It's not just a note-taking app—it's a **Proactive Second Brain**.
+Most note apps are filing cabinets. You have to remember you wrote something
+down. Offload is built the other way around: the note finds you.
 
-## ✨ Core Features
+> *"Pick up chicken and soda from Costco, remind me to call the accountant
+> Tuesday at 3, my knee's been bothering me since the run."*
 
-### 🎤 High-Fidelity Voice Intake
-- **Whisper-v3** integration for near-instant voice-to-text
-- Handles "Multimodal Rants" - single recordings containing business tasks, gym updates, and family reminders
-- Parsing engine splits transcripts into "Atomic Objects" based on context
+One recording. Three notes. The Costco one wakes up when you park at Costco. The
+accountant one fires Tuesday at 3:00 — to the second, through Focus. The knee
+one is kept as context, and surfaces later if it turns into a pattern.
 
-### 🧠 Semantic Memory & Knowledge Graph
-- **Vector Database** (Weaviate) for Long-Term Memory
-- **RAG** (Retrieval-Augmented Generation) for AI "sparring"
-- Constraint checking (e.g., validates gym routines against injury history)
+---
 
-### 📍 Proactive Trigger Engine
-- **Geofencing** - Notes pinned to GPS coordinates
-- Context-aware push notifications when entering geofences
-- Background location monitoring with minimal battery impact
+## What it does
 
-### 🔗 Cross-Domain Synthesis
-- Weekly agentic workflow for pattern finding
-- Finds "Semantic Bridges" across domains
-- Suggests applying efficiencies from one domain to another
+**Talk, don't type.** Live transcription while you speak, then a
+higher-accuracy pass on the saved text. One recording can hold as many unrelated
+thoughts as you want.
 
-### 📱 Zero-UI Interaction
-- Lock screen accessibility
-- Back-tap triggers (iOS/Android)
-- Background listening modes
+**Notes split themselves.** Each transcript is parsed into typed atomic
+objects — tasks, reminders, commitments, ideas, concerns, decisions — with
+categories, people, places, and dates pulled out.
 
-## 🏗️ Architecture
+**Arrival reminders.** Mention a place and Offload geocodes it, drops a
+geofence, and notifies you when you physically get there. Fires from the device,
+so it works with no signal.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed technical documentation.
+**Time reminders.** Natural dates in speech become real scheduled reminders,
+accurate to the second, and they break through Focus and Do Not Disturb.
 
-### Tech Stack
+**Ask Offload.** Ask questions about your own notes in plain language. Answers
+are grounded in what you actually said, with citations back to the source notes.
 
-- **Backend**: Node.js (TypeScript) + Python (FastAPI) for ML services
-- **Voice Processing**: OpenAI Whisper-v3 (hybrid local/cloud)
-- **Vector Database**: Weaviate
-- **Relational DB**: PostgreSQL 15+
-- **Mobile**: React Native with Expo
-- **Web**: Next.js 14
-- **Caching**: Redis 7+
+**Insights.** Recurring background synthesis looks for patterns across domains —
+noticing something in your work notes that applies to your training, or a
+commitment you've now made three times and never closed.
 
-## 🚀 Quick Start
+## Status
 
-### Prerequisites
+Live to external testers on TestFlight. Pending public App Store release.
 
-- Node.js 20+
-- Python 3.11+
-- Docker & Docker Compose
-- PostgreSQL 15+
-- Redis 7+
+Current work and detailed state: [`plans/current-phase.md`](plans/current-phase.md).
 
-### Development Setup
+## Architecture
+
+Four deployables:
+
+| Component | Stack | Hosted on |
+|---|---|---|
+| `backend/api` | Node · TypeScript · Express | Railway |
+| `backend/ml-service` | Python · FastAPI | Railway |
+| `mobile` | React Native · Expo (iOS) | EAS / TestFlight |
+| `frontend/web` | Next.js — marketing site only | Vercel |
+
+Backed by PostgreSQL (relational) and Weaviate Cloud (vectors). Speech via
+Deepgram (live preview) and OpenAI `gpt-4o-transcribe` (final). Parsing and
+answering via GPT-4o / Claude.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for how the pieces fit and why.
+
+## Development
+
+Setup, commands, and the deploy loop are in [CLAUDE.md](./CLAUDE.md) and
+[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+
+Quick version:
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd brain_dump
+# API
+cd backend/api && npm install && npm run migrate && npm run dev
 
-# Install dependencies
-cd backend/api && npm install
-cd ../ml-service && pip install -r requirements.txt
-cd ../../frontend/mobile && npm install
-cd ../web && npm install
+# ML service
+cd backend/ml-service && pip install -r requirements.txt && uvicorn main:app --reload
 
-# Start infrastructure (PostgreSQL, Redis, Weaviate)
-docker-compose -f infrastructure/docker/docker-compose.dev.yml up -d
+# Mobile — needs an EAS dev build on a real device, not Expo Go
+cd mobile && npm install && npm start
 
-# Run migrations
-cd backend/api && npm run migrate
-
-# Start services
-npm run dev  # In each service directory
+# Marketing site
+cd frontend/web && npm install && npm run dev
 ```
 
-## 📁 Project Structure
+Mobile features depend on background location, geofence monitoring, and local
+notifications. None of those work correctly in Expo Go — test on a real iPhone
+using an EAS internal build.
 
-```
-brain_dump/
-├── backend/
-│   ├── api/              # Node.js API service
-│   └── ml-service/       # Python ML service (Whisper, embeddings)
-├── frontend/
-│   ├── mobile/           # React Native app
-│   └── web/              # Next.js dashboard
-├── shared/
-│   ├── types/            # TypeScript type definitions
-│   └── utils/            # Shared utilities
-├── infrastructure/
-│   ├── docker/           # Docker configurations
-│   └── k8s/              # Kubernetes manifests
-├── docs/
-│   ├── api/              # API documentation
-│   └── architecture/     # Architecture diagrams
-└── plans/                # Project planning documents
-```
+## Documentation
 
-## 🔒 Privacy & Security
+- [CLAUDE.md](./CLAUDE.md) — how the system works, and the rules that are easy to break
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — components, data model, trigger design
+- [plans/current-phase.md](./plans/current-phase.md) — living project state
+- [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) — local setup
+- [docs/IOS_LOCATION_PRIVACY.md](./docs/IOS_LOCATION_PRIVACY.md) — location handling and privacy posture
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — workflow and conventions
+- [docs/archive/](./docs/archive/) — superseded planning docs, kept for history
 
-- **End-to-End Encryption** for sensitive data
-- **Zero-Knowledge Architecture** - server cannot read user data
-- **Client-Side Key Management** - keys never leave device
-- **GDPR & HIPAA Ready**
+## Privacy
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md#privacy-architecture) for details.
+Location is used to trigger reminders you asked for, and for nothing else. The
+app uses iOS region monitoring, not continuous tracking — it never streams your
+position. Recorded audio is transcribed and discarded; only the text is kept.
+Details in
+[docs/IOS_LOCATION_PRIVACY.md](./docs/IOS_LOCATION_PRIVACY.md) and the
+[privacy policy](./frontend/web/app/privacy/page.tsx).
 
-## 📚 Documentation
+## License
 
-- [Architecture Document](./ARCHITECTURE.md) - Complete technical architecture
-- [API Documentation](./docs/api/) - API endpoints and schemas
-- [Development Guide](./docs/DEVELOPMENT.md) - Setup and contribution guide
-
-## 🗺️ Roadmap
-
-See [plans/master-plan.md](./plans/master-plan.md) for detailed roadmap.
-
-**Current Phase**: Foundation & Core Architecture
-
-## 🤝 Contributing
-
-1. Read [ARCHITECTURE.md](./ARCHITECTURE.md)
-2. Check [plans/current-phase.md](./plans/current-phase.md) for current tasks
-3. Follow the development guide (coming soon)
-
-## 📄 License
-
-[To be determined]
-
-## 🙏 Acknowledgments
-
-Built with:
-- OpenAI Whisper
-- Weaviate
-- React Native
-- Next.js
-- And many other open-source projects
+Proprietary. All rights reserved.
