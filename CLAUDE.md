@@ -163,10 +163,11 @@ notifications, none of which behave correctly in Expo Go.
 - `redis` is in `backend/api/package.json` but nothing imports it. Dead dep.
 - `.env.example` is stale — it still describes Redis, MinIO, and a local Whisper
   toggle. Real config is Railway/EAS environment variables.
-- Weekly synthesis is still HST-fixed; `remind_at` is device-timezone (PR #49).
-  Mainland users exist, so this gap is real.
-- The app never explains itself — no onboarding, no About section. Parked
-  deliberately, not forgotten.
+- Timezones are per-user everywhere that matters: `remind_at` uses the device
+  timezone (PR #49) and the weekly digest fires Sunday 18:00 in each user's
+  `last_seen_timezone` (PR #50; HST only as fallback for accounts predating
+  timezone capture). The monthly synthesis job still runs on a fixed
+  server-time "1st of the month" — month-granularity, so nobody has cared yet.
 
 ## At public App Store release
 
