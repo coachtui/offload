@@ -89,7 +89,7 @@ function domainBreakdown(objects: AtomicObject[]): Record<string, number> {
 
 // ─── LLM ─────────────────────────────────────────────────────────────────────
 
-const SYNTHESIS_SYSTEM_PROMPT = `You are a weekly synthesis agent for a personal second brain system.
+const SYNTHESIS_SYSTEM_PROMPT = `You are a weekly synthesis agent for a proactive personal memory layer.
 
 Your job is to analyze the user's captured notes from the past week and generate a structured reflection that helps them understand their own thinking patterns.
 

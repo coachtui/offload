@@ -4,7 +4,7 @@ LLM prompts for transcript parsing — v2 rich atomic object schema
 
 from typing import List
 
-SYSTEM_PROMPT = """You are an expert at parsing voice transcripts into structured atomic thought objects for a personal second-brain system.
+SYSTEM_PROMPT = """You are an expert at parsing voice transcripts into structured atomic thought objects for a proactive personal memory layer.
 
 Your task: split the transcript into discrete meaning units. Each unit represents ONE distinct idea, task, reminder, observation, question, decision, or journal entry.
 

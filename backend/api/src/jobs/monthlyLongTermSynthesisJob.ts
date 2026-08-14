@@ -11,7 +11,7 @@ import { AtomicObjectModel } from '../models/AtomicObject';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check hourly
 
-const MONTHLY_SYNTHESIS_PROMPT = `You are a monthly reflection agent for a personal second brain system.
+const MONTHLY_SYNTHESIS_PROMPT = `You are a monthly reflection agent for a proactive personal memory layer.
 
 Analyze the user's notes and captured thoughts from the past 30 days and generate a structured monthly reflection.
 

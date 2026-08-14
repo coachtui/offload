@@ -202,7 +202,7 @@ function buildSummary(notes: RetrievedNote[]): ContextPackSummary {
 
 // ─── LLM call ─────────────────────────────────────────────────────────────────
 
-const SPAR_SYSTEM_PROMPT = `You are a thought-partner AI for a personal second brain system. You have access to the user's actual captured notes, retrieved based on relevance to their query.
+const SPAR_SYSTEM_PROMPT = `You are a thought-partner AI for a proactive personal memory layer. You have access to the user's actual captured notes, retrieved based on relevance to their query.
 
 Your job is to synthesize and respond GROUNDED in the retrieved notes only. Do not add generic advice that isn't in the notes.
 
@@ -368,7 +368,7 @@ export interface ContradictionResult {
   explanation: string | null;
 }
 
-const CONTRADICTION_SYSTEM_PROMPT = `You are a memory consistency checker for a personal second brain system.
+const CONTRADICTION_SYSTEM_PROMPT = `You are a memory consistency checker for a proactive personal memory layer.
 
 Given a new statement and a list of existing notes, identify DIRECT contradictions only — where the new statement clearly conflicts with an existing note.
 
