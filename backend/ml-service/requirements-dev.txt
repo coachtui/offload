@@ -1,0 +1,16 @@
+# Offload ML Service — development and test dependencies.
+#
+# Deliberately NOT installed in the production image (see nixpacks.toml, which
+# installs requirements.txt only).
+#
+#   pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=7.4.4
+pytest-asyncio>=0.23.3
+# pytest.ini passes --cov; without this, pytest exits on an unrecognized arg.
+pytest-cov>=4.1.0
+
+black>=24.1.0
+ruff>=0.1.11
