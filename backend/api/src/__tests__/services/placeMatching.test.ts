@@ -2,6 +2,7 @@ import { resolveObjectPlaces } from '../../services/placeService';
 import { PlaceModel } from '../../models/Place';
 import { GeofenceModel } from '../../models/Geofence';
 import * as resolution from '../../services/placeResolutionService';
+import { ReminderLifecycleEventModel } from '../../models/ReminderLifecycleEvent';
 
 jest.mock('../../models/Place');
 jest.mock('../../models/Geofence');
@@ -23,6 +24,9 @@ jest.mock('../../models/ReminderLifecycleEvent', () => ({
 const mockPlace = PlaceModel as jest.Mocked<typeof PlaceModel>;
 const mockGeo = GeofenceModel as jest.Mocked<typeof GeofenceModel>;
 const mockRes = resolution as jest.Mocked<typeof resolution>;
+const mockLifecycle = ReminderLifecycleEventModel as jest.Mocked<
+  typeof ReminderLifecycleEventModel
+>;
 
 const geofence = (id: string, name: string, createdBy = 'manual') =>
   ({ id, name, createdBy } as any);
@@ -56,6 +60,24 @@ describe('resolveObjectPlaces — labeled geofence matching', () => {
     expect(mockGeo.addLinkedObject).toHaveBeenCalledWith('g-ammo', 'obj1');
     expect(mockRes.searchPlaceCandidates).not.toHaveBeenCalled();
     expect(mockPlace.create).not.toHaveBeenCalled();
+  });
+
+  // Regression: this branch wrote the geofence id into `placeId`, but that
+  // column has a FK to hub.places — so every row was rejected with
+  // reminder_lifecycle_events_place_id_fkey and the diagnostics trail lost its
+  // first event for exactly the places the user taught by hand. Caught in
+  // production logs on a real "work at Ammunitions tomorrow" note.
+  it('records PLACE_DEDUPED under geofenceId, never placeId', async () => {
+    mockGeo.findByUserId.mockResolvedValue([geofence('g-ammo', 'Ammunitions')]);
+
+    await resolveObjectPlaces('u1', 'obj1', ['ammunitions']);
+
+    const call = mockLifecycle.record.mock.calls.find(([e]) => e === 'PLACE_DEDUPED');
+    expect(call).toBeDefined();
+    const details = call![1] as Record<string, unknown>;
+    expect(details.geofenceId).toBe('g-ammo');
+    // A geofence id here is what violated the constraint.
+    expect(details.placeId).toBeUndefined();
   });
 
   // The guardrail: a hardware-store errand must not fire the Home geofence.
