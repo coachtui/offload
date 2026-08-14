@@ -21,6 +21,14 @@ Current documentation:
 | `PHASE_1_REPORT.md`, `phase-3-voice-pipeline.md` | 2026-01 | historical only |
 | `TECH_STACK.md` | 2026-01 | `/ARCHITECTURE.md` |
 | `plans-handoff.md` | 2026-03 | `/plans/current-phase.md` (was `plans/handoff.md`) |
+| `ML_SERVICE_PHASE_5_*.md` | 2026-01 | Phase 5 shipped. Were in `backend/ml-service/`; the quickstart described a local Docker stack that never worked. |
+
+**`DEVELOPMENT.md` and `infrastructure/` were deleted, not archived** (2026-08-14).
+Both dated from the first commit and described a local Docker workflow that was
+never used: `.railwayignore` excluded `infrastructure/` from every deploy, no
+`backend/api/.env` was ever created, and the compose file went untouched for the
+project's life. Production builds with nixpacks on Railway — there is no
+Dockerfile in the repo. How development actually works is in `/CLAUDE.md`.
 
 Notable things these documents get wrong about the current system: a
 self-hosted Weaviate and Redis (neither is used), MinIO for storage, Android
