@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
 import { useAuth } from '../context/AuthContext';
 import { hasCompletedPermissionOnboarding } from '../services/permissionService';
+import { shouldShowIntro } from '../services/educationService';
 import {
   LoginScreen,
   RegisterScreen,
@@ -23,6 +24,8 @@ import CategoriesScreen from '../screens/CategoriesScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import PermissionSettingsScreen from '../screens/PermissionSettingsScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
+import IntroScreen from '../screens/IntroScreen';
+import HowOffloadWorksScreen from '../screens/HowOffloadWorksScreen';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -60,16 +63,18 @@ function AuthStack() {
   );
 }
 
-function MainStack({ needsPermissionOnboarding }: { needsPermissionOnboarding: boolean }) {
+function MainStack({ initialRouteName }: { initialRouteName: 'Intro' | 'Permissions' | 'Home' }) {
   const { colors } = useTheme();
   return (
     <Stack.Navigator
-      initialRouteName={needsPermissionOnboarding ? 'Permissions' : 'Home'}
+      initialRouteName={initialRouteName}
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
+      {/* First-run intro (new signups only) — exits via its own Skip/Get started. */}
+      <Stack.Screen name="Intro" component={IntroScreen} options={{ gestureEnabled: false }} />
       {/* Gesture-locked: the ladder is skippable via its own "Not right now",
           not by swiping back into an app with no permissions. */}
       <Stack.Screen
@@ -119,6 +124,11 @@ function MainStack({ needsPermissionOnboarding }: { needsPermissionOnboarding: b
         component={DeleteAccountScreen}
         options={{ headerShown: false }}
       />
+      <Stack.Screen
+        name="HowOffloadWorks"
+        component={HowOffloadWorksScreen}
+        options={{ headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }
@@ -131,30 +141,38 @@ export function AppNavigator() {
   // Resolved before the main stack mounts so initialRouteName is correct on the
   // first render — React Navigation reads it once and ignores later changes.
   // `null` means "still reading", which is why it gates the spinner below.
-  const [needsPermissionOnboarding, setNeedsPermissionOnboarding] = useState<boolean | null>(null);
+  const [initialRoute, setInitialRoute] = useState<'Intro' | 'Permissions' | 'Home' | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       // Re-arm for the next sign-in so a fresh account gets the ladder.
-      setNeedsPermissionOnboarding(null);
+      setInitialRoute(null);
       return;
     }
     let cancelled = false;
-    hasCompletedPermissionOnboarding()
-      .then((done) => {
-        if (!cancelled) setNeedsPermissionOnboarding(!done);
+    Promise.all([
+      hasCompletedPermissionOnboarding(),
+      // Fails closed inside educationService: a read error means no intro,
+      // never a trapped user.
+      shouldShowIntro(),
+    ])
+      .then(([permissionsDone, needsIntro]) => {
+        if (cancelled) return;
+        // Intro (new signups only) runs before the permission ladder — its
+        // "places / times come back" framing is what makes the asks land.
+        setInitialRoute(needsIntro ? 'Intro' : permissionsDone ? 'Home' : 'Permissions');
       })
       .catch(() => {
-        // Can't read the flag — send them through the ladder. A second ask is a
-        // far cheaper failure than an app that silently never works.
-        if (!cancelled) setNeedsPermissionOnboarding(true);
+        // Can't read the flags — send them through the ladder. A second ask is
+        // a far cheaper failure than an app that silently never works.
+        if (!cancelled) setInitialRoute('Permissions');
       });
     return () => {
       cancelled = true;
     };
   }, [isAuthenticated]);
 
-  if (isLoading || (isAuthenticated && needsPermissionOnboarding === null)) {
+  if (isLoading || (isAuthenticated && initialRoute === null)) {
     return (
       <View style={[styles.loading, { backgroundColor: colors.bg }]}>
         <ActivityIndicator size="large" color={colors.accent} />
@@ -167,7 +185,7 @@ export function AppNavigator() {
       {isAuthenticated ? (
         // Arrival alerts are no longer a banner over the app — Home renders the
         // place as a group in "For you right now" (see useProximityAlerts).
-        <MainStack needsPermissionOnboarding={needsPermissionOnboarding === true} />
+        <MainStack initialRouteName={initialRoute ?? 'Home'} />
       ) : (
         <AuthStack />
       )}

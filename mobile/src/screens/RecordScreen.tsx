@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,6 +19,7 @@ import { darkColors, Fonts, Radius, Spacing } from '../theme';
 import { haptic } from '../theme/haptics';
 import { locationService } from '../services/locationService';
 import { emitArrivalPromptCandidate } from '../services/arrivalPromptBus';
+import { TrySayingSheet } from '../components/TrySayingSheet';
 
 type RecordScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Record'>;
 
@@ -122,6 +123,7 @@ export function RecordScreen({ navigation }: Props) {
   } = useDeepgramTranscription();
 
   const { fetchGeofences } = useGeofences();
+  const [trySayingVisible, setTrySayingVisible] = useState(false);
 
   useEffect(() => {
     prefetchDeepgramToken();
@@ -257,9 +259,24 @@ export function RecordScreen({ navigation }: Props) {
             ))}
           </View>
         ) : !hasTranscript && status === 'idle' ? (
-          <AppText variant="body" align="center" style={styles.idleHint}>
-            Tap the mic and just talk —{'\n'}Offload sorts it out afterwards
-          </AppText>
+          <View style={styles.idleBlock}>
+            <AppText variant="body" align="center" style={styles.idleHint}>
+              Tap the mic and just talk —{'\n'}Offload sorts it out afterwards
+            </AppText>
+            {/* The one help affordance on this screen — gone while recording,
+                so it never competes with the mic. */}
+            <AppPressable
+              onPress={() => setTrySayingVisible(true)}
+              style={styles.trySayingPill}
+              accessibilityRole="button"
+              accessibilityLabel="Examples of what to say"
+            >
+              <Ionicons name="chatbox-ellipses-outline" size={14} color={D.textMuted} />
+              <AppText variant="secondary" style={styles.trySayingText}>
+                Try saying…
+              </AppText>
+            </AppPressable>
+          </View>
         ) : null}
       </View>
 
@@ -323,6 +340,15 @@ export function RecordScreen({ navigation }: Props) {
             : 'Tap the mic to start'}
         </AppText>
       </View>
+
+      <TrySayingSheet
+        visible={trySayingVisible}
+        onClose={() => setTrySayingVisible(false)}
+        onOpenGuide={() => {
+          setTrySayingVisible(false);
+          navigation.navigate('HowOffloadWorks');
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -429,6 +455,25 @@ const styles = StyleSheet.create({
   idleHint: {
     color: D.textMuted,
     lineHeight: 23,
+  },
+  idleBlock: {
+    alignItems: 'center',
+    gap: Spacing.lg,
+  },
+  trySayingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  trySayingText: {
+    color: D.textMuted,
+    fontFamily: Fonts.medium,
   },
   transcriptCard: {
     marginHorizontal: Spacing.xl,

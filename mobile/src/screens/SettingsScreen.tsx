@@ -70,6 +70,15 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
           />
         </Section>
 
+        <Section title="About">
+          <ListRow
+            title="How Offload works"
+            subtitle="Talking naturally, places, times, Ask Offload, Insights"
+            onPress={() => navigation.navigate('HowOffloadWorks')}
+            showChevron
+          />
+        </Section>
+
         <Section title="Legal">
           <ListRow
             title="Privacy Policy"

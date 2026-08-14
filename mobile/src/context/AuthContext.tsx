@@ -4,6 +4,7 @@ import { apiService, AuthError } from '../services/api';
 import { registerPushTokenWithBackend } from '../services/pushRegistration';
 import { geofenceMonitoringService } from '../services/geofenceMonitoringService';
 import { resetPermissionOnboarding } from '../services/permissionService';
+import { markNewSignup, resetEducationState } from '../services/educationService';
 import { releaseAll, syncTimeRemindersWithOS } from '../services/timeReminderSync';
 
 interface AuthState {
@@ -120,6 +121,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // the next sign-in re-syncs, and cancelling locally is the urgent half.
         .then(() => releaseAll('forced-sign-out'))
         .then(() => resetPermissionOnboarding())
+        .then(() => resetEducationState())
         .catch(e => console.warn('[AuthContext] permission reset failed:', e))
         .then(() => apiService.clearToken())
         .then(() => {
@@ -140,6 +142,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function register(data: RegisterRequest) {
     const response = await apiService.register(data);
+    // Flag written BEFORE isAuthenticated flips: AppNavigator reads it to pick
+    // the initial route, and that read races this function's setState. Only
+    // register() sets it — a login is an existing account and gets no intro.
+    await markNewSignup();
     setState({
       user: response.user,
       isAuthenticated: true,
@@ -157,6 +163,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Clear the "already onboarded" flags too — they're device-local, so without
     // this the next account to sign in on this phone silently skips the ladder.
     await resetPermissionOnboarding();
+    await resetEducationState();
     await apiService.logout();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }
@@ -179,6 +186,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       .catch(e => console.warn('[AuthContext] geofence teardown after delete failed:', e));
     await resetPermissionOnboarding().catch(e =>
       console.warn('[AuthContext] permission reset after delete failed:', e)
+    );
+    await resetEducationState().catch(e =>
+      console.warn('[AuthContext] education reset after delete failed:', e)
     );
     await apiService.clearToken();
     setState({ user: null, isAuthenticated: false, isLoading: false });

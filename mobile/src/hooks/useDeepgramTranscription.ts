@@ -6,6 +6,7 @@ import { notifySaveResult } from '../services/saveNotification';
 import { syncGeofencesWithOS } from '../services/geofenceSync';
 import { syncTimeRemindersWithOS } from '../services/timeReminderSync';
 import { emitNotesChanged, emitNotesChangedAfterSort } from '../services/notesBus';
+import { maybeEmitFirstRecordingEducation } from '../services/educationService';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
 
@@ -532,6 +533,11 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
         // itself, then again as the server's background sort lands.
         emitNotesChanged('saved');
         emitNotesChangedAfterSort();
+
+        // First-recording education: hand the session to Home, which waits for
+        // the sort and shows what Offload did with it. No-op unless this is a
+        // new signup's first recording (gated inside).
+        void maybeEmitFirstRecordingEducation(result.sessionId);
 
         // Arm the arrival snapshot without depending on the "note sorted" push,
         // which cannot execute JS once the app is backgrounded — record a note
