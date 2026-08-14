@@ -123,6 +123,42 @@ export default function HowOffloadWorksScreen({ navigation }: { navigation: Nav 
           </AppText>
         </Module>
 
+        {/* Your notes — the done/reopen loop. Claims here are checked against
+            noteLifecycle.ts: done stops reminders (reaps the geofence),
+            reopening re-arms them, and open-vs-done is the signal Insights
+            reads for open threads. */}
+        <Module icon="albums-outline" title="Your notes">
+          <AppText variant="body" color="muted">
+            Everything you say becomes a note. When one is handled, mark it done — that's not just
+            tidying up, it's how you teach Offload:
+          </AppText>
+          <View style={styles.bulletList}>
+            {[
+              "Its reminders stop — no ping at the store for something you already bought.",
+              'Home and your places only surface what still matters.',
+              "Offload learns what's resolved, so Insights can tell what's still open, what keeps coming back, and what never got finished.",
+            ].map((line) => (
+              <View key={line} style={styles.bulletRow}>
+                <View style={styles.bulletDot} />
+                <AppText variant="secondary" color="muted" style={styles.bulletText}>
+                  {line}
+                </AppText>
+              </View>
+            ))}
+          </View>
+          <AppText variant="body" color="muted" style={styles.moduleBody}>
+            Changed your mind? Reopen a note and its reminders come back.
+          </AppText>
+          <AppButton
+            label="See your notes"
+            variant="secondary"
+            size="sm"
+            icon="albums-outline"
+            onPress={() => navigation.navigate('Objects')}
+            style={styles.statusAction}
+          />
+        </Module>
+
         {/* Ask Offload */}
         <Module icon="chatbubble-outline" title="Ask Offload">
           <AppText variant="body" color="muted" style={styles.moduleLead}>
@@ -157,16 +193,16 @@ export default function HowOffloadWorksScreen({ navigation }: { navigation: Nav 
             unfinished threads, decisions worth revisiting, and observations that may connect
             across different parts of your life.
           </AppText>
-          <View style={styles.insightsExamples}>
+          <View style={styles.bulletList}>
             {[
               'A concern that keeps appearing over several weeks',
               'A work idea that connects to something from a personal project',
               'A commitment that keeps resurfacing but never gets resolved',
               "A shift in how you've been talking about a decision",
             ].map((line) => (
-              <View key={line} style={styles.insightsExampleRow}>
-                <View style={styles.insightsDot} />
-                <AppText variant="secondary" color="muted" style={styles.insightsExampleText}>
+              <View key={line} style={styles.bulletRow}>
+                <View style={styles.bulletDot} />
+                <AppText variant="secondary" color="muted" style={styles.bulletText}>
                   {line}
                 </AppText>
               </View>
@@ -295,21 +331,21 @@ const createStyles = (c: ThemeColors) =>
       gap: Spacing.sm,
     },
     askText: { flex: 1 },
-    insightsHeadline: { marginBottom: 2 },
-    insightsExamples: { marginTop: Spacing.md, gap: Spacing.sm },
-    insightsExampleRow: {
+    bulletList: { marginTop: Spacing.md, gap: Spacing.sm },
+    bulletRow: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: Spacing.md,
     },
-    insightsDot: {
+    bulletDot: {
       width: 5,
       height: 5,
       borderRadius: Radius.full,
       backgroundColor: c.accent,
       marginTop: 6,
     },
-    insightsExampleText: { flex: 1 },
+    bulletText: { flex: 1 },
+    insightsHeadline: { marginBottom: 2 },
     insightsCta: { alignSelf: 'flex-start', marginTop: Spacing.lg },
     footerLine: { marginTop: Spacing.xxxl },
   });
