@@ -10,6 +10,8 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAI, AIMessage } from '../hooks/useAI';
@@ -29,7 +31,37 @@ export default function AIQueryScreen({ navigation, route }: any) {
   useEffect(() => {
     if (initialQuery) setInputText(initialQuery);
   }, [initialQuery]);
-  const { messages, loading, error, askQuestion, clearConversation } = useAI();
+
+  const {
+    messages,
+    conversationId,
+    conversationTitle,
+    threads,
+    loading,
+    resuming,
+    error,
+    askQuestion,
+    openThread,
+    checkForUpdates,
+    newThread,
+    deleteThread,
+    refreshThreads,
+  } = useAI();
+
+  const [threadListVisible, setThreadListVisible] = useState(false);
+
+  // Saved threads are what makes the header's "past threads" affordance
+  // meaningful — load them up front so the button isn't a blind tap.
+  useEffect(() => {
+    void refreshThreads();
+  }, [refreshThreads]);
+
+  // Deep link from elsewhere in the app (a thread notification, a link on the
+  // home screen) opens that thread and fires its delta report.
+  const initialConversationId: string | undefined = route?.params?.conversationId;
+  useEffect(() => {
+    if (initialConversationId) void openThread(initialConversationId);
+  }, [initialConversationId, openThread]);
   const {
     isDictating,
     liveTranscript,
@@ -93,7 +125,60 @@ export default function AIQueryScreen({ navigation, route }: any) {
     await askQuestion(question);
   };
 
+  /**
+   * A delta report is not a chat turn — it is the thread telling you what
+   * moved while you were gone. It gets its own full-width treatment with the
+   * deterministic counts on top of the narration, because the counts are the
+   * part that came from the database and are guaranteed true.
+   */
+  const renderDelta = (item: AIMessage) => {
+    const d = item.delta;
+    const counts: string[] = [];
+    if (d?.resolved.length) counts.push(`${d.resolved.length} resolved`);
+    if (d?.stillOpen.length) counts.push(`${d.stillOpen.length} still open`);
+    if (d?.newlyMentioned.length) counts.push(`${d.newlyMentioned.length} new`);
+    if (d?.gone.length) counts.push(`${d.gone.length} deleted`);
+
+    return (
+      <View style={styles.deltaContainer}>
+        <View style={styles.deltaHeaderRow}>
+          <Ionicons name="git-compare-outline" size={15} color={colors.success} />
+          <Text style={styles.deltaHeaderText}>
+            {d && d.daysSince > 0
+              ? `Since you last looked · ${d.daysSince} day${d.daysSince === 1 ? '' : 's'}`
+              : 'Since you last looked'}
+          </Text>
+        </View>
+
+        {counts.length > 0 && (
+          <View style={styles.chipRow}>
+            {counts.map((label) => (
+              <View key={label} style={styles.deltaCountChip}>
+                <Text style={styles.deltaCountText}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <Text style={styles.deltaBody}>{item.content}</Text>
+
+        {d && d.stillOpen.length > 0 && (
+          <View style={styles.deltaSection}>
+            <Text style={styles.metaLabel}>Still open</Text>
+            {d.stillOpen.slice(0, 5).map((o) => (
+              <Text key={o.objectId} style={styles.deltaItem} numberOfLines={2}>
+                • {o.title}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   const renderMessage = ({ item }: { item: AIMessage }) => {
+    if (item.role === 'delta') return renderDelta(item);
+
     const isUser = item.role === 'user';
 
     return (
@@ -176,8 +261,14 @@ export default function AIQueryScreen({ navigation, route }: any) {
   return (
     <AppScreen>
       <AppHeader
-        title="Ask Offload"
-        subtitle={messages.length === 0 ? 'Ask me anything' : `${messages.length} messages`}
+        title={conversationTitle ?? 'Ask Offload'}
+        subtitle={
+          conversationId
+            ? resuming
+              ? 'Checking for updates…'
+              : `${messages.length} message${messages.length === 1 ? '' : 's'}`
+            : 'Ask me anything'
+        }
         left={
           <TouchableOpacity
             onPress={() => navigation.goBack()}
@@ -188,15 +279,43 @@ export default function AIQueryScreen({ navigation, route }: any) {
           </TouchableOpacity>
         }
         right={
-          messages.length > 0 ? (
+          <View style={styles.headerActions}>
+            {/* Re-check an open thread on demand. Opening already does this
+                automatically; this is for "I closed that ten minutes ago". */}
+            {conversationId && (
+              <TouchableOpacity
+                onPress={checkForUpdates}
+                disabled={resuming || loading}
+                accessibilityRole="button"
+                accessibilityLabel="Check for updates"
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={22}
+                  color={resuming || loading ? colors.textFaint : colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+            {messages.length > 0 && (
+              <TouchableOpacity
+                onPress={newThread}
+                accessibilityRole="button"
+                accessibilityLabel="New thread"
+              >
+                <Ionicons name="create-outline" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              onPress={clearConversation}
+              onPress={() => {
+                void refreshThreads();
+                setThreadListVisible(true);
+              }}
               accessibilityRole="button"
-              accessibilityLabel="Clear conversation"
+              accessibilityLabel="Saved threads"
             >
-              <Ionicons name="trash-outline" size={22} color={colors.error} />
+              <Ionicons name="albums-outline" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
-          ) : undefined
+          </View>
         }
       />
 
@@ -229,10 +348,12 @@ export default function AIQueryScreen({ navigation, route }: any) {
         />
 
         {/* Loading Indicator */}
-        {loading && (
+        {(loading || resuming) && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.loadingText}>Thinking...</Text>
+            <Text style={styles.loadingText}>
+              {resuming ? 'Checking what changed…' : 'Thinking...'}
+            </Text>
           </View>
         )}
 
@@ -282,6 +403,82 @@ export default function AIQueryScreen({ navigation, route }: any) {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={threadListVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setThreadListVisible(false)}
+      >
+        <AppScreen>
+          <AppHeader
+            title="Saved threads"
+            subtitle={threads.length === 0 ? 'None yet' : `${threads.length} saved`}
+            right={
+              <TouchableOpacity
+                onPress={() => setThreadListVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={24} color={colors.textSecondary} />
+              </TouchableOpacity>
+            }
+          />
+          <FlatList
+            data={threads}
+            keyExtractor={(t) => t.id}
+            contentContainerStyle={styles.threadList}
+            ListEmptyComponent={
+              <View style={styles.threadEmpty}>
+                <Text style={styles.emptyStateText}>
+                  Threads you start here are saved. Come back to one later and Offload will tell
+                  you what changed.
+                </Text>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.threadRow, item.id === conversationId && styles.threadRowActive]}
+                onPress={() => {
+                  setThreadListVisible(false);
+                  void openThread(item.id);
+                }}
+                onLongPress={() =>
+                  Alert.alert('Delete thread?', item.title, [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: () => void deleteThread(item.id),
+                    },
+                  ])
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Open thread: ${item.title}`}
+              >
+                <View style={styles.threadRowMain}>
+                  <Text style={styles.threadTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  {!!item.lastMessagePreview && (
+                    <Text style={styles.threadPreview} numberOfLines={2}>
+                      {item.lastMessagePreview}
+                    </Text>
+                  )}
+                  <Text style={styles.threadMeta}>
+                    {item.messageCount} message{item.messageCount === 1 ? '' : 's'} ·{' '}
+                    {new Date(item.updatedAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+              </TouchableOpacity>
+            )}
+          />
+        </AppScreen>
+      </Modal>
     </AppScreen>
   );
 }
@@ -295,6 +492,65 @@ const EXAMPLE_QUESTIONS = [
 
 const createStyles = (c: ThemeColors) =>
   StyleSheet.create({
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+
+    // Delta report — full width, not a bubble. It is the thread reporting on
+    // the world, not either party speaking.
+    deltaContainer: {
+      marginBottom: 16,
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: c.successBg,
+      borderWidth: 1,
+      borderColor: c.successBorder,
+    },
+    deltaHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+    deltaHeaderText: {
+      fontSize: 11,
+      fontFamily: Fonts.semibold,
+      color: c.success,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    deltaCountChip: {
+      backgroundColor: c.bgSurface,
+      borderRadius: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.successBorder,
+    },
+    deltaCountText: { fontSize: 12, color: c.success, fontFamily: Fonts.medium },
+    deltaBody: { fontSize: 15, lineHeight: 21, color: c.textSecondary, marginTop: 10 },
+    deltaSection: {
+      marginTop: 12,
+      paddingTop: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.successBorder,
+    },
+    deltaItem: { fontSize: 13, lineHeight: 19, color: c.textMuted, marginTop: 2 },
+
+    // Saved-thread list
+    threadList: { paddingHorizontal: 16, paddingVertical: 12, flexGrow: 1 },
+    threadEmpty: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+    threadRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: c.bgSurface,
+      borderRadius: 14,
+      padding: 14,
+      marginBottom: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      ...Elevation.level1,
+    },
+    threadRowActive: { borderColor: c.accentBorder, backgroundColor: c.accentLight },
+    threadRowMain: { flex: 1 },
+    threadTitle: { fontSize: 15, fontFamily: Fonts.semibold, color: c.text },
+    threadPreview: { fontSize: 13, color: c.textMuted, lineHeight: 18, marginTop: 4 },
+    threadMeta: { fontSize: 11, color: c.textFaint, marginTop: 6 },
+
     errorBanner: {
       flexDirection: 'row',
       alignItems: 'center',

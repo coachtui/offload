@@ -62,6 +62,24 @@ export interface SparringOptions {
   isActionable?: boolean;
   dateFrom?: Date;
   dateTo?: Date;
+  /**
+   * Prior turns of a saved thread, oldest first. Absent for a one-shot ask.
+   * Retrieval always runs against the current query alone — history informs
+   * how the answer is *phrased* ("the second one"), never what gets retrieved,
+   * so a thread that wandered can't drag stale context into the sweep.
+   */
+  history?: ChatTurn[];
+  /**
+   * Compressed stand-in for turns already folded away, so a long thread stays
+   * within a bounded prompt. Rendered ahead of `history`.
+   */
+  threadSummary?: string | null;
+}
+
+/** One replayable turn. 'delta' reports are deliberately not replayable — see migration 023. */
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 // ─── Context pack builder ─────────────────────────────────────────────────────
@@ -224,6 +242,23 @@ RETURN valid JSON with this exact structure:
   "gaps": "What cannot be answered from the notes, or null"
 }`;
 
+/**
+ * Appended when prior turns are being replayed. Two things need saying that a
+ * single-turn prompt never had to:
+ *
+ * 1. Stored assistant turns are the plain `answer` string, not the JSON
+ *    envelope they arrived in. Without this line the model imitates the
+ *    history's shape and returns bare prose, and every reply in a resumed
+ *    thread silently loses its citations to the parse fallback.
+ * 2. Each turn carries a fresh retrieval sweep. Earlier turns' notes are gone
+ *    from the context, so an answer must stand on the notes attached to the
+ *    turn it is answering.
+ */
+const THREAD_CONTINUATION_SUFFIX = `CONTINUING A SAVED THREAD:
+- Earlier assistant turns appear as plain prose because only their "answer" field was stored. Your reply must STILL be the full JSON object specified above.
+- The notes attached to earlier turns are no longer in context. Ground this answer in the notes attached to the CURRENT query, and cite only ids that appear there.
+- Time has likely passed since the earlier turns. Trust the note dates and states in the current retrieval over anything asserted earlier in the thread.`;
+
 export function formatNotesForPrompt(notes: RetrievedNote[]): string {
   if (notes.length === 0) {
     return '(No relevant notes found in your history)';
@@ -251,22 +286,66 @@ export function formatNotesForPrompt(notes: RetrievedNote[]): string {
     .join('\n\n---\n\n');
 }
 
+/** Single-turn convenience wrapper. */
 export async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
+  return callLLMWithHistory(systemPrompt, [{ role: 'user', content: userMessage }]);
+}
+
+/**
+ * Multi-turn call. `messages` must be a strictly alternating, user-first,
+ * user-last sequence — both providers reject anything else, and the history
+ * we replay comes out of a database where an interrupted turn can leave a
+ * dangling user or assistant message. `sanitizeTurns` enforces that shape.
+ */
+export async function callLLMWithHistory(
+  systemPrompt: string,
+  messages: ChatTurn[]
+): Promise<string> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
+  const turns = sanitizeTurns(messages);
+
+  if (turns.length === 0) {
+    throw new Error('callLLMWithHistory requires at least one user turn');
+  }
 
   if (anthropicKey) {
-    return callClaude(systemPrompt, userMessage, anthropicKey);
+    return callClaude(systemPrompt, turns, anthropicKey);
   } else if (openaiKey) {
-    return callOpenAI(systemPrompt, userMessage, openaiKey);
+    return callOpenAI(systemPrompt, turns, openaiKey);
   } else {
     throw new Error('No LLM API key configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.');
   }
 }
 
+/**
+ * Coerce a stored thread into a valid message sequence: drop empties, collapse
+ * consecutive same-role turns into one, drop a leading assistant turn, and
+ * drop a trailing assistant turn. The last two happen for real — a thread whose
+ * first message is a 'delta' report (filtered out upstream) starts on an
+ * assistant answer, and a request that died after saving the user's question
+ * leaves the pair unbalanced.
+ */
+export function sanitizeTurns(messages: ChatTurn[]): ChatTurn[] {
+  const out: ChatTurn[] = [];
+  for (const turn of messages) {
+    const content = turn.content?.trim();
+    if (!content) continue;
+    const last = out[out.length - 1];
+    if (last && last.role === turn.role) {
+      last.content = `${last.content}\n\n${content}`;
+      continue;
+    }
+    if (out.length === 0 && turn.role === 'assistant') continue;
+    out.push({ role: turn.role, content });
+  }
+  while (out.length > 0 && out[out.length - 1].role === 'assistant') out.pop();
+  return out;
+}
+
 async function callClaude(
   systemPrompt: string,
-  userMessage: string,
+  messages: ChatTurn[],
   apiKey: string
 ): Promise<string> {
   const model = process.env.CLAUDE_MODEL || process.env.SPAR_MODEL || 'claude-sonnet-4-6';
@@ -277,7 +356,7 @@ async function callClaude(
       max_tokens: 2048,
       temperature: 0.3,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+      messages,
     },
     {
       headers: {
@@ -293,7 +372,7 @@ async function callClaude(
 
 async function callOpenAI(
   systemPrompt: string,
-  userMessage: string,
+  messages: ChatTurn[],
   apiKey: string
 ): Promise<string> {
   const model = process.env.SPAR_MODEL || 'gpt-4o';
@@ -301,10 +380,7 @@ async function callOpenAI(
     'https://api.openai.com/v1/chat/completions',
     {
       model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
       temperature: 0.3,
       response_format: { type: 'json_object' },
     },
@@ -477,6 +553,12 @@ export async function sparWithContext(
   );
 
   const notesText = formatNotesForPrompt(contextPack.retrieved);
+  const history = options.history ?? [];
+
+  // Retrieved notes ride on the *current* user turn, not the system prompt:
+  // each turn gets its own fresh sweep, and pinning an earlier turn's notes
+  // into the system prompt would keep them authoritative for the rest of the
+  // thread long after they stopped being the best match.
   const userMessage = `USER QUERY: ${query}
 
 RETRIEVED NOTES FROM YOUR HISTORY (${contextPack.retrieved.length} results):
@@ -485,15 +567,40 @@ ${notesText}
 
 Synthesize and respond grounded in these notes.`;
 
-  const rawResponse = await callLLM(SPAR_SYSTEM_PROMPT, userMessage);
+  const systemPrompt =
+    history.length > 0 || options.threadSummary
+      ? `${SPAR_SYSTEM_PROMPT}\n\n${THREAD_CONTINUATION_SUFFIX}${
+          options.threadSummary
+            ? `\n\nEARLIER IN THIS THREAD (summarised):\n${options.threadSummary}`
+            : ''
+        }`
+      : SPAR_SYSTEM_PROMPT;
+
+  const rawResponse = await callLLMWithHistory(systemPrompt, [
+    ...history,
+    { role: 'user', content: userMessage },
+  ]);
   const parsed = parseLLMResponse(rawResponse);
 
+  // A cited id that was never retrieved is not grounding, it is a fabricated
+  // citation — the one failure mode this whole feature cannot ship with. Drop
+  // anything the model invented rather than surfacing "4 notes cited" over an
+  // answer that stood on two.
+  const retrievedIds = new Set(contextPack.retrieved.map((n) => n.objectId));
+  const citedIds = parsed.citedIds.filter((id) => retrievedIds.has(id));
+  if (citedIds.length !== parsed.citedIds.length) {
+    console.warn(
+      `[sparringService] dropped ${parsed.citedIds.length - citedIds.length} ungrounded citation(s)`
+    );
+  }
+
   console.log(
-    `[sparringService] Sparring complete — cited ${parsed.citedIds.length} notes, ${parsed.themes.length} themes`
+    `[sparringService] Sparring complete — cited ${citedIds.length} notes, ${parsed.themes.length} themes`
   );
 
   return {
     ...parsed,
+    citedIds,
     contextPack,
   };
 }

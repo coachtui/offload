@@ -109,6 +109,62 @@ export interface SparResponse {
   contextPack: any;
 }
 
+// ─── Saved Ask Offload threads ────────────────────────────────────────────────
+// A thread is a standing query, not a chat log: it stores the opening question
+// and the objects its answers stood on, and re-derives what changed on resume.
+
+export type ConversationRole = 'user' | 'assistant' | 'delta';
+
+export interface Conversation {
+  id: string;
+  title: string;
+  openingQuery: string;
+  citedIds: string[];
+  lastCheckedAt: string;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationListItem extends Conversation {
+  messageCount: number;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  role: ConversationRole;
+  content: string;
+  citedIds: string[];
+  themes: string[];
+  gaps: string | null;
+  hasContradictions: boolean;
+  createdAt: string;
+}
+
+export interface DeltaObject {
+  objectId: string;
+  title: string;
+  type: string;
+  state: string;
+  createdAt: string;
+  stateUpdatedAt: string | null;
+  nextAction: string | null;
+  people: string[];
+}
+
+export interface ThreadDelta {
+  hasChanges: boolean;
+  resolved: DeltaObject[];
+  stillOpen: DeltaObject[];
+  gone: string[];
+  newlyMentioned: DeltaObject[];
+  daysSince: number;
+  checkedAt: string;
+}
+
 export interface Place {
   id: string;
   userId: string;
@@ -745,6 +801,66 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify({ query, ...options }),
     }, 90000); // 90s — LLM calls can be slow
+  }
+
+  // ─── Saved threads ──────────────────────────────────────────────────────────
+
+  async listConversations(limit = 50): Promise<{ conversations: ConversationListItem[]; total: number }> {
+    return this.request(`/api/v1/conversations?limit=${limit}`);
+  }
+
+  /** Open a new thread and answer its first question. */
+  async startConversation(query: string, options?: { topK?: number; title?: string }): Promise<{
+    conversation: Conversation;
+    messages: ConversationMessage[];
+  }> {
+    return this.request('/api/v1/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ query, ...options }),
+    }, 90000);
+  }
+
+  /** Thread + messages. Side-effect free — does NOT advance the delta watermark. */
+  async getConversation(id: string): Promise<{
+    conversation: Conversation;
+    messages: ConversationMessage[];
+  }> {
+    return this.request(`/api/v1/conversations/${id}`);
+  }
+
+  /**
+   * Reopen a thread: diff live object state against what it last saw.
+   * `force` skips the "too soon to be interesting" window (pull-to-refresh).
+   */
+  async resumeConversation(id: string, force = false): Promise<{
+    delta: ThreadDelta;
+    message: ConversationMessage | null;
+  }> {
+    return this.request(`/api/v1/conversations/${id}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({ force }),
+    }, 90000);
+  }
+
+  async sendConversationMessage(id: string, query: string, options?: { topK?: number }): Promise<{
+    conversation: Conversation;
+    messages: ConversationMessage[];
+  }> {
+    return this.request(`/api/v1/conversations/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ query, ...options }),
+    }, 90000);
+  }
+
+  async renameConversation(id: string, title: string): Promise<{ id: string; title: string }> {
+    return this.request(`/api/v1/conversations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async deleteConversation(id: string): Promise<{ id: string; deleted: boolean }> {
+    return this.request(`/api/v1/conversations/${id}`, { method: 'DELETE' });
   }
 
   // Deepgram voice methods
