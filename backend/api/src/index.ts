@@ -95,6 +95,7 @@ import categoryRoutes from './routes/categories';
 import geofenceRoutes from './routes/geofences';
 import voiceRoutes from './routes/voice';
 import ragRoutes from './routes/rag';
+import conversationRoutes from './routes/conversations';
 import synthesisRoutes from './routes/synthesis';
 import placesRoutes from './routes/places';
 import dashboardRoutes from './routes/dashboard';
@@ -109,6 +110,7 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/geofences', geofenceRoutes);
 app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/rag', ragRoutes);
+app.use('/api/v1/conversations', conversationRoutes);
 app.use('/api/v1/synthesis', synthesisRoutes);
 app.use('/api/v1/places', placesRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
@@ -129,6 +131,7 @@ app.get('/api/v1', (req, res) => {
       geofences: '/api/v1/geofences',
       voice: '/api/v1/voice',
       rag: '/api/v1/rag',
+      conversations: '/api/v1/conversations',
       places: '/api/v1/places',
       dashboard: '/api/v1/dashboard',
       ideas: '/api/v1/ideas',

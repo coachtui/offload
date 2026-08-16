@@ -64,6 +64,25 @@ features there.
 7. **Embed** — every object is embedded (`text-embedding-3-small`) into Weaviate
    Cloud for semantic search, RAG ("Ask Offload"), and contradiction detection.
 
+## Ask Offload threads are standing queries, not chat logs
+
+A saved thread (`hub.conversations`, migration 023) stores the **opening
+question**, the **object ids its answers were grounded in**, and a
+**watermark** — not just a transcript. Reopening one does not replay it:
+`conversationService.resumeConversation` diffs live object state against the
+watermark and reports what resolved, what's still open, what was deleted, and
+what's been captured since. The fresh sweep re-runs the *opening* query, since
+that's the question the user came back for, even if the thread wandered.
+
+The diff buckets are computed in SQL and code; the LLM only narrates buckets it
+is handed. Never let it decide what was resolved — "you finished this" is a
+claim that has to be true, and this is the same rule `synthesisService` follows
+for its deterministic "Accomplished" list.
+
+Follow-up turns replay history (`sanitizeTurns` in `sparringService.ts` makes a
+stored thread safe to send), but retrieval is always fresh per turn — history
+shapes phrasing, never what gets retrieved.
+
 ## Two rules that are easy to break
 
 **Reminders fire from the device, never from the network.** The instant a

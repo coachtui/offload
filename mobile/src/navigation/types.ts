@@ -34,7 +34,9 @@ export type RootStackParamList = {
     quietHoursEnd?: string;
     location: { latitude: number; longitude: number };
   };
-  AskOffload: { initialQuery?: string } | undefined;
+  // conversationId opens a saved thread, which auto-reports what changed since
+  // it was last read. initialQuery seeds the input box for a fresh thread.
+  AskOffload: { initialQuery?: string; conversationId?: string } | undefined;
   Insights: undefined;
   PlaceSummary: { placeId?: string; geofenceId?: string; placeName: string; eventType?: 'enter' | 'exit' };
   Categories: undefined;
