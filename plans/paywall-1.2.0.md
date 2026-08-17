@@ -1,4 +1,4 @@
-# 1.2.0 — Subscription paywall ($3.99/mo, 14-day free trial)
+# 1.2.0 — Subscription paywall ($4.99/mo, 14-day free trial)
 
 **Status: PLANNED** — drafted 2026-08-17 while 1.1.0 (build 6) awaits review.
 Decision made with 1.1.0: submit it for review now with **manual release**,
@@ -6,14 +6,19 @@ build this as 1.2.0, launch publicly paid. Nothing here touches the 1.1.0
 binary.
 
 Product decision log:
-- $3.99/month, 14-day free trial (Apple Introductory Offer, not home-rolled).
+- $4.99/month, 14-day free trial (Apple Introductory Offer, not home-rolled).
   14 days = the shortest trial that shows the Sunday-18:00 weekly digest twice.
-- Annual tier ~$29.99 alongside monthly (same subscription group, so upgrade/
-  downgrade is Apple-managed).
+  (Settled 2026-08-17 — was $3.99 in the first draft. $4.99 nets ~$4.24/mo
+  under the Small Business Program, a comfortable margin over the ~$1.30–1.80
+  marginal cost of a moderate user, while staying the cheapest serious product
+  in the category — Voicenotes ~$9.99/mo, AudioPen ~$75/yr, Otter ~$17/mo.)
+- Annual tier $49.99 alongside monthly (same subscription group, so upgrade/
+  downgrade is Apple-managed). $4.99 × 12 = $59.88, so $49.99 is the clean
+  "2 months free" anchor; nets ~$3.54/mo-equivalent.
 - Accounts created before the 1.2.0 cutoff are **grandfathered free forever**
   (TestFlight testers gave us free QA; also the demo account must never hit a
   paywall mid-review).
-- The app itself stays **Free** in ASC pricing. The $3.99 is an auto-renewable
+- The app itself stays **Free** in ASC pricing. The $4.99 is an auto-renewable
   subscription product. Do not touch the app price tier.
 
 ## The one architectural rule
@@ -61,8 +66,8 @@ consistency).
       ships without it.**
 - [ ] Small Business Program enrollment (15% instead of 30%).
 - [ ] Subscription group `Offload Pro`, products:
-      `offload_pro_monthly` $3.99 w/ 14-day free Introductory Offer,
-      `offload_pro_annual` $29.99. They sit in "Ready to Submit" — attach to
+      `offload_pro_monthly` $4.99 w/ 14-day free Introductory Offer,
+      `offload_pro_annual` $49.99. They sit in "Ready to Submit" — attach to
       the 1.2.0 version, **not** 1.1.0.
 - [ ] Localized subscription display name/description (shows in the system
       purchase sheet).
@@ -125,7 +130,7 @@ gated/open route split; grandfathered bypass. Target the existing jest suite.
   clear); expose `getOfferings`, `purchase`, `restore`.
 - **PaywallScreen** (Deep Lagoon tokens; coral stays record-only):
   Guideline 3.1.2 requirements — product title, price *per period*, trial
-  terms ("14 days free, then $3.99/month"), auto-renew disclosure, links to
+  terms ("14 days free, then $4.99/month"), auto-renew disclosure, links to
   Privacy + Terms (useoffload.app/privacy, /terms), and a **Restore
   Purchases** button (its absence is a stock rejection).
 - Central handling in `apiService`: `ENTITLEMENT_REQUIRED` → emit a bus event
@@ -173,7 +178,6 @@ use it to test the full lifecycle in one sitting.
 
 ## Open questions (decide before Phase C is finished)
 
-- Annual price: $29.99 vs $39.99 (2 months free vs ~2.5).
 - Does `rag/search` stay open or gate with `spar`? (Plan says open; cheap and
   it sells the product.)
 - Fair-use ceiling on transcription minutes: decide *before* launch whether
