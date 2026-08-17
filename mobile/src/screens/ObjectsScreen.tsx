@@ -39,7 +39,7 @@ import {
   Spacing,
   Radius,
 } from '../components/ui';
-import { Elevation, Fonts, ThemeColors, useTheme, useThemedStyles } from '../theme';
+import { Elevation, Fonts, Motion, ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -632,11 +632,22 @@ export function ObjectsScreen({ navigation }: Props) {
     setConfirmDeleteId(objectId);
   }, []);
 
+  // The confirm sheet is its own native Modal nested inside the detail
+  // pageSheet, so the two dismissals are not independent: tearing the parent
+  // down while the child's exit is still in flight leaves an empty sheet
+  // stranded over the list on iOS — visible, un-swipeable, no way back. Let the
+  // child finish exiting first, then close the detail modal, then delete. The
+  // user lands back on the list immediately rather than waiting on the network,
+  // and a failed delete only costs them the toast (the note is still there,
+  // since the list row is removed on success only).
   const performDeleteNote = useCallback(async () => {
-    if (!confirmDeleteId) return;
-    const ok = await deleteObject(confirmDeleteId);
+    const objectId = confirmDeleteId;
+    if (!objectId) return;
+    setConfirmDeleteId(null);
+    await new Promise<void>((resolve) => setTimeout(resolve, Motion.exit + 80));
+    handleCloseModal();
+    const ok = await deleteObject(objectId);
     if (ok) {
-      handleCloseModal();
       toast.show({ message: 'Note deleted', tone: 'success' });
     } else {
       toast.show({ message: "Couldn't delete", description: 'Please try again.', tone: 'error' });
