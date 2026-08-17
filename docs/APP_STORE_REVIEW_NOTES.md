@@ -180,13 +180,18 @@ Individual saved places can also be removed without deleting the account:
       ever revived, this label, the privacy policy, and the Delete-account
       consequences list all have to change together.
 - [ ] Confirm the account is not rate-limited or reset between review rounds.
-- [~] Walk **Settings → Delete account**. The two screens are confirmed rendering
-      correctly on device (2026-08-09, iPhone 17 Pro Max, Release build — see
-      `docs/app-store/verification/settings.png` and `delete-account.png`).
-      **Still outstanding: nobody has actually submitted the form.** Run one real
-      deletion on a throwaway account before submitting — 5.1.1(v) is checked on
-      essentially every review of an app that creates accounts, and a deletion
-      path that errors is worse than none.
+- [x] Walk **Settings → Delete account**. Screens confirmed rendering on device
+      2026-08-09 (iPhone 17 Pro Max, Release build — see
+      `docs/app-store/verification/settings.png` and `delete-account.png`), and
+      the form was **actually submitted 2026-08-17**: production logs show
+      `ACCOUNT_DELETE_START` → `DB_DONE` → `COMPLETE` for user
+      `1ce51559-80a8-4672-a032-458bab410550`, 176 ms end to end, with no
+      `ORPHANED_EMBEDDINGS` or `ORPHANED_AUDIO` alongside it. 5.1.1(v) is
+      covered.
+      *Not covered by that run:* the account had `sessions=0` and no embedded
+      notes, so `purgeUserEmbeddings` never matched a row (it only logs when it
+      does). To exercise the Weaviate path, delete a throwaway that has recorded
+      at least one note and look for a `Weaviate purge pass 1` line.
 - [x] Confirm the privacy policy's third-party list still matches reality —
       Nominatim was missing from it until 2026-08-09. Re-audited 2026-08-10
       against actual outbound calls in backend + mobile: Deepgram, OpenAI,
