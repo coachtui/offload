@@ -32,6 +32,8 @@
             }
           }
         },
+        "_comment_NSMicrophoneUsageDescription": "Set explicitly, and duplicated in the expo-audio plugin options below, because expo-audio otherwise fills in its generic default ('Allow Offload to access your microphone') — the weakest string in the binary for a voice-first app, and the kind review flags under Guideline 5.1.1. An existing infoPlist value wins over the plugin default, so either alone would do; both are set to keep them from drifting apart.",
+        "NSMicrophoneUsageDescription": "Offload records your voice so you can talk instead of type. Your recording is transcribed into notes and isn't kept afterward.",
         "NSLocationWhenInUseUsageDescription": "Offload uses your location to find the right nearby place when you mention one in a note — so \"milk at Safeway\" means the Safeway near you.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
         "NSLocationAlwaysUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded."
@@ -58,7 +60,12 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Offload records your voice so you can talk instead of type. Your recording is transcribed into notes and isn't kept afterward."
+        }
+      ],
       "expo-dev-client",
       "expo-updates",
       [
