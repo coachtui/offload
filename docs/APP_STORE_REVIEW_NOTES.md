@@ -3,11 +3,35 @@
 Paste the **Review Notes** section below into App Store Connect → App Review
 Information → Notes. The rest of this file is checklist and context for us.
 
-> ✅ The demo account below is **live and seeded** (created 2026-08-09 against
-> production). Re-verify it still signs in before each submission — see the
-> pre-submission checklist at the bottom. A reviewer who cannot reach the
-> arrival reminder will reject the Always-location request under Guideline
-> 5.1.1.
+> ✅ The demo account below is **live and seeded** — re-verified against
+> production **2026-08-17**: sign-in works, and Griffith Observatory reports
+> `openObjectCount: 1`.
+>
+> ⚠️ **Re-run the verification snippet below before every submission, and do not
+> trust the checkboxes.** On 2026-08-17 the seeded note was found **deleted**
+> (`GET /objects/69aaf904…` → 404, the geofence's object list empty) while every
+> checkbox here still read done. The place still existed, so the account looked
+> fine at a glance — but the proximity check requires an *open note* at the
+> place, so a reviewer following the steps below would have arrived at Griffith
+> and seen nothing at all. Likeliest cause: the account doubles as the
+> screenshot account, and screenshot prep cleans notes up. A reviewer who cannot
+> reach the arrival reminder will reject the Always-location request under
+> Guideline 5.1.1.
+>
+> ```bash
+> API=https://brain-dump-production-895b.up.railway.app
+> TOKEN=$(curl -s -X POST $API/api/v1/auth/login -H 'Content-Type: application/json' \
+>   -d '{"email":"demo@useoffload.app","password":"OffloadDemo2026!"}' \
+>   | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+> curl -s $API/api/v1/geofences -H "Authorization: Bearer $TOKEN" | python3 -c "
+> import sys,json
+> for x in json.load(sys.stdin)['geofences']:
+>     if 'Griffith' in x['name']:
+>         print(x['center'], 'r=%s' % x['radius'], x['notificationSettings'],
+>               'openNotes=%s' % x['openObjectCount'], x['openPreview'])
+> "
+> # must print: enabled True, onEnter True, openNotes=1, 'Planetarium tickets'
+> ```
 
 ---
 
@@ -131,12 +155,14 @@ Individual saved places can also be removed without deleting the account:
 ## Pre-submission checklist (internal — do not paste)
 
 - [x] Create the demo account — done 2026-08-09, user id
-      `5d14b5f6-f621-4b73-b411-f6068e376d92`. Still needs a sign-in check on a
-      clean install.
+      `5d14b5f6-f621-4b73-b411-f6068e376d92`. Sign-in re-confirmed against
+      production 2026-08-17 (API only — still unverified on a clean install).
 - [x] Seed the place + at least one **open** (not completed) note attached to it.
       Geofence `88921d87-c15e-4745-83ea-bdc165abf5ef`, note
-      `69aaf904-e7c9-4da0-b742-a31eb1b46f15`. A completed note will suppress the
-      notification and the reviewer will see nothing.
+      `1bc3e058-4ba0-4283-860c-1ee8c7bd2e8b` (`state: open`, type `task`,
+      re-seeded 2026-08-17 after the original `69aaf904…` was deleted). A
+      completed *or deleted* note will suppress the notification and the reviewer
+      will see nothing — the place alone is not enough.
 - [x] Confirm the seeded geofence has `enabled: true` and `notifyOnEnter: true` —
       the foreground check in `useProximityAlerts.ts:65` skips regions without both.
       Verified via `GET /geofences`: `{enabled: true, onEnter: true, onExit: false}`,
