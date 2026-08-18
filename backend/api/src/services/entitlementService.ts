@@ -91,6 +91,14 @@ function targetStateFor(event: RevenueCatEvent): Entitlement | null {
       return 'active';
     case 'EXPIRATION':
       return 'none';
+    // Promotional entitlements granted from the RevenueCat dashboard arrive
+    // as NON_RENEWING_PURCHASE (store "promotional"), with the grant's expiry
+    // in expiration_at_ms. We sell no non-renewing products, so every event
+    // of this type IS a grant — treating it as "no state change" (the
+    // original mapping) meant a dashboard grant entitled nobody, discovered
+    // live in Phase D testing.
+    case 'NON_RENEWING_PURCHASE':
+      return 'active';
     // CANCELLATION = auto-renew switched off; the user stays entitled until
     // expiry, when EXPIRATION arrives. BILLING_ISSUE likewise resolves to
     // either a RENEWAL or an EXPIRATION — no state change on its own.
@@ -98,7 +106,6 @@ function targetStateFor(event: RevenueCatEvent): Entitlement | null {
     case 'BILLING_ISSUE':
     case 'SUBSCRIBER_ALIAS':
     case 'TRANSFER':
-    case 'NON_RENEWING_PURCHASE':
     case 'TEST':
     default:
       return null;
