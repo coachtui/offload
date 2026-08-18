@@ -151,7 +151,10 @@ rather than standing up local containers.
   placeholder key and silently disables purchases on every device that
   applies the update — this happened once (2026-08-17). The key lives in
   `mobile/.env` (gitignored); if it's missing there, re-add it before any
-  `eas update`.
+  `eas update`. **And if an `EXPO_PUBLIC_*` value changed since the last
+  bundle, pass `--clear-cache`**: Metro's transform cache keeps the old
+  inlined value, so the same incident's *corrective* republish still shipped
+  the placeholder until the cache was cleared.
 - **Mobile, native change** — needs a full build + TestFlight submission.
   Anything touching **entitlements or permissions** additionally needs a
   regenerated provisioning profile *per distribution type*.
