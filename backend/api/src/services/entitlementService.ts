@@ -66,10 +66,14 @@ export function isEntitled(state: EntitlementState, now: Date = new Date()): boo
 export interface RevenueCatEvent {
   id: string;
   type: string;
-  app_user_id: string;
+  /** Absent on TRANSFER events, which carry transferred_from/to instead. */
+  app_user_id?: string;
   event_timestamp_ms: number;
   expiration_at_ms?: number | null;
   period_type?: string | null;
+  /** TRANSFER events only: the app user ids losing / gaining the purchases. */
+  transferred_from?: string[] | null;
+  transferred_to?: string[] | null;
 }
 
 export type ApplyResult =
@@ -105,7 +109,6 @@ function targetStateFor(event: RevenueCatEvent): Entitlement | null {
     case 'CANCELLATION':
     case 'BILLING_ISSUE':
     case 'SUBSCRIBER_ALIAS':
-    case 'TRANSFER':
     case 'TEST':
     default:
       return null;
@@ -119,7 +122,7 @@ export async function applyWebhookEvent(event: RevenueCatEvent): Promise<ApplyRe
   // before the SDK's logIn ran. Those aren't uuids, and letting one reach a
   // `WHERE id = $1::uuid` would throw → 500 → RevenueCat retries the same
   // event forever. Record it (user_id NULL) and move on.
-  const userId = UUID_RE.test(event.app_user_id) ? event.app_user_id : null;
+  const userId = event.app_user_id && UUID_RE.test(event.app_user_id) ? event.app_user_id : null;
 
   // Idempotency gate first: record the event; a conflict means we already
   // processed it (or are processing it concurrently) — do nothing else.
@@ -131,6 +134,27 @@ export async function applyWebhookEvent(event: RevenueCatEvent): Promise<ApplyRe
     [event.id, userId, event.type, event.event_timestamp_ms]
   );
   if (!inserted) return 'duplicate';
+
+  // TRANSFER: the same store subscription changed hands between app users
+  // (e.g. account deleted and re-registered under the same Apple ID — Apple
+  // resubscribes the old subscription, RevenueCat re-attributes it). The
+  // event names both sides but carries no product/expiry, so each side is
+  // synced from RevenueCat's API instead of derived from the event. Found
+  // live in Phase D: without this, the transferee stayed 'none' forever.
+  if (event.type === 'TRANSFER') {
+    const ids = [...(event.transferred_to ?? []), ...(event.transferred_from ?? [])]
+      .filter((id) => UUID_RE.test(id));
+    let applied = false;
+    for (const id of ids) {
+      try {
+        const ok = await syncEntitlementFromRevenueCat(id, event.event_timestamp_ms);
+        applied = applied || ok;
+      } catch (e) {
+        console.error(`[entitlementService] transfer sync failed for ${id}:`, e);
+      }
+    }
+    return applied ? 'applied' : 'no_state_change';
+  }
 
   if (!userId) {
     console.warn(
@@ -210,6 +234,68 @@ export async function getEntitlementState(userId: string): Promise<EntitlementSt
   );
   if (!row) return null;
   return { entitlement: row.entitlement, entitlementExpiresAt: row.entitlement_expires_at };
+}
+
+/**
+ * Pull a customer's live entitlement state from RevenueCat's API and write it
+ * to hub.users — the reconciliation primitive for events that carry no state
+ * of their own (TRANSFER) and for repairing drift. Uses the same forward-only
+ * event-time guard as webhook application, so a racing newer event wins.
+ * Returns true when a row was updated. Skips (false) when
+ * REVENUECAT_API_KEY is unset — sync is then impossible, not optional-quiet:
+ * the caller's log line is the only trace, so keep it loud there.
+ */
+export async function syncEntitlementFromRevenueCat(
+  userId: string,
+  eventTimestampMs: number
+): Promise<boolean> {
+  const apiKey = process.env.REVENUECAT_API_KEY;
+  if (!apiKey) {
+    console.warn('[entitlementService] REVENUECAT_API_KEY unset — cannot sync from API');
+    return false;
+  }
+
+  const res = await fetch(
+    `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
+    { headers: { Authorization: `Bearer ${apiKey}` } }
+  );
+  if (!res.ok) {
+    throw new Error(`RevenueCat subscriber fetch failed: ${res.status}`);
+  }
+  const body = (await res.json()) as {
+    subscriber?: { entitlements?: Record<string, { expires_date: string | null; period_type?: string }> };
+  };
+
+  const pro = body.subscriber?.entitlements?.pro;
+  const expiresAt = pro?.expires_date ? new Date(pro.expires_date) : null;
+  const live = !!pro && (expiresAt === null || expiresAt.getTime() > Date.now());
+  const target: Entitlement = live
+    ? pro?.period_type === 'trial'
+      ? 'trialing'
+      : 'active'
+    : 'none';
+
+  const updated = await queryOne<{ id: string }>(
+    `UPDATE hub.users
+     SET entitlement = $2,
+         entitlement_expires_at = $3,
+         entitlement_event_at = to_timestamp($4 / 1000.0),
+         revenuecat_customer_id = $5,
+         updated_at = NOW()
+     WHERE id = $1
+       AND entitlement <> 'grandfathered'
+       AND (entitlement_event_at IS NULL
+            OR entitlement_event_at <= to_timestamp($4 / 1000.0))
+     RETURNING id`,
+    [userId, target, live ? expiresAt : null, eventTimestampMs, userId]
+  );
+  if (updated) {
+    console.log(
+      `[entitlementService] synced user=${userId} → ${target} from RevenueCat API` +
+        (expiresAt ? ` (expires ${expiresAt.toISOString()})` : '')
+    );
+  }
+  return !!updated;
 }
 
 /**
