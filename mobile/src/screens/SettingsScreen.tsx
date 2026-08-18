@@ -13,7 +13,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
-import { getBuildInfo } from '../services/buildInfo';
 import {
   AppScreen,
   AppHeader,
@@ -26,10 +25,6 @@ import {
 import { ThemeColors, useTheme, useThemedStyles } from '../theme';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Settings'>;
-
-// Fixed for the life of the JS runtime — a new update only takes effect
-// through a reload, which re-evaluates this module anyway.
-const buildInfo = getBuildInfo();
 
 export default function SettingsScreen({ navigation }: { navigation: Nav }) {
   const { user, logout } = useAuth();
@@ -158,14 +153,6 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
         <AppText variant="secondary" color="faint" align="center" style={styles.copyright}>
           Offload © {new Date().getFullYear()} AIGA LLC
         </AppText>
-        {/* Build identity lives here, not on the log-out sheet where it used to
-            be — deploy metadata (channel, update id, publish time) read as a
-            stray commit hash to users logging out. A Settings footer is the
-            conventional home for a version line, and it's still one screen away
-            when we need to verify which OTA bundle a phone actually runs. */}
-        <AppText variant="secondary" color="faint" align="center" style={styles.buildLine}>
-          {buildInfo.label}
-        </AppText>
       </ScrollView>
 
       <ConfirmSheet
@@ -206,5 +193,4 @@ const createStyles = (c: ThemeColors) =>
     },
     destructiveRow: { backgroundColor: c.bg },
     copyright: { marginTop: Spacing.xxl },
-    buildLine: { marginTop: Spacing.xs },
   });
