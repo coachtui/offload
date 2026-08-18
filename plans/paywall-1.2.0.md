@@ -19,6 +19,23 @@ Progress:
   demo account verified `grandfathered` via /auth/me, webhook endpoint answers
   503 NOT_CONFIGURED until `REVENUECAT_WEBHOOK_SECRET` is set. Enforcement
   wiring deliberately not applied (Phase E).
+- **Phase A completion + Phase E + build** (2026-08-17 evening): RevenueCat
+  fully configured — App Store app w/ In-App Purchase key AND App Store
+  Connect API key, both products (Missing Metadata until the paywall
+  screenshot — expected), entitlement `pro` (1 entitlement on each product,
+  verified), Current offering with $rc_monthly/$rc_annual packages, webhook
+  live (secret on Railway; authenticated TEST event returned 200
+  `unknown_user` — full pipeline verified). `EXPO_PUBLIC_REVENUECAT_IOS_KEY`
+  verified in EAS production + preview. **Phase E merged (PR #75)**: gated
+  routes wired behind `ENFORCE_ENTITLEMENTS` (default OFF — deploy-order
+  rule; flip on Railway when 1.2.0 is the released app; remove the flag once
+  settled). Weekly/monthly synthesis skip 'none' users on the same flag.
+  **1.2.0 build 7 cut and uploaded to ASC** (EAS build `e08794a1`,
+  submission `29ced73e`). Frontier: **Phase D** — runnable script at
+  `docs/PAYWALL_SANDBOX_TEST.md`; needs a sandbox Apple ID, the flag flipped
+  for the session, and the paywall screenshot (clears Missing Metadata).
+  Note: entity migration individual→AIGA LLC filed with Apple mid-flight —
+  SBP enrollment and LLC bank/tax wait for it; watch for verification emails.
 - **Phase C** (2026-08-17): mobile built with a **placeholder key** —
   react-native-purchases 10.7.1, `services/purchases.ts` (no-op until
   `EXPO_PUBLIC_REVENUECAT_IOS_KEY` ships via EAS env), `paywallBus` +
