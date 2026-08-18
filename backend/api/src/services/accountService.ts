@@ -10,6 +10,7 @@ import { User } from '../models/User';
 import { query, queryMany } from '../db/queries';
 import { getWeaviateClient } from '../db/weaviate';
 import { deleteSessionAudio, testStorageConnection } from './storageService';
+import { deleteRevenueCatCustomer } from './entitlementService';
 
 export class AccountNotFoundError extends Error {
   constructor() {
@@ -165,6 +166,19 @@ export async function deleteAccount(userId: string, password: string): Promise<v
         );
       }
     }
+  }
+
+  // Same best-effort contract as the purges above: the account row is already
+  // gone, so a vendor failure is logged, never surfaced. Skips silently when
+  // REVENUECAT_API_KEY is unset (pre-paywall deploys, local runs).
+  try {
+    await deleteRevenueCatCustomer(userId);
+  } catch (error) {
+    console.error(
+      `[accountService] ORPHANED_REVENUECAT user=${userId} — account row is deleted ` +
+        `but RevenueCat customer delete failed:`,
+      error
+    );
   }
 
   console.log(`[accountService] ACCOUNT_DELETE_COMPLETE user=${userId}`);

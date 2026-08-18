@@ -12,6 +12,8 @@ export interface UserRow {
   name: string | null;
   terms_accepted_at: Date | null;
   last_seen_timezone: string | null;
+  entitlement?: string | null;
+  entitlement_expires_at?: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -30,6 +32,8 @@ export class User {
   name: string | null;
   termsAcceptedAt: Date | null;
   lastSeenTimezone: string | null;
+  entitlement: string;
+  entitlementExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -40,6 +44,12 @@ export class User {
     this.name = row.name ?? null;
     this.termsAcceptedAt = row.terms_accepted_at ?? null;
     this.lastSeenTimezone = row.last_seen_timezone ?? null;
+    // Missing column (code deployed ahead of migration 024) reads as
+    // grandfathered — the same semantics the migration backfills: anyone who
+    // predates the paywall is free forever, so the safe default is the one
+    // that can't lock an existing user out.
+    this.entitlement = row.entitlement ?? 'grandfathered';
+    this.entitlementExpiresAt = row.entitlement_expires_at ?? null;
     this.createdAt = row.created_at;
     this.updatedAt = row.updated_at;
   }
@@ -155,11 +165,23 @@ export class User {
   /**
    * Convert to JSON (without password hash)
    */
-  toJSON(): { id: string; email: string; name: string | null; createdAt: Date; updatedAt: Date } {
+  toJSON(): {
+    id: string;
+    email: string;
+    name: string | null;
+    entitlement: string;
+    entitlementExpiresAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  } {
     return {
       id: this.id,
       email: this.email,
       name: this.name,
+      // Surfaced so GET /auth/me tells the client what the server already
+      // decided — display state only; enforcement stays in requireEntitlement.
+      entitlement: this.entitlement,
+      entitlementExpiresAt: this.entitlementExpiresAt,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
