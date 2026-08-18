@@ -26,6 +26,8 @@ import PermissionSettingsScreen from '../screens/PermissionSettingsScreen';
 import DeleteAccountScreen from '../screens/DeleteAccountScreen';
 import IntroScreen from '../screens/IntroScreen';
 import HowOffloadWorksScreen from '../screens/HowOffloadWorksScreen';
+import PaywallScreen from '../screens/PaywallScreen';
+import { subscribePaywallRequired } from '../services/paywallBus';
 import { RootStackParamList } from './types';
 import { navigationRef } from './navigationRef';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
@@ -129,6 +131,11 @@ function MainStack({ initialRouteName }: { initialRouteName: 'Intro' | 'Permissi
         component={HowOffloadWorksScreen}
         options={{ headerShown: false }}
       />
+      <Stack.Screen
+        name="Paywall"
+        component={PaywallScreen}
+        options={{ presentation: 'modal' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -137,6 +144,17 @@ export function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
   const { colors } = useTheme();
   const navTheme = useNavTheme();
+
+  // Any gated request anywhere → present the paywall, once (the bus debounces
+  // bursts; the route guard stops a second push while it's already up).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    return subscribePaywallRequired(() => {
+      if (!navigationRef.isReady()) return;
+      if (navigationRef.getCurrentRoute()?.name === 'Paywall') return;
+      navigationRef.navigate('Paywall');
+    });
+  }, [isAuthenticated]);
 
   // Resolved before the main stack mounts so initialRouteName is correct on the
   // first render — React Navigation reads it once and ignores later changes.

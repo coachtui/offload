@@ -1,9 +1,33 @@
 # 1.2.0 — Subscription paywall ($4.99/mo, 14-day free trial)
 
-**Status: PLANNED** — drafted 2026-08-17 while 1.1.0 (build 6) awaits review.
-Decision made with 1.1.0: submit it for review now with **manual release**,
-build this as 1.2.0, launch publicly paid. Nothing here touches the 1.1.0
-binary.
+**Status: IN PROGRESS** — drafted 2026-08-17 while 1.1.0 (build 6) awaits
+review. Decision made with 1.1.0: submit it for review now with **manual
+release**, build this as 1.2.0, launch publicly paid. Nothing here touches the
+1.1.0 binary.
+
+Progress:
+- **Phase A** (2026-08-17): Paid Apps agreement accepted — "Pending User Info",
+  personal bank account added (the developer account is *individual*, entity
+  Tuisamau Alailima — an AIGA-LLC-held bank account risked a name-mismatch
+  verification loop, so revenue lands personally and sweeps to the LLC; W-9 =
+  SSN). Subscription group "Offload Pro" + both products created with 2-week
+  intro offers and en-US localization; review screenshot deferred until the
+  PaywallScreen exists to screenshot. **Do NOT submit the products standalone —
+  they ride the 1.2.0 binary.** Still open: tax forms/verification emails,
+  Small Business Program (after agreement Active), RevenueCat account.
+- **Phase B** (2026-08-17, PR #73, deployed): migration 024 applied on prod,
+  demo account verified `grandfathered` via /auth/me, webhook endpoint answers
+  503 NOT_CONFIGURED until `REVENUECAT_WEBHOOK_SECRET` is set. Enforcement
+  wiring deliberately not applied (Phase E).
+- **Phase C** (2026-08-17): mobile built with a **placeholder key** —
+  react-native-purchases 10.7.1, `services/purchases.ts` (no-op until
+  `EXPO_PUBLIC_REVENUECAT_IOS_KEY` ships via EAS env), `paywallBus` +
+  `ENTITLEMENT_REQUIRED` emit in apiService, PaywallScreen (3.1.2 disclosures,
+  store-localized prices, Restore, polls /auth/me post-purchase — the webhook
+  is the unlock, not the SDK), navigator subscription, Settings subscription
+  row, RC logIn/logOut in AuthContext. Proactive post-signup paywall skipped
+  for v1 (the 403 → paywall path covers it). Untested on device — needs the
+  real key and a sandbox account.
 
 Product decision log:
 - $4.99/month, 14-day free trial (Apple Introductory Offer, not home-rolled).

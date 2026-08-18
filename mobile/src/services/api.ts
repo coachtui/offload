@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { emitPaywallRequired } from './paywallBus';
 
 /**
  * Auth tokens must be readable while the device is LOCKED.
@@ -466,6 +467,12 @@ class ApiService {
         if (text) errorMessage = text.slice(0, 200);
       }
       console.error(`[ApiService] ${response.status} on ${endpoint}:`, errorMessage);
+      // The paywall signal, raised centrally so no screen needs a 403 branch.
+      // The request still throws below — callers treat it as a normal failure
+      // while the navigator presents the paywall over whatever they rendered.
+      if (response.status === 403 && errorCode === 'ENTITLEMENT_REQUIRED') {
+        emitPaywallRequired();
+      }
       throw new ApiError(errorMessage, response.status, errorCode);
     }
 
