@@ -123,6 +123,13 @@ export interface AuthResponse {
     id: string;
     email: string;
     name?: string | null;
+    /**
+     * Server-decided subscription state (GET /auth/me includes it; the login/
+     * register responses may not — treat absence as unknown, not as 'none').
+     * Display only: enforcement is the server's 403 ENTITLEMENT_REQUIRED.
+     */
+    entitlement?: 'none' | 'trialing' | 'active' | 'grandfathered';
+    entitlementExpiresAt?: string | null;
   };
   accessToken: string;
   refreshToken: string;

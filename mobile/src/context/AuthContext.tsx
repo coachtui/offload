@@ -6,6 +6,7 @@ import { geofenceMonitoringService } from '../services/geofenceMonitoringService
 import { resetPermissionOnboarding } from '../services/permissionService';
 import { markNewSignup, resetEducationState } from '../services/educationService';
 import { releaseAll, syncTimeRemindersWithOS } from '../services/timeReminderSync';
+import { purchasesLogIn, purchasesLogOut } from '../services/purchases';
 
 interface AuthState {
   user: AuthResponse['user'] | null;
@@ -97,6 +98,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch (err) {
         console.warn('[AuthContext] getMe on restore failed (non-fatal):', err);
       }
+      if (user) void purchasesLogIn(user.id);
       setState({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('[AuthContext] checkAuthStatus failed:', error);
@@ -133,6 +135,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   async function login(credentials: LoginRequest) {
     const response = await apiService.login(credentials);
     console.log('[AuthContext] login success');
+    // Identify the RevenueCat customer as our user id so purchase webhooks
+    // carry it. Fire-and-forget: sign-in must never wait on a vendor SDK.
+    void purchasesLogIn(response.user.id);
     setState({
       user: response.user,
       isAuthenticated: true,
@@ -142,6 +147,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function register(data: RegisterRequest) {
     const response = await apiService.register(data);
+    void purchasesLogIn(response.user.id);
     // Flag written BEFORE isAuthenticated flips: AppNavigator reads it to pick
     // the initial route, and that read races this function's setState. Only
     // register() sets it — a login is an existing account and gets no intro.
@@ -164,6 +170,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // this the next account to sign in on this phone silently skips the ladder.
     await resetPermissionOnboarding();
     await resetEducationState();
+    // Detach the RevenueCat identity so the next account on this phone doesn't
+    // inherit this one's purchases. Best-effort inside the wrapper.
+    await purchasesLogOut();
     await apiService.logout();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }
@@ -190,6 +199,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     await resetEducationState().catch(e =>
       console.warn('[AuthContext] education reset after delete failed:', e)
     );
+    await purchasesLogOut();
     await apiService.clearToken();
     setState({ user: null, isAuthenticated: false, isLoading: false });
   }

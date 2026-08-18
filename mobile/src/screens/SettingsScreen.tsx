@@ -6,12 +6,13 @@
  * accounts to offer account deletion from inside the app. The deletion itself
  * lives on its own screen; this is the entry point to it.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { useAuth } from '../context/AuthContext';
+import { apiService } from '../services/api';
 import { getBuildInfo } from '../services/buildInfo';
 import {
   AppScreen,
@@ -36,6 +37,45 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
   const styles = useThemedStyles(createStyles);
   const [logoutVisible, setLogoutVisible] = useState(false);
 
+  // Entitlement is server-decided (see entitlementService in the backend), so
+  // read it fresh rather than trusting whatever the login response cached.
+  // null = still loading / unknown → the row shows nothing rather than a lie.
+  const [entitlement, setEntitlement] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getMe()
+      .then((me) => {
+        if (!cancelled) setEntitlement(me.user.entitlement ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const subscriptionRow = (() => {
+    switch (entitlement) {
+      case 'grandfathered':
+        return { subtitle: 'Free forever — early supporter', onPress: undefined };
+      case 'trialing':
+        return {
+          subtitle: 'Offload Pro — free trial',
+          // Apple's own management page: cancel, switch plan, see renewal date.
+          onPress: () => Linking.openURL('https://apps.apple.com/account/subscriptions'),
+        };
+      case 'active':
+        return {
+          subtitle: 'Offload Pro',
+          onPress: () => Linking.openURL('https://apps.apple.com/account/subscriptions'),
+        };
+      case 'none':
+        return { subtitle: 'Start your 14-day free trial', onPress: () => navigation.navigate('Paywall') };
+      default:
+        return null; // unknown — say nothing rather than something wrong
+    }
+  })();
+
   return (
     <AppScreen>
       <AppHeader
@@ -53,6 +93,14 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
         <Section title="Account">
           <ListRow title="Email" meta={user?.email ?? '—'} />
           {user?.name ? <ListRow title="Name" meta={user.name} /> : null}
+          {subscriptionRow ? (
+            <ListRow
+              title="Subscription"
+              subtitle={subscriptionRow.subtitle}
+              onPress={subscriptionRow.onPress}
+              showChevron={!!subscriptionRow.onPress}
+            />
+          ) : null}
         </Section>
 
         <Section title="Privacy">

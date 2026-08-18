@@ -15,6 +15,7 @@ import { registerBackgroundNotificationSync } from './src/services/backgroundNot
 import { emitArrivalPromptCandidate } from './src/services/arrivalPromptBus';
 import { emitNotesChanged } from './src/services/notesBus';
 import { ToastProvider } from './src/components/ui';
+import { configurePurchases } from './src/services/purchases';
 
 async function checkForUpdate() {
   if (!Updates.isEnabled) {
@@ -143,6 +144,10 @@ export default function App() {
 
   useEffect(() => {
     if (!__DEV__) checkForUpdate();
+
+    // RevenueCat SDK — a no-op until the key ships via EAS env. Before auth
+    // resolves it runs anonymous; AuthContext identifies it after sign-in.
+    configurePurchases();
 
     // Arms new geofences from a silent push when the app is killed. Guarded —
     // a no-op on builds without the remote-notification background mode.

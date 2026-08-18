@@ -16,6 +16,8 @@ export type RootStackParamList = {
     placeName?: string;
   } | undefined;
   Places: undefined;
+  /** Subscription paywall — presented modally by the paywallBus subscription or Settings. */
+  Paywall: undefined;
   CreateGeofence: {
     /** Pre-fill the name — arriving from a pending place lookup's "Pick on the map". */
     prefillName?: string;
