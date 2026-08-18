@@ -17,9 +17,14 @@ const listeners = new Set<Listener>();
 const DEBOUNCE_MS = 2000;
 let lastEmit = 0;
 
-export function emitPaywallRequired(): void {
+/**
+ * `force` bypasses the debounce — for direct user actions (tapping record
+ * while blocked) where "nothing happened" would read as a broken button.
+ * The debounce exists for request bursts, not for taps.
+ */
+export function emitPaywallRequired(force = false): void {
   const now = Date.now();
-  if (now - lastEmit < DEBOUNCE_MS) return;
+  if (!force && now - lastEmit < DEBOUNCE_MS) return;
   lastEmit = now;
   console.log(`[paywallBus] entitlement required — ${listeners.size} listener(s)`);
   for (const fn of Array.from(listeners)) {
