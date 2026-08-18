@@ -185,7 +185,58 @@ gated/open route split; grandfathered bypass. Target the existing jest suite.
   before first recording ("Start free" = start the trial). Skippable browse-
   only mode is acceptable v1 polish, not required.
 
-## Phase D — Verify (TestFlight = sandbox, nobody is charged)
+## Phase D — SESSION RECORD (2026-08-18, overnight): VERIFIED
+
+The checklist below was superseded by a live session that found and fixed six
+real defects — the reason Phase D exists. **Correction to this doc's premise:
+TestFlight compresses a month to ~24 HOURS, not minutes** (the 5-minute clock
+is Xcode-sandbox only), and TestFlight purchase sheets always use the phone's
+real Apple ID (uncharged); the Settings sandbox-account slot is ignored.
+
+Verified live, in order of discovery:
+- Paywall renders store-localized prices (after fix 1+4 below)
+- Sandbox purchase completes; server confirms via webhook; app unlocks
+- Enforcement: 'none' → 403 ENTITLEMENT_REQUIRED on gated routes; open routes
+  stay open; grandfathered (incl. demo) passes — probed all three on prod
+- Lapsed capture: save refused with an honest notification + paywall presented
+- Restore Purchases → restored toast → functional
+- TRANSFER handled organically end to end (restore ping-ponged the sub between
+  test accounts; both sides synced from the RC API by the new handler)
+- Arrival reminder fired on a real drive-by (Foodland, chain-resolved to 3
+  branch geofences automatically) — note recorded while entitled
+
+Fixes shipped during the session:
+1. PR #79 — eas.json profiles never declared EAS environments; build 7 shipped
+   the placeholder RevenueCat key. Also: mic-block so paywalled users can't
+   record into a doomed save.
+2. PR #80 — promotional grants arrive as NON_RENEWING_PURCHASE; handler filed
+   them as no-state-change → grants entitled nobody.
+3. PR #81 — the mic-block was a trap: refused before fetching, so entitlement
+   changes made outside the app needed an app restart. Now re-probes on tap.
+4. PRs #82/#83 (CLAUDE.md) — `eas update` bundles with LOCAL env (an OTA
+   without the key silently disabled purchases), and Metro's transform cache
+   keeps stale inlined values: pass --clear-cache when EXPO_PUBLIC vars change.
+5. PR #84 — TRANSFER events have no app_user_id; route validation rejected
+   every one as "malformed" (200-acked, never retried) and the handler mapped
+   the type to no-op besides. Now syncs both sides from the RC subscribers API
+   (`syncEntitlementFromRevenueCat`, also a general reconciliation primitive).
+   Requires REVENUECAT_API_KEY (set on Railway 2026-08-18).
+
+Residuals (not blocking):
+- Lapsed *delivery* is architecture-guaranteed (no delivery path checks
+  entitlement; regions live in the OS) but the on-device observation happened
+  while entitled; the natural expiry (~2026-08-19 05:43 UTC) offers a free
+  strict check on the next drive-by.
+- Polish for 1.2.1: a lapsed user who wins the mic-race records a note that
+  dies at save — honest failure, but the words are lost. Hold the transcript
+  and retry after subscribe.
+- ENFORCE_ENTITLEMENTS is ON in production (flipped for the session; safe —
+  every real account is grandfathered). Decide resting state at release.
+
+ASC state: both products "Prepare for Submission" (screenshot uploaded);
+1.2.0 build 8 in TestFlight; everything queued behind 1.1.0's review.
+
+## Phase D — original checklist (superseded by the session record above)
 
 Sandbox compresses time: the 14-day trial lasts minutes — that's the feature,
 use it to test the full lifecycle in one sitting.
