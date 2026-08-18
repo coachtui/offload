@@ -166,13 +166,22 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
       console.log('[Recording] startRecording called while a session is already active — ignoring');
       return;
     }
-    // Refuse to arm the mic while the server has said ENTITLEMENT_REQUIRED
-    // (see the entitlementBlocked note above). Forced emit: the user just
-    // tapped record — a silent no-op here reads as a broken button.
+    // While the server has said ENTITLEMENT_REQUIRED, re-probe before arming
+    // the mic rather than refusing outright. The verdict can go stale outside
+    // this codepath — the user subscribes on the paywall, a grant lands, a
+    // slow webhook catches up — and the first version of this guard turned
+    // that staleness into a trap: blocked → refuse before fetching → nothing
+    // ever fetches → the flag can never clear → paywall forever until an app
+    // restart remounts RecordScreen (found live in Phase D). One cheap GET,
+    // paid only by paywalled users; entitled users still start mic-first.
     if (entitlementBlocked) {
-      console.log('[Recording] start refused — entitlement required');
-      emitPaywallRequired(true);
-      return;
+      try {
+        await fetchDeepgramToken(); // success clears the flag
+      } catch {
+        console.log('[Recording] start refused — entitlement required');
+        emitPaywallRequired(true); // forced: a silent no-op reads as a broken button
+        return;
+      }
     }
     startInFlightRef.current = true;
     console.log('[Recording] startRecording called');
