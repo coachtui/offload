@@ -3,7 +3,7 @@
     "name": "Offload",
     "slug": "mobile",
     "scheme": "offload",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,15 +15,18 @@
       "policy": "appVersion"
     },
     "ios": {
-      "_comment_supportsTablet": "false on purpose. The UI has no iPad handling at all — no size-class or useWindowDimensions branching, and three maxWidth rules in the whole app — so a 13-inch iPad gets phone layout stretched full-bleed. Declaring iPad support obliges us to supply iPad screenshots and invites review on a device the app was never designed for (Guideline 4.0). iPhone apps still run on iPad in compatibility mode. Flip this only alongside real iPad layout work.",
+      "_comment_supportsTablet": "false on purpose. The UI has no iPad handling at all \u2014 no size-class or useWindowDimensions branching, and three maxWidth rules in the whole app \u2014 so a 13-inch iPad gets phone layout stretched full-bleed. Declaring iPad support obliges us to supply iPad screenshots and invites review on a device the app was never designed for (Guideline 4.0). iPhone apps still run on iPad in compatibility mode. Flip this only alongside real iPad layout work.",
       "supportsTablet": false,
       "bundleIdentifier": "com.talailima.offload",
-      "_comment_entitlements": "Time Sensitive Notifications lets a reminder push break through Focus and skip the scheduled notification summary — without it iOS may sit on a 9:00 reminder for hours. Only the reminder push asks for it (pushService interruptionLevel); the weekly digest deliberately does not. Native capability: it takes a new EAS build, an OTA update won't pick it up.",
+      "_comment_entitlements": "Time Sensitive Notifications lets a reminder push break through Focus and skip the scheduled notification summary \u2014 without it iOS may sit on a 9:00 reminder for hours. Only the reminder push asks for it (pushService interruptionLevel); the weekly digest deliberately does not. Native capability: it takes a new EAS build, an OTA update won't pick it up.",
       "entitlements": {
         "com.apple.developer.usernotifications.time-sensitive": true
       },
       "infoPlist": {
-        "UIBackgroundModes": ["location", "remote-notification"],
+        "UIBackgroundModes": [
+          "location",
+          "remote-notification"
+        ],
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
@@ -32,9 +35,9 @@
             }
           }
         },
-        "_comment_NSMicrophoneUsageDescription": "Set explicitly, and duplicated in the expo-audio plugin options below, because expo-audio otherwise fills in its generic default ('Allow Offload to access your microphone') — the weakest string in the binary for a voice-first app, and the kind review flags under Guideline 5.1.1. An existing infoPlist value wins over the plugin default, so either alone would do; both are set to keep them from drifting apart.",
+        "_comment_NSMicrophoneUsageDescription": "Set explicitly, and duplicated in the expo-audio plugin options below, because expo-audio otherwise fills in its generic default ('Allow Offload to access your microphone') \u2014 the weakest string in the binary for a voice-first app, and the kind review flags under Guideline 5.1.1. An existing infoPlist value wins over the plugin default, so either alone would do; both are set to keep them from drifting apart.",
         "NSMicrophoneUsageDescription": "Offload records your voice so you can talk instead of type. Your recording is transcribed into notes and isn't kept afterward.",
-        "NSLocationWhenInUseUsageDescription": "Offload uses your location to find the right nearby place when you mention one in a note — so \"milk at Safeway\" means the Safeway near you.",
+        "NSLocationWhenInUseUsageDescription": "Offload uses your location to find the right nearby place when you mention one in a note \u2014 so \"milk at Safeway\" means the Safeway near you.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
         "NSLocationAlwaysUsageDescription": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded."
       }
@@ -74,7 +77,7 @@
           "isIosBackgroundLocationEnabled": true,
           "locationAlwaysAndWhenInUsePermission": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
           "locationAlwaysPermission": "Offload checks on your phone whether you've arrived somewhere you left yourself a note, so it can remind you when it's useful. Your location isn't continuously tracked or uploaded.",
-          "locationWhenInUsePermission": "Offload uses your location to find the right nearby place when you mention one in a note — so \"milk at Safeway\" means the Safeway near you."
+          "locationWhenInUsePermission": "Offload uses your location to find the right nearby place when you mention one in a note \u2014 so \"milk at Safeway\" means the Safeway near you."
         }
       ],
       [
