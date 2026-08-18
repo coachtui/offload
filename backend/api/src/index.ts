@@ -103,6 +103,7 @@ import ideasRoutes from './routes/ideas';
 import diagnosticsRoutes from './routes/diagnostics';
 import pushRoutes from './routes/push';
 import correctionRoutes from './routes/corrections';
+import webhookRoutes from './routes/webhooks';
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/objects', objectRoutes);
@@ -118,6 +119,8 @@ app.use('/api/v1/ideas', ideasRoutes);
 app.use('/api/v1/diagnostics', diagnosticsRoutes);
 app.use('/api/v1/push', pushRoutes);
 app.use('/api/v1/corrections', correctionRoutes);
+// Server-to-server; authenticates with per-vendor shared secrets, not JWT.
+app.use('/api/v1/webhooks', webhookRoutes);
 
 app.get('/api/v1', (req, res) => {
   res.json({
