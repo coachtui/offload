@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ExpoPlayAudioStream } from '@mykin-ai/expo-audio-stream';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { apiService, AuthError, RagSearchResult, ConflictItem } from '../services/api';
+import { apiService, ApiError, AuthError, RagSearchResult, ConflictItem } from '../services/api';
 import { notifySaveResult } from '../services/saveNotification';
 import { syncGeofencesWithOS } from '../services/geofenceSync';
 import { syncTimeRemindersWithOS } from '../services/timeReminderSync';
 import { emitNotesChanged, emitNotesChangedAfterSort } from '../services/notesBus';
+import { emitPaywallRequired } from '../services/paywallBus';
 import { maybeEmitFirstRecordingEducation } from '../services/educationService';
 import { useAuth } from '../context/AuthContext';
 import type { GeoPoint } from '../types';
@@ -48,16 +49,37 @@ const KEEP_AWAKE_TAG = 'offload-recording';
 const TOKEN_TTL_MS = 5 * 60 * 1000;
 let cachedToken: { token: string; keywords: string[]; fetchedAt: number } | null = null;
 
+// Set when the token endpoint answers 403 ENTITLEMENT_REQUIRED. Capture is
+// deliberately mic-first (the tap never waits on network), which means without
+// this flag a paywalled user could dismiss the paywall, record a full note,
+// and only fail at save — a stranded "recording" the app can do nothing with.
+// The token prefetch on RecordScreen mount is the cheap, already-happening
+// probe: remember its verdict and refuse to arm the mic while it stands.
+// Cleared on any successful token fetch (i.e. after they subscribe).
+let entitlementBlocked = false;
+
+export function isEntitlementBlocked(): boolean {
+  return entitlementBlocked;
+}
+
 async function fetchDeepgramToken(): Promise<{ token: string; keywords: string[] }> {
   if (cachedToken && Date.now() - cachedToken.fetchedAt < TOKEN_TTL_MS) {
     return cachedToken;
   }
-  const result = await apiService.getDeepgramToken();
-  if (result.token) {
-    cachedToken = { token: result.token, keywords: result.keywords ?? [], fetchedAt: Date.now() };
-    return cachedToken;
+  try {
+    const result = await apiService.getDeepgramToken();
+    if (result.token) {
+      entitlementBlocked = false;
+      cachedToken = { token: result.token, keywords: result.keywords ?? [], fetchedAt: Date.now() };
+      return cachedToken;
+    }
+    return { token: result.token, keywords: result.keywords ?? [] };
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'ENTITLEMENT_REQUIRED') {
+      entitlementBlocked = true;
+    }
+    throw err;
   }
-  return { token: result.token, keywords: result.keywords ?? [] };
 }
 
 export function prefetchDeepgramToken(): void {
@@ -142,6 +164,14 @@ export function useDeepgramTranscription(): UseDeepgramTranscriptionReturn {
     }
     if (audioSubscriptionRef.current) {
       console.log('[Recording] startRecording called while a session is already active — ignoring');
+      return;
+    }
+    // Refuse to arm the mic while the server has said ENTITLEMENT_REQUIRED
+    // (see the entitlementBlocked note above). Forced emit: the user just
+    // tapped record — a silent no-op here reads as a broken button.
+    if (entitlementBlocked) {
+      console.log('[Recording] start refused — entitlement required');
+      emitPaywallRequired(true);
       return;
     }
     startInFlightRef.current = true;
