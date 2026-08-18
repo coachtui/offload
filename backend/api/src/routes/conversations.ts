@@ -17,6 +17,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
+import { requireEntitlement } from '../auth/requireEntitlement';
 import { ConversationModel } from '../models/Conversation';
 import {
   startConversation,
@@ -80,7 +81,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // ─── POST / ───────────────────────────────────────────────────────────────────
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -130,7 +131,7 @@ router.get('/:id', async (req: Request, res: Response) => {
  * looked. Returns the structured delta alongside the narrated message so the
  * client can render counts without re-parsing prose.
  */
-router.post('/:id/resume', async (req: Request, res: Response) => {
+router.post('/:id/resume', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -157,7 +158,7 @@ router.post('/:id/resume', async (req: Request, res: Response) => {
 
 // ─── POST /:id/messages ───────────────────────────────────────────────────────
 
-router.post('/:id/messages', async (req: Request, res: Response) => {
+router.post('/:id/messages', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 

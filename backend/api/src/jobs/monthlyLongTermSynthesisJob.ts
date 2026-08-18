@@ -46,10 +46,15 @@ async function shouldRunThisMonth(userId: string): Promise<boolean> {
 }
 
 async function getAllActiveUserIds(): Promise<string[]> {
-  // Users who have objects in the past 30 days
+  // Users who have objects in the past 30 days. Once ENFORCE_ENTITLEMENTS is
+  // on, lapsed ('none') users are skipped — same rule and same flag as the
+  // weekly digest (see listDigestCandidates there for why the flag matters).
+  const entitlementJoin =
+    process.env.ENFORCE_ENTITLEMENTS === 'true' ? `AND u.entitlement <> 'none'` : '';
   const result = await pool.query(
-    `SELECT DISTINCT user_id FROM hub.atomic_objects
-     WHERE deleted_at IS NULL AND created_at > NOW() - INTERVAL '30 days'`
+    `SELECT DISTINCT ao.user_id FROM hub.atomic_objects ao
+     JOIN hub.users u ON u.id = ao.user_id ${entitlementJoin}
+     WHERE ao.deleted_at IS NULL AND ao.created_at > NOW() - INTERVAL '30 days'`
   );
   return result.rows.map((r: { user_id: string }) => r.user_id);
 }

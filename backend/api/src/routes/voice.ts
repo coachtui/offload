@@ -6,6 +6,7 @@
 import { Router, Request, Response, json } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
+import { requireEntitlement } from '../auth/requireEntitlement';
 import { Session } from '../models/Session';
 import { User } from '../models/User';
 import { DEEPGRAM_KEYWORDS } from '../config/keywords';
@@ -38,7 +39,7 @@ const saveTranscriptSchema = z.object({
  * GET /api/v1/voice/deepgram-token - Get temporary Deepgram API token
  * Mobile app uses this to connect directly to Deepgram for real-time transcription
  */
-router.get('/deepgram-token', async (req: Request, res: Response) => {
+router.get('/deepgram-token', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   console.log(`[Voice] GET /deepgram-token — userId: ${userId}`);
 
@@ -75,7 +76,7 @@ router.get('/deepgram-token', async (req: Request, res: Response) => {
  * POST /api/v1/voice/save-transcript - Save transcript and create atomic objects
  * Called after recording stops with the final transcript from Deepgram
  */
-router.post('/save-transcript', async (req: Request, res: Response) => {
+router.post('/save-transcript', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   console.log(`[Voice] POST /save-transcript — userId: ${userId}`);
 
@@ -176,6 +177,7 @@ router.post(
   // Base64 audio inflates ~33% over the raw bytes; keep the body limit above the
   // 24MB WAV cap in transcribeWithGpt4o so that guard returns the clear error.
   '/transcribe-audio',
+  requireEntitlement,
   json({ limit: '40mb' }),
   async (req: Request, res: Response) => {
     const userId = req.user?.id;

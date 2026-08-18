@@ -67,12 +67,20 @@ interface DigestCandidateRow {
  * Users worth a digest: anyone with a live note from the last 7 days. The
  * empty-week gate is the cost control — no notes means no LLM run and no
  * "0 accomplished" push, and it naturally excludes never-recorded accounts.
+ * Once ENFORCE_ENTITLEMENTS is on, lapsed ('none') users are skipped too:
+ * their data stays readable, but no new LLM spend generates insights they'd
+ * need a subscription to act on. Gated on the same flag as the routes because
+ * until the paywall ships, post-migration signups sit at 'none' while fully
+ * able to record — an unconditional filter would silently deny exactly the
+ * new users the digest is meant to win over.
  */
 async function listDigestCandidates(): Promise<DigestCandidateRow[]> {
+  const entitlementFilter =
+    process.env.ENFORCE_ENTITLEMENTS === 'true' ? `u.entitlement <> 'none' AND` : '';
   return queryMany<DigestCandidateRow>(
     `SELECT u.id, u.last_seen_timezone
      FROM hub.users u
-     WHERE EXISTS (
+     WHERE ${entitlementFilter} EXISTS (
        SELECT 1 FROM hub.atomic_objects ao
        WHERE ao.user_id = u.id
          AND ao.deleted_at IS NULL

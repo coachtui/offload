@@ -4,6 +4,7 @@
 
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../auth/middleware';
+import { requireEntitlement } from '../auth/requireEntitlement';
 import { generateWeeklySynthesis } from '../services/synthesisService';
 import { Session } from '../models/Session';
 
@@ -15,7 +16,7 @@ router.use(authenticate);
  * Trigger (or return cached) weekly synthesis for the authenticated user.
  * Pass ?force=true to regenerate even if one exists for today.
  */
-router.post('/weekly', async (req: Request, res: Response) => {
+router.post('/weekly', requireEntitlement, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });
