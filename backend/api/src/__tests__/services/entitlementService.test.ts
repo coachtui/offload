@@ -177,6 +177,42 @@ describe('applyWebhookEvent', () => {
     expect((mockQueries.queryOne as jest.Mock).mock.calls[1][1][1]).toBe('active');
   });
 
+  it('TRANSFER syncs both sides from the RevenueCat API', async () => {
+    // Same-Apple-ID re-registration: the event names the two app users but
+    // carries no product/expiry, so state comes from the subscribers API.
+    const OTHER = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    process.env.REVENUECAT_API_KEY = 'sk-test';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        subscriber: {
+          entitlements: {
+            pro: { expires_date: new Date(NOW.getTime() + DAY_MS).toISOString(), period_type: 'normal' },
+          },
+        },
+      }),
+    });
+    (global as any).fetch = fetchMock;
+    // ledger insert, then one UPDATE per side
+    programQueryOne([{ event_id: 'evt-tr' }, { id: OTHER }, { id: USER_ID }]);
+
+    const result = await applyWebhookEvent(
+      event({
+        id: 'evt-tr',
+        type: 'TRANSFER',
+        transferred_to: [OTHER],
+        transferred_from: [USER_ID, '$RCAnonymousID:zzz'],
+      })
+    );
+
+    expect(result).toBe('applied');
+    expect(fetchMock).toHaveBeenCalledTimes(2); // anonymous id filtered out
+    // transferee synced first, to 'active'
+    expect((mockQueries.queryOne as jest.Mock).mock.calls[1][1][0]).toBe(OTHER);
+    expect((mockQueries.queryOne as jest.Mock).mock.calls[1][1][1]).toBe('active');
+    delete process.env.REVENUECAT_API_KEY;
+  });
+
   it('EXPIRATION flips to none', async () => {
     programQueryOne([{ event_id: 'evt-6' }, { id: USER_ID }]);
 

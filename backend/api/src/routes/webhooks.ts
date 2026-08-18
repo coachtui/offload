@@ -32,7 +32,10 @@ router.post('/revenuecat', async (req: Request, res: Response) => {
   }
 
   const event = req.body?.event as Partial<RevenueCatEvent> | undefined;
-  if (!event?.id || !event.type || !event.app_user_id || !event.event_timestamp_ms) {
+  // app_user_id is NOT required: TRANSFER events carry transferred_from/to
+  // instead — requiring it here silently dropped every transfer as
+  // "malformed" (found live in Phase D). applyWebhookEvent handles absence.
+  if (!event?.id || !event.type || !event.event_timestamp_ms) {
     // Malformed by our reading — acknowledge it so RevenueCat doesn't redeliver
     // the same unparseable payload forever, but log the whole thing.
     console.error('[webhooks] malformed revenuecat event:', JSON.stringify(req.body).slice(0, 2000));
