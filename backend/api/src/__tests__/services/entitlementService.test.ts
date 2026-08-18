@@ -165,6 +165,18 @@ describe('applyWebhookEvent', () => {
     expect(result).toBe('unknown_user');
   });
 
+  it('a promotional grant (NON_RENEWING_PURCHASE) entitles as active', async () => {
+    // Dashboard grants arrive as this type; ignoring them entitled nobody.
+    programQueryOne([{ event_id: 'evt-promo' }, { id: USER_ID }]);
+
+    const result = await applyWebhookEvent(
+      event({ id: 'evt-promo', type: 'NON_RENEWING_PURCHASE', period_type: 'PROMOTIONAL' })
+    );
+
+    expect(result).toBe('applied');
+    expect((mockQueries.queryOne as jest.Mock).mock.calls[1][1][1]).toBe('active');
+  });
+
   it('EXPIRATION flips to none', async () => {
     programQueryOne([{ event_id: 'evt-6' }, { id: USER_ID }]);
 
