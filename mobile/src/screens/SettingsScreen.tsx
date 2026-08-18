@@ -107,10 +107,16 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
           />
         </Section>
 
-        {/* Build identity intentionally not shown here — it still appears as the
-            log-out sheet's footnote, which is enough to verify an OTA applied. */}
         <AppText variant="secondary" color="faint" align="center" style={styles.copyright}>
           Offload © {new Date().getFullYear()} AIGA LLC
+        </AppText>
+        {/* Build identity lives here, not on the log-out sheet where it used to
+            be — deploy metadata (channel, update id, publish time) read as a
+            stray commit hash to users logging out. A Settings footer is the
+            conventional home for a version line, and it's still one screen away
+            when we need to verify which OTA bundle a phone actually runs. */}
+        <AppText variant="secondary" color="faint" align="center" style={styles.buildLine}>
+          {buildInfo.label}
         </AppText>
       </ScrollView>
 
@@ -122,7 +128,6 @@ export default function SettingsScreen({ navigation }: { navigation: Nav }) {
         message="Your notes stay safely synced to your account."
         confirmLabel="Log out"
         destructive
-        footnote={buildInfo.label}
       />
     </AppScreen>
   );
@@ -153,4 +158,5 @@ const createStyles = (c: ThemeColors) =>
     },
     destructiveRow: { backgroundColor: c.bg },
     copyright: { marginTop: Spacing.xxl },
+    buildLine: { marginTop: Spacing.xs },
   });
