@@ -144,7 +144,14 @@ rather than standing up local containers.
 
 - **Backend** — Railway auto-deploys on merge to `main`.
 - **Mobile, JS-only change** — `eas update --branch <preview|production>`. Ships
-  OTA in minutes, no review.
+  OTA in minutes, no review. **OTA bundles are built with the LOCAL machine's
+  env** — `EXPO_PUBLIC_*` vars come from the shell / `mobile/.env`, NOT from
+  EAS environment variables (those cover cloud builds only). Publishing
+  without `EXPO_PUBLIC_REVENUECAT_IOS_KEY` in the local env ships the
+  placeholder key and silently disables purchases on every device that
+  applies the update — this happened once (2026-08-17). The key lives in
+  `mobile/.env` (gitignored); if it's missing there, re-add it before any
+  `eas update`.
 - **Mobile, native change** — needs a full build + TestFlight submission.
   Anything touching **entitlements or permissions** additionally needs a
   regenerated provisioning profile *per distribution type*.
