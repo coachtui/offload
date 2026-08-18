@@ -26,11 +26,29 @@ function run(user?: { id: string; email: string }) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Enforcement is flag-gated (deploy-order rule); the policy tests below
+  // exercise the enforced path. The flag-off pass-through has its own test.
+  process.env.ENFORCE_ENTITLEMENTS = 'true';
   // Delegate to the real isEntitled so the middleware test exercises the
   // actual policy, not a mock of it.
   mockService.isEntitled.mockImplementation(
     jest.requireActual('../../services/entitlementService').isEntitled
   );
+});
+
+afterAll(() => {
+  delete process.env.ENFORCE_ENTITLEMENTS;
+});
+
+it('is a pass-through while ENFORCE_ENTITLEMENTS is off — no lookup at all', async () => {
+  delete process.env.ENFORCE_ENTITLEMENTS;
+  const { req, res, next } = run({ id: 'u-1', email: 'a@b.c' });
+
+  await requireEntitlement(req, res, next);
+
+  expect(next).toHaveBeenCalled();
+  expect(mockService.getEntitlementState).not.toHaveBeenCalled();
+  expect(res.status).not.toHaveBeenCalled();
 });
 
 it('passes an entitled user through', async () => {

@@ -17,6 +17,7 @@ import {
   deleteGeofence,
 } from '../services/geofenceService';
 import { authenticate } from '../auth/middleware';
+import { requireEntitlement } from '../auth/requireEntitlement';
 import { z } from 'zod';
 
 const router = Router();
@@ -255,7 +256,7 @@ router.get('/:id', async (req: Request, res: Response) => {
  * POST /api/v1/geofences
  * Create geofence
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireEntitlement, async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       res.status(401).json({

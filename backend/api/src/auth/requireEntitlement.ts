@@ -1,14 +1,19 @@
 /**
  * Gate a route on an active subscription (or grandfathered status).
  *
- * NOT YET WIRED TO ANY ROUTE — deliberately. Per plans/paywall-1.2.0.md
- * Phase E: the enforcement wiring ships only alongside the mobile build that
- * can actually purchase, or every account registered between this deploy and
- * the 1.2.0 app release would be locked out of recording with no way to pay.
- * When 1.2.0 ships, apply this after `authenticate` on the gated route set
- * (voice, rag/spar, conversations, synthesis triggers, geofence creation) and
- * nowhere else — reads, note-state mutations, and deletes stay open so a
- * lapsed user keeps full access to their own data.
+ * Wired to the gated route set (voice capture, rag/spar, conversations,
+ * synthesis trigger, geofence creation) and nowhere else — reads, note-state
+ * mutations, and deletes stay open so a lapsed user keeps full access to
+ * their own data.
+ *
+ * Enforcement is behind ENFORCE_ENTITLEMENTS (default OFF) because of the
+ * plan's Phase E deploy-order rule: the app that can actually purchase must
+ * be in users' hands before any route refuses. With the flag off this
+ * middleware is a pass-through, so the wiring can merge and deploy inert;
+ * flipping ENFORCE_ENTITLEMENTS=true on Railway turns the paywall on the day
+ * the 1.2.0 build is live. Remove the flag (make enforcement unconditional)
+ * once 1.2.0 has been the released app for a while — a flag nobody flips
+ * anymore is just a way to turn the business off by typo.
  *
  * Responds 403 ENTITLEMENT_REQUIRED — a code the client maps to the paywall.
  * Not 401: the mobile client treats 401 as session death and signs the user
@@ -22,6 +27,11 @@ export async function requireEntitlement(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  if (process.env.ENFORCE_ENTITLEMENTS !== 'true') {
+    next();
+    return;
+  }
+
   try {
     if (!req.user) {
       res.status(401).json({ error: 'UNAUTHORIZED', message: 'Not authenticated' });

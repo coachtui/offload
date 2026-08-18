@@ -9,6 +9,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
+import { requireEntitlement } from '../auth/requireEntitlement';
 import { semanticSearch } from '../services/vectorService';
 import { AtomicObjectModel } from '../models/AtomicObject';
 import { buildContextPack, sparWithContext, detectContradictions } from '../services/sparringService';
@@ -146,7 +147,7 @@ router.post('/search', async (req: Request, res: Response) => {
  * AI sparring — retrieves relevant notes and generates a grounded response.
  * Returns: answer, cited note IDs, themes, contradiction flag, gaps, context pack.
  */
-router.post('/spar', async (req: Request, res: Response) => {
+router.post('/spar', requireEntitlement, async (req: Request, res: Response) => {
   const userId = req.user?.id;
   console.log(`[RAG] POST /spar — userId: ${userId}`);
 
