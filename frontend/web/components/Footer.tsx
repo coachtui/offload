@@ -24,12 +24,12 @@ export default function Footer() {
           >
             Terms
           </Link>
-          <a
-            href="mailto:support@useoffload.app"
+          <Link
+            href="/support"
             className="text-sm text-ink-muted hover:text-ink transition-colors"
           >
-            Contact
-          </a>
+            Support
+          </Link>
         </nav>
       </div>
     </footer>
