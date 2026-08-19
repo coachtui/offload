@@ -223,10 +223,13 @@ Fixes shipped during the session:
    Requires REVENUECAT_API_KEY (set on Railway 2026-08-18).
 
 Residuals (not blocking):
-- Lapsed *delivery* is architecture-guaranteed (no delivery path checks
+- ~~Lapsed *delivery* is architecture-guaranteed (no delivery path checks
   entitlement; regions live in the OS) but the on-device observation happened
   while entitled; the natural expiry (~2026-08-19 05:43 UTC) offers a free
-  strict check on the next drive-by.
+  strict check on the next drive-by.~~ ✅ **Verified 2026-08-19**: arrival
+  notification fired on a real drive-by *after* the natural expiry — geofence
+  armed while entitled, delivered while lapsed. The gate-creation-not-delivery
+  rule is now device-verified end to end, not just inferred.
 - Polish for 1.2.1: a lapsed user who wins the mic-race records a note that
   dies at save — honest failure, but the words are lost. Hold the transcript
   and retry after subscribe.
