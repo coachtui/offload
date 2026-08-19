@@ -112,6 +112,10 @@ npm run lint
 # Mobile
 cd mobile
 npm start              # expo start --dev-client
+npm test               # jest (minimal ts-jest for pure service logic, not jest-expo)
+npm run typecheck      # tsc --noEmit — has 3 KNOWN pre-existing errors
+                       # (api.ts, locationService.ts, websocket.ts); only a
+                       # growing count is a regression
 npm run build:prev     # EAS internal build, preview channel
 npm run build:prod     # EAS production build
 npm run update         # eas update --auto  (OTA)
@@ -163,7 +167,10 @@ rather than standing up local containers.
 
 Testing happens on a real iPhone via **EAS internal builds, not Expo Go** — the
 app depends on background location, geofence monitoring, and local
-notifications, none of which behave correctly in Expo Go.
+notifications, none of which behave correctly in Expo Go. The full runbook for
+launching and verifying the app (simulator Release builds, UI driving, the OTA
+loop, confirming what a device actually runs) is the `run-app` project skill
+(`.claude/skills/run-app/SKILL.md`).
 
 ## Migrations — two systems, know which
 

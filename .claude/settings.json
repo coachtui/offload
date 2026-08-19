@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+      "Bash(npx expo install:*)",
+      "Bash(npx expo start:*)",
+      "Bash(npx expo run:ios:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(lsof:*)",
+      "Bash(ls:*)",
+      "Bash(pwd:*)",
+      "Bash(du:*)",
+      "Bash(json_pp:*)",
+      "Bash(node -e:*)",
+      "Bash(echo:*)",
+      "Bash(open:*)",
+      "Bash(curl:*)",
+      "Bash(osascript:*)"
+    ]
+  }
+}
