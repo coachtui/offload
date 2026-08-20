@@ -31,6 +31,39 @@ const GEOFENCE_TASK_NAME = 'GEOFENCE_MONITORING_TASK';
 // Persisted region metadata file — readable by background task JS context
 const REGIONS_FILE_NAME = 'geofence_regions.json';
 
+/**
+ * fetch with a hard timeout.
+ *
+ * `AbortSignal.timeout()` does not exist in React Native. RN 0.81 wires the
+ * global `AbortSignal` to the `abort-controller` polyfill, which ships the
+ * constructor and nothing else — no static `timeout`, no static `abort`. So
+ * `AbortSignal.timeout(8000)` threw a TypeError while building the request
+ * options, before any request was made.
+ *
+ * That failed silently: both notify call sites catch and fall through to the
+ * on-device snapshot, which is a real notification, so arrivals still worked
+ * and nothing looked broken. The tell was server-side — hub.place_trigger_state
+ * and hub.geofence_trigger_state were empty for EVERY user, meaning the notify
+ * endpoints had never once been reached despite arrivals firing in the field.
+ *
+ * Consequence while it was broken: the backend could never be consulted, so a
+ * note created after the last region sync could not notify on arrival (its
+ * snapshot count was stale at 0), and the server-side cooldown never applied.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function persistRegions(regions: GeofenceRegion[]): void {
   try {
     new File(Paths.document, REGIONS_FILE_NAME).write(JSON.stringify(regions));
@@ -371,7 +404,31 @@ class GeofenceMonitoringService {
       longitude: r.longitude,
       radius: r.radius,
       notifyOnEnter: r.notifyOnEnter,
-      notifyOnExit: r.notifyOnExit,
+      // ALWAYS true at the OS layer, regardless of the user's preference — an
+      // arrival must be able to fire more than once.
+      //
+      // expo-location's iOS consumer keeps an in-memory _regionStates map to
+      // dedupe CoreLocation's duplicate deliveries, and gates every event on a
+      // state CHANGE: didEnterRegion is dropped unless the remembered state is
+      // something other than Inside. The only things that write Outside back
+      // are didExitRegion and didDetermineState (which runs only from
+      // requestStateForRegion, i.e. a fresh startGeofencingAsync).
+      //
+      // With region.notifyOnExit = NO, CoreLocation never delivers an exit. So
+      // the first arrival latched the region at Inside forever: every later
+      // ENTER was swallowed natively, before this file's JS ran. A note stayed
+      // open, its geofence stayed armed, the ledger and server cooldowns both
+      // expired — and returning hours later was silent. Field-observed as
+      // "fires once and never again", and it healed only when iOS happened to
+      // recycle the app process, which made it look intermittent.
+      //
+      // The user's real preference still decides whether an exit NOTIFIES:
+      // handleGeofenceEvent gates on the persisted metadata's notifyOnExit, and
+      // the bare-region fallback for an unpersisted region defaults it to
+      // false. So an unwanted exit costs one cheap background wake that returns
+      // without scheduling anything — and resets the native state machine so
+      // the next arrival gets through.
+      notifyOnExit: true,
       // quietHours fields are metadata only (not passed to OS API, used locally)
     }));
 
@@ -558,12 +615,15 @@ class GeofenceMonitoringService {
     }
 
     const doFetch = (t: string) =>
-      fetch(`${API_BASE_URL}/api/v1/places/${placeId}/notify`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventType }),
-        signal: AbortSignal.timeout(8000),
-      });
+      fetchWithTimeout(
+        `${API_BASE_URL}/api/v1/places/${placeId}/notify`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventType }),
+        },
+        8000
+      );
 
     let response = await doFetch(token);
     if (response.status === 401) {
@@ -591,12 +651,15 @@ class GeofenceMonitoringService {
     }
 
     const doFetch = (t: string) =>
-      fetch(`${API_BASE_URL}/api/v1/geofences/${geofenceId}/notify`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventType }),
-        signal: AbortSignal.timeout(8000),
-      });
+      fetchWithTimeout(
+        `${API_BASE_URL}/api/v1/geofences/${geofenceId}/notify`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventType }),
+        },
+        8000
+      );
 
     let response = await doFetch(token);
     if (response.status === 401) {
